@@ -466,7 +466,7 @@ function saveCompanyLogo_(s, p) {
   dbUpsert_('Settings', 'key', { key: 'logo', value: next });
   clearCache_();
   audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
-  return true;
+  return next;
 }
 const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius'];
 function saveSettings_(s, p) {
