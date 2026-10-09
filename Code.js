@@ -280,7 +280,7 @@ function submitReport_(s, p) {
   const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
   if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
   const rep = dbAll_('Reps').find(x => x.id === s.uid);
-  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
+  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; delete x.logo; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
   r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
   r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
   dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
