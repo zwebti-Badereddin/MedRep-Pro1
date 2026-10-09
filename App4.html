@@ -43,6 +43,7 @@ function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.
   x.globalCompositeOperation="destination-over";x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);u=c.toDataURL("image/jpeg",.8);if(u.length<=45000)return cb(u)}
  cb(null)};im.src=rd.result};rd.readAsDataURL(file)}
 function tabCo(){
+ const view=settingsViewSeq,live=()=>view===settingsViewSeq&&!!$("#sv2");
  const st=CFG.st||{},v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true";LG=undefined;
  $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
  <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
@@ -53,15 +54,15 @@ function tabCo(){
  <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="c_w" value="${esc(st.workDays||"0,1,2,3,4")}">
  <div class="sec"><h3>التذكيرات</h3></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="c_r" type="checkbox" style="width:auto;min-height:0" ${re?"checked":""}> تفعيل التذكيرات (للمندوب بالبريد، وملخص للمدير بمن لم يرسل)</label>
  <div class="two"><div><label>تذكير الصباح (0–23)</label><input id="c_h" type="number" min="0" max="23" value="${esc(st.remindHour||8)}"></div><div><label>تذكير المساء (0–23)</label><input id="c_h2" type="number" min="0" max="23" value="${esc(st.remindEvening||18)}"></div></div><div class="empty" style="margin:8px 0">صباحًا: بتقرير الأمس غير المرسل. مساءً: بتقرير اليوم. وتنبيه ثالث تلقائي قبل ساعة من ساعة الإغلاق لمن لم يرسل بعد. لا تصل التنبيهات لمن في إجازة أو عطلة.</div><div class="err" id="c_err"></div><button class="btn pri full" id="c_go" style="margin-top:14px">حفظ</button>`;
- const saveLogo=async u=>{try{await srv("saveSettings",{values:{logo:u}});CFG.company.logo=u;CFG.st.logo=u;$("#c_img").src=u;$("#c_img").style.display=u?"block":"none";$("#c_err").style.color="";$("#c_err").textContent=u?"✓ تم رفع الشعار وحفظه":"✓ تمت إزالة الشعار"}catch(e){$("#c_err").textContent="تعذّر حفظ الشعار: "+e.message}};
+ const saveLogo=async u=>{try{await srv("saveSettings",{values:{logo:u}});if(!live()||!$("#c_img")||!$("#c_err"))return;CFG.company.logo=u;CFG.st.logo=u;$("#c_img").src=u;$("#c_img").style.display=u?"block":"none";$("#c_err").style.color="";$("#c_err").textContent=u?"✓ تم رفع الشعار وحفظه":"✓ تمت إزالة الشعار"}catch(e){if(live()&&$("#c_err"))$("#c_err").textContent="تعذّر حفظ الشعار: "+e.message}};
  $("#c_f").onchange=e=>{const f=e.target.files[0];if(!f)return;$("#c_err").textContent="جارٍ معالجة الصورة…";pickLogo(f,u=>{if(!u){$("#c_err").textContent="تعذّر استخدام الصورة: الصيغة غير مدعومة أو حجمها كبير حتى بعد التصغير. جرّب PNG أو JPG أبسط.";return}saveLogo(u)})};
  $("#c_rm").onclick=()=>saveLogo("");
  $("#c_go").onclick=async()=>{const vals={companyName:$("#c_n").value,shortName:$("#c_s").value,brandColor:$("#c_c").value,reportTitle:$("#c_t").value,phone:$("#c_p").value,address:$("#c_a").value,reportEmail:$("#c_e").value,closeHour:$("#c_ch").value,workDays:$("#c_w").value.replace(/\s/g,""),gpsRadius:$("#c_g").value};
   const b=$("#c_go");b.disabled=true;$("#c_err").textContent="";
-  try{await srv("saveSettings",{values:vals});let rm="";
-   try{await srv("setReminders",{enabled:$("#c_r").checked,hour:$("#c_h").value,evening:$("#c_h2").value})}catch(e){rm="حُفظت الإعدادات لكن تعذّر ضبط التذكيرات: "+e.message}
-   Object.assign(CFG.st,vals,{remindEnabled:$("#c_r").checked,remindHour:$("#c_h").value,remindEvening:$("#c_h2").value});Object.assign(CFG.company,{name:vals.companyName,short:vals.shortName,color:vals.brandColor,title:vals.reportTitle,phone:vals.phone,address:vals.address});
-   document.documentElement.style.setProperty("--brand",vals.brandColor);if(rm)$("#c_err").textContent=rm;else toast("تم الحفظ")}catch(e){$("#c_err").textContent=e.message}b.disabled=false};
+  try{await srv("saveSettings",{values:vals});if(!live())return;let rm="";const reminders={enabled:$("#c_r").checked,hour:$("#c_h").value,evening:$("#c_h2").value};
+   try{await srv("setReminders",reminders)}catch(e){rm="حُفظت الإعدادات لكن تعذّر ضبط التذكيرات: "+e.message}
+   if(!live())return;Object.assign(CFG.st,vals,{remindEnabled:reminders.enabled,remindHour:reminders.hour,remindEvening:reminders.evening});Object.assign(CFG.company,{name:vals.companyName,short:vals.shortName,color:vals.brandColor,title:vals.reportTitle,phone:vals.phone,address:vals.address});
+   document.documentElement.style.setProperty("--brand",vals.brandColor);if(rm&&$("#c_err"))$("#c_err").textContent=rm;else if(!rm)toast("تم الحفظ")}catch(e){if(live()&&$("#c_err"))$("#c_err").textContent=e.message}finally{b.disabled=false}};
 }
 async function tabKpi(view=settingsViewSeq){
  const host=()=>view===settingsViewSeq?$("#sv2"):null;const target=host();if(!target)return;
@@ -72,7 +73,7 @@ async function tabKpi(view=settingsViewSeq){
    <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input class="kt_a" type="checkbox" style="width:auto;min-height:0" ${String(k.active)!=="false"?"checked":""}> مفعّل</label></div>`).join("")+'<div id="kw" class="empty"></div><div class="err" id="k_err"></div><button class="btn pri full" id="kgo">حفظ المؤشرات</button><div class="empty" style="margin-top:8px">بعد التعديل أعد حساب الأشهر المغلقة من تبويب المقارنة إن أردت أن تتأثر بالقيم الجديدة.</div>';
   const sum=()=>{let t=0;document.querySelectorAll(".kr").forEach(r=>{if(r.querySelector(".kt_a").checked)t+=+r.querySelector(".kt_w").value||0});$("#kw").textContent="مجموع أوزان المؤشرات المفعّلة: "+t+" (تُحتسب النسب منه تلقائيًا)"};
   document.querySelectorAll(".kr input").forEach(i=>i.oninput=sum);sum();
-  $("#kgo").onclick=async()=>{try{await srv("saveKpi",{rows:[...document.querySelectorAll(".kr")].map(r=>({key:r.dataset.k,target:+r.querySelector(".kt_t").value||0,weight:+r.querySelector(".kt_w").value||0,active:r.querySelector(".kt_a").checked}))});toast("تم الحفظ")}catch(e){$("#k_err").textContent=e.message}}}catch(e){if(host())toast(e.message)}}
+  $("#kgo").onclick=async()=>{try{await srv("saveKpi",{rows:[...document.querySelectorAll(".kr")].map(r=>({key:r.dataset.k,target:+r.querySelector(".kt_t").value||0,weight:+r.querySelector(".kt_w").value||0,active:r.querySelector(".kt_a").checked}))});if(host())toast("تم الحفظ")}catch(e){const err=host()&&$("#k_err");if(err)err.textContent=e.message}}}catch(e){if(host())toast(e.message)}}
 let PL=[];
 async function tabProd(view=settingsViewSeq){const host=()=>view===settingsViewSeq?$("#sv2"):null;const target=host();if(!target)return;target.innerHTML='<div class="empty">جارٍ التحميل…</div>';try{const rows=await srv("list",{entity:"Products"});if(!host())return;PL=rows;drawProd()}catch(e){if(host())toast(e.message)}}
 function drawProd(){if(!$("#sv2"))return;const off=p=>p.status==="متوقف";
@@ -102,6 +103,6 @@ async function tabHol(view=settingsViewSeq){
   const target=host();if(!target)return;
   target.innerHTML=`<div class="empty">العطل الرسمية تُستثنى لجميع المندوبين: لا يُطلب فيها تقرير وتُخفَّض الأهداف.</div>`+a.map(h=>`<div class="row"><div class="t"><b>${esc(h.name)}</b><small>${esc(h.date)}</small></div><button class="del" data-id="${esc(h.id)}">✕</button></div>`).join("")
   +`<div class="sec"><h3>إضافة عطلة</h3></div><label>التاريخ</label><input type="date" id="h_d" value="${isoD(new Date())}"><label>الاسم</label><input id="h_n" placeholder="مثل: عيد الفطر"><div class="err" id="h_err"></div><button class="btn pri full" id="h_go" style="margin-top:14px">إضافة</button>`;
-  document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});tabHol()}catch(e){toast(e.message)}});
-  $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});toast("تمت الإضافة");tabHol()}catch(e){$("#h_err").textContent=e.message}}}catch(e){if(host())toast(e.message)}}
+  document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});if(view===settingsViewSeq&&$("#sv2"))tabHol(view)}catch(e){if(view===settingsViewSeq&&$("#sv2"))toast(e.message)}});
+  $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});if(!host())return;toast("تمت الإضافة");tabHol(view)}catch(e){const err=host()&&$("#h_err");if(err)err.textContent=e.message}}}catch(e){if(host())toast(e.message)}}
 </script>
