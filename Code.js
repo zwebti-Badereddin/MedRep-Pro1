@@ -93,7 +93,56 @@ function hash_(v) {
 }
 // Public functions can be called by any web-app visitor through google.script.run, so owner-only ones must refuse anyone else.
 function ownerOnly_() { if (Session.getActiveUser().getEmail() !== Session.getEffectiveUser().getEmail()) throw new Error('غير مصرح'); }
-function setAdminPassword(pw) { ownerOnly_(); PropertiesService.getScriptProperties().setProperty('ADMIN_HASH', hash_(pw)); }
+function setAdminPassword(pw) {
+  ownerOnly_();
+  const password = String(pw || '');
+  if (password.length < 12) throw new Error('كلمة مرور الإدارة يجب ألا تقل عن 12 حرفًا.');
+  PropertiesService.getScriptProperties().setProperty('ADMIN_HASH', hash_(password));
+}
+
+// Run from the bound spreadsheet by the project owner to set a new admin password.
+// The password is entered interactively and is never written into source code.
+function configureAdminPassword() {
+  ownerOnly_();
+  const ui = SpreadsheetApp.getUi();
+  const first = ui.prompt('تعيين كلمة مرور الإدارة', 'أدخل كلمة مرور جديدة لا تقل عن 12 حرفًا:', ui.ButtonSet.OK_CANCEL);
+  if (first.getSelectedButton() !== ui.Button.OK) return;
+  const password = first.getResponseText();
+  if (password.length < 12) throw new Error('كلمة مرور الإدارة يجب ألا تقل عن 12 حرفًا.');
+  const second = ui.prompt('تأكيد كلمة مرور الإدارة', 'أعد إدخال كلمة المرور للتأكيد:', ui.ButtonSet.OK_CANCEL);
+  if (second.getSelectedButton() !== ui.Button.OK) return;
+  if (password !== second.getResponseText()) throw new Error('كلمتا المرور غير متطابقتين.');
+  setAdminPassword(password);
+  ui.alert('تم حفظ كلمة مرور الإدارة. احفظها في مكان آمن.');
+}
+
+// One-time migration: deactivate known demo PINs without deleting reps or their report history.
+function disableDemoRepAccounts() {
+  ownerOnly_();
+  const ui = SpreadsheetApp.getUi();
+  const pins = ['001', '002', '003', '004'];
+  const hashes = pins.map(pin => hash_(pin));
+  const reps = dbAll_('Reps').filter(r => hashes.indexOf(String(r.codeHash)) >= 0 && String(r.active) !== 'false');
+  if (!reps.length) {
+    ui.alert('لم يتم العثور على حسابات نشطة تستخدم رموز الدخول التجريبية 001–004.');
+    return;
+  }
+  const answer = ui.alert(
+    'تعطيل حسابات المندوبين التجريبية',
+    'سيتم تعطيل ' + reps.length + ' حساب/حسابات تستخدم الرموز التجريبية 001–004. لن تُحذف الحسابات أو التقارير. هل تريد المتابعة؟',
+    ui.ButtonSet.YES_NO
+  );
+  if (answer !== ui.Button.YES) return;
+  const cache = CacheService.getScriptCache();
+  reps.forEach(rep => {
+    rep.active = false;
+    dbUpsert_('Reps', 'id', rep);
+    cache.put('off_' + rep.id, '1', SESSION_SEC);
+  });
+  clearCache_();
+  audit_({ uid: 'SYSTEM', role: 'system' }, 'disable_demo_reps', reps.map(rep => rep.id).join(','));
+  ui.alert('تم تعطيل الحسابات التجريبية: ' + reps.map(rep => rep.name).join('، '));
+}
 
 function login_(p) {
   const cache = CacheService.getScriptCache(), key = 'try_' + (p.role === 'admin' ? 'admin' : p.code);
@@ -766,8 +815,6 @@ function setup() {
   if (!dbAll_('Settings').length) {
     Object.entries({ companyName: 'فارما كير للدعاية الطبية', shortName: 'PC', brandColor: '#0b6b6f', reportTitle: 'تقرير الزيارات اليومية للمندوب الطبي', reportPrefix: 'MR', timezone: 'Africa/Tripoli', phone: '', address: '' })
       .forEach(([k, v]) => dbAppend_('Settings', { key: k, value: v }));
-    [['أحمد العرفي', '001'], ['سارة الترهوني', '002'], ['عمر الشريف', '003'], ['فاطمة الزهراء', '004']]
-      .forEach(r => saveEntity_({ uid: 'SETUP', role: 'admin' }, { entity: 'Reps', row: { name: r[0], code: r[1], active: true } }));
     [['د. أحمد سالم', 'باطنة', 'عيادة النور', 'خاص'], ['د. محمد علي', 'قلب', 'مصحة الشفاء', 'خاص']]
       .forEach(r => saveEntity_({ uid: 'SETUP', role: 'admin' }, { entity: 'Doctors', row: { name: r[0], specialty: r[1], workplace: r[2], sector: r[3], active: true } }));
     saveEntity_({ uid: 'SETUP', role: 'admin' }, { entity: 'Pharmacies', row: { name: 'صيدلية الشفاء', location: 'شارع بن عاشور', nearFacility: 'مصحة الشفاء', active: true } });
@@ -778,5 +825,5 @@ function setup() {
   }
   Object.entries({ reportEmail: '', closeHour: '10', workDays: '0,1,2,3,4', gpsRadius: '150', gpsRefAcc: '50' }).forEach(([k, v]) => { if (settings_()[k] === undefined) dbAppend_('Settings', { key: k, value: v }); });
   clearCache_();
-  if (!sp.getProperty('ADMIN_HASH')) setAdminPassword('ChangeMe-2026'); // change immediately
+  // No default admin password is created. Run configureAdminPassword() manually.
 }
