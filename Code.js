@@ -82,6 +82,7 @@ const ROUTES = {
   save:          { role: 'admin', fn: saveEntity_ },
   saveKpi:       { role: 'admin', fn: saveKpi_ },
   saveSettings:  { role: 'admin', fn: saveSettings_ },
+  saveLogo:      { role: 'admin', fn: saveCompanyLogo_ },
   performance:   { role: 'admin', fn: performance_ },
   audit:         { role: 'admin', fn: (s, p) => dbAll_('Audit').slice(-(p.limit || 200)).reverse() }
 };
@@ -279,7 +280,7 @@ function submitReport_(s, p) {
   const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
   if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
   const rep = dbAll_('Reps').find(x => x.id === s.uid);
-  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; delete x.logo; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
+  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
   r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
   r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
   dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
@@ -432,23 +433,66 @@ function saveEntity_(s, p) {
   return row.id;
 }
 function settings_() {
-  if (_ST) return Object.assign({}, _ST);
-  const cache = CacheService.getScriptCache(), hit = cache.get('st');
-  if (hit) { _ST = JSON.parse(hit); return Object.assign({}, _ST); }
-  const o = {}; dbAll_('Settings').forEach(r => o[r.key] = r.value);
-  try { cache.put('st', JSON.stringify(o), 300); } catch (e) {}
-  _ST = o; return Object.assign({}, o);
+  let o;
+  if (_ST) o = Object.assign({}, _ST);
+  else {
+    const cache = CacheService.getScriptCache(), hit = cache.get('st');
+    if (hit) o = JSON.parse(hit);
+    else {
+      o = {}; dbAll_('Settings').forEach(r => o[r.key] = r.value);
+      try { cache.put('st', JSON.stringify(o), 300); } catch (e) {}
+    }
+    _ST = Object.assign({}, o);
+  }
+  return settingsForDisplay_(o);
 }
-const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'logo', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius'];
+// Store the logo file in Drive; only its ID is kept in Settings. Return a data URL to the UI.
+function settingsForDisplay_(o) {
+  o = Object.assign({}, o);
+  const v = String(o.logo || '');
+  if (v.indexOf('drive:') === 0) {
+    try {
+      const blob = DriveApp.getFileById(v.slice(6)).getBlob();
+      const type = blob.getContentType() || 'image/png';
+      if (!/^image\\/(png|jpeg)$/.test(type)) { o.logo = ''; return o; }
+      o.logo = 'data:' + type + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    } catch (e) { o.logo = ''; }
+  }
+  return o;
+}
+function saveCompanyLogo_(s, p) {
+  const data = String((p && p.dataUrl) || '').trim();
+  const old = String((dbAll_('Settings').find(r => r.key === 'logo') || {}).value || '');
+  let next = '';
+  if (data) {
+    const m = data.match(/^data:image\\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw new Error('صيغة الشعار غير مدعومة. استخدم PNG أو JPG.');
+    if (data.length > 45000) throw new Error('حجم الشعار كبير؛ جرّب صورة أبسط.');
+    const bytes = Utilities.base64Decode(m[2]);
+    const mime = m[1] === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = Utilities.newBlob(bytes, mime, 'medrep-logo.' + (m[1] === 'jpeg' ? 'jpg' : 'png'));
+    const folders = DriveApp.getFoldersByName('MedRep Pro Logos');
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('MedRep Pro Logos');
+    const file = folder.createFile(blob).setName('MedRep-Logo-' + Utilities.getUuid() + (m[1] === 'jpeg' ? '.jpg' : '.png'));
+    next = 'drive:' + file.getId();
+  }
+  dbUpsert_('Settings', 'key', { key: 'logo', value: next });
+  clearCache_();
+  if (old.indexOf('drive:') === 0 && old.slice(6) && old.slice(6) !== next.slice(6)) {
+    try { DriveApp.getFileById(old.slice(6)).setTrashed(true); } catch (e) {}
+  }
+  audit_(s, data ? 'save_logo' : 'remove_logo', 'Settings');
+  return true;
+}
+function authorizeLogoStorage() { DriveApp.getRootFolder().getId(); return true; }
+const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius'];
 function saveSettings_(s, p) {
   const v = p.values || {};
   Object.keys(v).forEach(k => {
     if (SETTING_KEYS.indexOf(k) < 0) throw new Error('إعداد غير مسموح: ' + k);
     let x = String(v[k] === null || v[k] === undefined ? '' : v[k]).trim();
     if (k === 'brandColor' && !/^#[0-9a-fA-F]{6}$/.test(x)) throw new Error('لون غير صالح');
-    if (k === 'logo' && x && !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(x)) throw new Error('صيغة الشعار غير مدعومة');
-    if (k === 'logo' && x.length > 45000) throw new Error('الشعار كبير جدًا');
-    if (k !== 'logo') x = x.slice(0, 200);
+    x = x.slice(0, 200);
     dbUpsert_('Settings', 'key', { key: k, value: x });
   });
   clearCache_(); audit_(s, 'save_settings', 'Settings', Object.keys(v).filter(k => k !== 'logo').join(',')); return true;
