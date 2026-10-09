@@ -454,7 +454,7 @@ function settingsForDisplay_(o) {
     try {
       const blob = DriveApp.getFileById(v.slice(6)).getBlob();
       const type = blob.getContentType() || 'image/png';
-      if (!/^image\\/(png|jpeg)$/.test(type)) { o.logo = ''; return o; }
+      if (!/^image\/(png|jpeg)$/.test(type)) { o.logo = ''; return o; }
       o.logo = 'data:' + type + ';base64,' + Utilities.base64Encode(blob.getBytes());
     } catch (e) { o.logo = ''; }
   }
@@ -465,7 +465,7 @@ function saveCompanyLogo_(s, p) {
   const old = String((dbAll_('Settings').find(r => r.key === 'logo') || {}).value || '');
   let next = '';
   if (data) {
-    const m = data.match(/^data:image\\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
+    const m = data.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
     if (!m) throw new Error('صيغة الشعار غير مدعومة. استخدم PNG أو JPG.');
     if (data.length > 45000) throw new Error('حجم الشعار كبير؛ جرّب صورة أبسط.');
     const bytes = Utilities.base64Decode(m[2]);
