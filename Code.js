@@ -190,14 +190,12 @@ function bootstrap_(s) {
 }
 
 /* ---------- reports ---------- */
+// Called only from persistReport_ while its script lock is held.
 function nextReportNo_() {
-  const lock = LockService.getScriptLock(); lock.waitLock(10000);
-  try {
-    const sp = PropertiesService.getScriptProperties(), n = (+sp.getProperty('REPORT_SEQ') || 0) + 1;
-    sp.setProperty('REPORT_SEQ', String(n));
-    const d = new Date(), pre = settings_().reportPrefix || 'MR';
-    return pre + '-' + d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0000' + n).slice(-5);
-  } finally { lock.releaseLock(); }
+  const sp = PropertiesService.getScriptProperties(), n = (+sp.getProperty('REPORT_SEQ') || 0) + 1;
+  sp.setProperty('REPORT_SEQ', String(n));
+  const d = new Date(), pre = settings_().reportPrefix || 'MR';
+  return pre + '-' + d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0000' + n).slice(-5);
 }
 const today_ = () => Utilities.formatDate(new Date(), settings_().timezone || Session.getScriptTimeZone(), 'yyyy-MM-dd');
 
@@ -235,6 +233,10 @@ function myReport_(s, p) {
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
 function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: JSON.parse(r.doctors), phs: JSON.parse(r.pharmacies) }; }
 function persistReport_(s, p) {
+  // Serialize report lookup + ID/number allocation + write to prevent concurrent saves overwriting each other.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
   const date = p.date || today_(), all = dbAll_('Reports');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ غير صالح');
   let r = all.find(x => x.repId === s.uid && x.date === date);
@@ -258,7 +260,7 @@ function persistReport_(s, p) {
   }
   const now = new Date().toISOString();
   const row = {
-    id: r ? r.id : 'REPORT-' + ('00000' + (all.length + 1)).slice(-5), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
+    id: r ? r.id : 'REPORT-' + Utilities.getUuid(), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
     status: r ? r.status : 'مسودة', notes: String(p.notes || '').slice(0, 2000),
     doctors: JSON.stringify(docs), pharmacies: JSON.stringify(phs),
     snapshot: r ? r.snapshot : '', snapshot1: r ? r.snapshot1 : '', reopens: r ? (+r.reopens || 0) : 0, createdAt: r ? r.createdAt : now, updatedAt: now, submittedAt: r ? r.submittedAt : '', reviewNote: r ? r.reviewNote : ''
@@ -266,6 +268,9 @@ function persistReport_(s, p) {
   dbUpsert_('Reports', 'id', row);
   audit_(s, r ? 'edit_report' : 'create_report', row.no);
   return row;
+  } finally {
+    lock.releaseLock();
+  }
 }
 // Submit = validate + freeze historical snapshot (names/products copied as text, immune to later edits)
 function submitReport_(s, p) {
