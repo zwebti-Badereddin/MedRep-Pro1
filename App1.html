@@ -52,22 +52,23 @@ function login(adm){
 }
 /* ===== Admin ===== */
 const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+let adminNavSeq=0;
 function adminHome(){
  const n=new Date();
  $("#app").innerHTML=`<div class="top"><div class="brandrow"><span class="mk">${esc(CFG.company.short)}</span><span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
  <div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
- const show=t=>{document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
+ const show=t=>{adminNavSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("r");
 }
 function tabR(){
  $("#av").innerHTML=`<div class="two"><div><label>المندوب</label><select id="fr"><option value="">الكل</option>${REPS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
  <div><label>الحالة</label><select id="fs"><option value="">الكل</option>${STAT.map(x=>`<option>${x}</option>`).join("")}</select></div></div>
  <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div>`;
- $("#fgo").onclick=async()=>{const q=$("#fq").value.trim(),isNo=/^[A-Za-z]+-|^\d{4,}$/.test(q);
+ $("#fgo").onclick=async()=>{const nav=adminNavSeq,q=$("#fq").value.trim(),isNo=/^[A-Za-z]+-|^\d{4,}$/.test(q);
   try{const a=await srv("listReports",{from:$("#fa").value,to:$("#fb").value,repId:$("#fr").value,status:$("#fs").value,no:isNo?q:"",q:isNo?"":q});
-   $("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';
+   if(nav!==adminNavSeq||!$("#rl"))return;$("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';
    document.querySelectorAll("#rl .row").forEach(e=>e.onclick=()=>openRep(e.dataset.id))}catch(e){toast(e.message)}};
  $("#fgo").click();
 }
@@ -83,18 +84,21 @@ async function review(ok,note){
  try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){toast(e.message)}
 }
 async function tabP(){
+ const nav=adminNavSeq;
  $("#av").innerHTML='<div class="empty">جارٍ الحساب…</div>';
  try{const a=await srv("performance",{from:$("#fa").value,to:$("#fb").value});
+  if(nav!==adminNavSeq||!$("#av"))return;
   $("#av").innerHTML=(a.map(r=>{const c=r.compliance;return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${r.rank}. ${esc(r.name)}</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
   ${r.off&&r.off.avail<r.off.total?`<div style="color:var(--mut);font-size:14px">أيام مستثناة (إجازات وعطل): ${+(r.off.total-r.off.avail).toFixed(1)} من ${r.off.total} يوم عمل</div>`:""}
   <div style="color:var(--mut);font-size:14px">الموقع: ${r.gps.ver} من ${r.gps.total} متحقق · ${r.gps.out} خارج النطاق</div>
   <div style="color:var(--mut);font-size:14px">الالتزام: ${c.onTime} من ${c.expected} في الوقت (${c.pct}%) · متأخر ${c.late} · غير مرسل ${c.missing}</div>
-  <details><summary style="padding:8px 0;color:var(--brand);cursor:pointer">تفاصيل المؤشرات</summary><div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div></details></div>`}).join("")||'<div class="empty">لا توجد بيانات.</div>')+'<div class="empty">الأهداف في جدول KPI تخص الفترة المختارة. هدف الالتزام يُحسب تلقائيًا من أيام العمل.</div>'}catch(e){toast(e.message);$("#av").innerHTML=""}
+  <details><summary style="padding:8px 0;color:var(--brand);cursor:pointer">تفاصيل المؤشرات</summary><div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div></details></div>`}).join("")||'<div class="empty">لا توجد بيانات.</div>')+'<div class="empty">الأهداف في جدول KPI تخص الفترة المختارة. هدف الالتزام يُحسب تلقائيًا من أيام العمل.</div>'}catch(e){if(nav===adminNavSeq){toast(e.message);const av=$("#av");if(av)av.innerHTML=""}}
 }
 /* ----- comparison: months (heat table) and years ----- */
 const MN=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 let CM={year:new Date().getFullYear(),metric:"score",data:null,yr:null};
 async function tabC(){
+ const nav=adminNavSeq;
  const y0=new Date().getFullYear();
  $("#av").innerHTML=`<div class="two"><div><label>السنة</label><select id="cy">${[y0,y0-1,y0-2].map(y=>`<option ${y===CM.year?"selected":""}>${y}</option>`).join("")}</select></div>
  <div><label>المؤشر</label><select id="cm"><option value="score">الدرجة %</option><option value="compliance">الالتزام %</option><option value="visits">عدد الزيارات</option></select></div></div>
@@ -103,7 +107,7 @@ async function tabC(){
  $("#cm").value=CM.metric;
  $("#cy").onchange=()=>{CM.year=+$("#cy").value;tabC()};$("#cm").onchange=()=>{CM.metric=$("#cm").value;drawC()};
  $("#rg").onclick=async()=>{try{await srv("closeMonth",{ym:CM.year+"-"+pad(+$("#rm").value)});toast("تمت إعادة الحساب");tabC()}catch(e){toast(e.message)}};
- try{CM.data=await srv("trend",{year:CM.year});drawC();CM.yr=await srv("yearly",{years:[CM.year-2,CM.year-1,CM.year]});drawY()}catch(e){toast(e.message)}
+ try{const year=CM.year;const data=await srv("trend",{year});if(nav!==adminNavSeq||!$("#cb"))return;CM.data=data;drawC();const yearly=await srv("yearly",{years:[year-2,year-1,year]});if(nav!==adminNavSeq||!$("#cyr"))return;CM.yr=yearly;drawY()}catch(e){if(nav===adminNavSeq)toast(e.message)}
 }
 function drawC(){if(!$("#cb"))return;const d=CM.data,k=CM.metric,col=v=>k==="visits"?"":v>=85?"rgba(23,104,58,.22)":v>=60?"rgba(255,170,0,.28)":"rgba(179,38,30,.22)",fmt=v=>k==="visits"?v:v+"%";
  const body=d.reps.map(rp=>{const vs=d.months.map(m=>{const r=m.rows&&m.rows.find(x=>x.repId===rp.id);return r?r[k]:null}),ok=vs.filter(v=>v!=null),avg=ok.length?Math.round(ok.reduce((a,b)=>a+b,0)/ok.length):null;
