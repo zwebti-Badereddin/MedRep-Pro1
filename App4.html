@@ -30,11 +30,12 @@ async function screenPerf(ym){
   <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){$("#pb2").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
 
 /* ===== Admin settings: company / KPI / products ===== */
-let SS="co",LG;
+let SS="co",LG,settingsViewSeq=0;
 function tabSet(){
+ const view=++settingsViewSeq;
  $("#av").innerHTML=`<div class="tabs" style="margin:0 0 12px"><button class="btn" data-s="co">الشركة والنظام</button><button class="btn" data-s="kpi">المؤشرات</button><button class="btn" data-s="prod">المنتجات</button><button class="btn" data-s="hol">العطل</button></div><div id="sv2"></div>`;
  document.querySelectorAll("[data-s]").forEach(b=>{b.classList.toggle("on",b.dataset.s===SS);b.onclick=()=>{SS=b.dataset.s;tabSet()}});
- ({co:tabCo,kpi:tabKpi,prod:tabProd,hol:tabHol})[SS]();
+ ({co:tabCo,kpi:()=>tabKpi(view),prod:()=>tabProd(view),hol:()=>tabHol(view)})[SS]();
 }
 function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.onload=()=>{const im=new Image();im.onerror=()=>cb(null);im.onload=()=>{
  for(const max of [200,160,120,96]){const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));const x=c.getContext("2d");x.drawImage(im,0,0,c.width,c.height);
@@ -62,16 +63,18 @@ function tabCo(){
    Object.assign(CFG.st,vals,{remindEnabled:$("#c_r").checked,remindHour:$("#c_h").value,remindEvening:$("#c_h2").value});Object.assign(CFG.company,{name:vals.companyName,short:vals.shortName,color:vals.brandColor,title:vals.reportTitle,phone:vals.phone,address:vals.address});
    document.documentElement.style.setProperty("--brand",vals.brandColor);if(rm)$("#c_err").textContent=rm;else toast("تم الحفظ")}catch(e){$("#c_err").textContent=e.message}b.disabled=false};
 }
-async function tabKpi(){
- $("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';
+async function tabKpi(view=settingsViewSeq){
+ const host=()=>view===settingsViewSeq?$("#sv2"):null;const target=host();if(!target)return;
+ target.innerHTML='<div class="empty">جارٍ التحميل…</div>';
  try{const a=await srv("kpiList");
-  $("#sv2").innerHTML=a.map(k=>`<div class="row kr" style="display:block" data-k="${esc(k.key)}"><b>${esc(k.name)}</b><div class="two"><div><label>${k.key==="compliance"?"الهدف (يُحسب تلقائيًا)":"الهدف للشهر"}</label><input class="kt_t" type="number" min="0" value="${esc(k.target)}" ${k.key==="compliance"?"disabled":""}></div><div><label>الوزن</label><input class="kt_w" type="number" min="0" value="${esc(k.weight)}"></div></div>
+  const target=host();if(!target)return;
+  target.innerHTML=a.map(k=>`<div class="row kr" style="display:block" data-k="${esc(k.key)}"><b>${esc(k.name)}</b><div class="two"><div><label>${k.key==="compliance"?"الهدف (يُحسب تلقائيًا)":"الهدف للشهر"}</label><input class="kt_t" type="number" min="0" value="${esc(k.target)}" ${k.key==="compliance"?"disabled":""}></div><div><label>الوزن</label><input class="kt_w" type="number" min="0" value="${esc(k.weight)}"></div></div>
    <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input class="kt_a" type="checkbox" style="width:auto;min-height:0" ${String(k.active)!=="false"?"checked":""}> مفعّل</label></div>`).join("")+'<div id="kw" class="empty"></div><div class="err" id="k_err"></div><button class="btn pri full" id="kgo">حفظ المؤشرات</button><div class="empty" style="margin-top:8px">بعد التعديل أعد حساب الأشهر المغلقة من تبويب المقارنة إن أردت أن تتأثر بالقيم الجديدة.</div>';
   const sum=()=>{let t=0;document.querySelectorAll(".kr").forEach(r=>{if(r.querySelector(".kt_a").checked)t+=+r.querySelector(".kt_w").value||0});$("#kw").textContent="مجموع أوزان المؤشرات المفعّلة: "+t+" (تُحتسب النسب منه تلقائيًا)"};
   document.querySelectorAll(".kr input").forEach(i=>i.oninput=sum);sum();
-  $("#kgo").onclick=async()=>{try{await srv("saveKpi",{rows:[...document.querySelectorAll(".kr")].map(r=>({key:r.dataset.k,target:+r.querySelector(".kt_t").value||0,weight:+r.querySelector(".kt_w").value||0,active:r.querySelector(".kt_a").checked}))});toast("تم الحفظ")}catch(e){$("#k_err").textContent=e.message}}}catch(e){toast(e.message)}}
+  $("#kgo").onclick=async()=>{try{await srv("saveKpi",{rows:[...document.querySelectorAll(".kr")].map(r=>({key:r.dataset.k,target:+r.querySelector(".kt_t").value||0,weight:+r.querySelector(".kt_w").value||0,active:r.querySelector(".kt_a").checked}))});toast("تم الحفظ")}catch(e){$("#k_err").textContent=e.message}}}catch(e){if(host())toast(e.message)}}
 let PL=[];
-async function tabProd(){$("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';try{PL=await srv("list",{entity:"Products"});drawProd()}catch(e){toast(e.message)}}
+async function tabProd(view=settingsViewSeq){const host=()=>view===settingsViewSeq?$("#sv2"):null;const target=host();if(!target)return;target.innerHTML='<div class="empty">جارٍ التحميل…</div>';try{const rows=await srv("list",{entity:"Products"});if(!host())return;PL=rows;drawProd()}catch(e){if(host())toast(e.message)}}
 function drawProd(){if(!$("#sv2"))return;const off=p=>p.status==="متوقف";
  $("#sv2").innerHTML='<button class="btn dash" id="padd">＋ إضافة منتج</button><div style="height:10px"></div>'+(PL.map(p=>`<div class="row" style="display:block;${off(p)?"opacity:.65":""}" data-id="${esc(p.id)}"><b>${esc(p.name)}</b> <span class="st ${off(p)?"s4":"s3"}">${off(p)?"متوقف":"نشط"}</span><div style="color:var(--mut);font-size:13px">${esc(p.category||"بدون تصنيف")}</div><div class="acts"><button class="mini" data-a="e">تعديل</button><button class="mini" data-a="t">${off(p)?"تفعيل":"إيقاف"}</button></div></div>`).join("")||'<div class="empty">لا توجد منتجات.</div>');
  $("#padd").onclick=()=>pForm();
@@ -92,11 +95,13 @@ async function lForm(r){
   $("#sv").onclick=async()=>{try{await srv("leaveSave",{row:{repId:r.id,type:$("#l_t").value,from:$("#l_f").value,to:$("#l_e").value,note:$("#l_n").value}});toast("تم التسجيل");draw()}catch(e){$("#ferr").textContent=e.message}}};
  $("#ov").classList.add("on");await draw();
 }
-async function tabHol(){
- $("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';
+async function tabHol(view=settingsViewSeq){
+ const host=()=>view===settingsViewSeq?$("#sv2"):null;const target=host();if(!target)return;
+ target.innerHTML='<div class="empty">جارٍ التحميل…</div>';
  try{const a=await srv("holidaysList");
-  $("#sv2").innerHTML=`<div class="empty">العطل الرسمية تُستثنى لجميع المندوبين: لا يُطلب فيها تقرير وتُخفَّض الأهداف.</div>`+a.map(h=>`<div class="row"><div class="t"><b>${esc(h.name)}</b><small>${esc(h.date)}</small></div><button class="del" data-id="${esc(h.id)}">✕</button></div>`).join("")
+  const target=host();if(!target)return;
+  target.innerHTML=`<div class="empty">العطل الرسمية تُستثنى لجميع المندوبين: لا يُطلب فيها تقرير وتُخفَّض الأهداف.</div>`+a.map(h=>`<div class="row"><div class="t"><b>${esc(h.name)}</b><small>${esc(h.date)}</small></div><button class="del" data-id="${esc(h.id)}">✕</button></div>`).join("")
   +`<div class="sec"><h3>إضافة عطلة</h3></div><label>التاريخ</label><input type="date" id="h_d" value="${isoD(new Date())}"><label>الاسم</label><input id="h_n" placeholder="مثل: عيد الفطر"><div class="err" id="h_err"></div><button class="btn pri full" id="h_go" style="margin-top:14px">إضافة</button>`;
   document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});tabHol()}catch(e){toast(e.message)}});
-  $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});toast("تمت الإضافة");tabHol()}catch(e){$("#h_err").textContent=e.message}}}catch(e){toast(e.message)}}
+  $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});toast("تمت الإضافة");tabHol()}catch(e){$("#h_err").textContent=e.message}}}catch(e){if(host())toast(e.message)}}
 </script>
