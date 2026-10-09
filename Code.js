@@ -446,45 +446,28 @@ function settings_() {
   }
   return settingsForDisplay_(o);
 }
-// Store the logo file in Drive; only its ID is kept in Settings. Return a data URL to the UI.
+// Store a logo URL only; this feature does not require DriveApp permissions.
 function settingsForDisplay_(o) {
   o = Object.assign({}, o);
   const v = String(o.logo || '');
-  if (v.indexOf('drive:') === 0) {
-    try {
-      const blob = DriveApp.getFileById(v.slice(6)).getBlob();
-      const type = blob.getContentType() || 'image/png';
-      if (!/^image\/(png|jpeg)$/.test(type)) { o.logo = ''; return o; }
-      o.logo = 'data:' + type + ';base64,' + Utilities.base64Encode(blob.getBytes());
-    } catch (e) { o.logo = ''; }
-  }
+  // Backward compatibility for an older Drive file ID saved by the previous uploader.
+  if (v.indexOf('drive:') === 0) o.logo = 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(v.slice(6));
   return o;
 }
 function saveCompanyLogo_(s, p) {
-  const data = String((p && p.dataUrl) || '').trim();
-  const old = String((dbAll_('Settings').find(r => r.key === 'logo') || {}).value || '');
-  let next = '';
-  if (data) {
-    const m = data.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
-    if (!m) throw new Error('صيغة الشعار غير مدعومة. استخدم PNG أو JPG.');
-    if (data.length > 45000) throw new Error('حجم الشعار كبير؛ جرّب صورة أبسط.');
-    const bytes = Utilities.base64Decode(m[2]);
-    const mime = m[1] === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const blob = Utilities.newBlob(bytes, mime, 'medrep-logo.' + (m[1] === 'jpeg' ? 'jpg' : 'png'));
-    const folders = DriveApp.getFoldersByName('MedRep Pro Logos');
-    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('MedRep Pro Logos');
-    const file = folder.createFile(blob).setName('MedRep-Logo-' + Utilities.getUuid() + (m[1] === 'jpeg' ? '.jpg' : '.png'));
-    next = 'drive:' + file.getId();
+  let next = String((p && p.url) || '').trim();
+  if (next) {
+    if (!/^https?:\/\//i.test(next)) throw new Error('أدخل رابط صورة يبدأ بـ https:// أو http://');
+    // Accept common Google Drive share links and convert them to an image URL.
+    const driveId = next.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?.*?id=)([A-Za-z0-9_-]+)/);
+    if (driveId) next = 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(driveId[1]);
+    if (next.length > 2000) throw new Error('رابط الصورة طويل جدًا.');
   }
   dbUpsert_('Settings', 'key', { key: 'logo', value: next });
   clearCache_();
-  if (old.indexOf('drive:') === 0 && old.slice(6) && old.slice(6) !== next.slice(6)) {
-    try { DriveApp.getFileById(old.slice(6)).setTrashed(true); } catch (e) {}
-  }
-  audit_(s, data ? 'save_logo' : 'remove_logo', 'Settings');
+  audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
   return true;
 }
-function authorizeLogoStorage() { DriveApp.getRootFolder().getId(); return true; }
 const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius'];
 function saveSettings_(s, p) {
   const v = p.values || {};
