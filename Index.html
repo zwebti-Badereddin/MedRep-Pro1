@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MedRep Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<?!= include('Style'); ?>
+</head>
+<body>
+<script>
+/* load guard: separate block so it still runs even if the main script has a syntax error / is truncated */
+window.__ok=false;window.__errs=[];window.__need=["App1","App2","App3","App4"];
+window.addEventListener("error",function(e){window.__errs.push(e.message+" (line "+e.lineno+")")});
+window.addEventListener("load",function(){setTimeout(function(){var miss=window.__need.filter(function(n){return (window.__parts||[]).indexOf(n)<0});if(window.__ok&&!window.__errs.length&&!miss.length)return;
+ var d=document.createElement("div");d.dir="rtl";d.style.cssText="margin:0;padding:14px;background:#fde3e1;color:#a3261d;font:14px/1.7 Tahoma,Arial,sans-serif";
+ d.innerHTML=(miss.length?"تعذّر تشغيل الصفحة. الملفات الناقصة أو غير المكتملة: "+miss.join("، ")+". أعد لصقها كاملة (آخر سطر في كل ملف يجب أن يكون &lt;/script&gt;).":"حدث خطأ أثناء التشغيل:")+'<pre dir="ltr" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">'+(window.__errs.join("\n")||"no error message")+"</pre>";
+ document.body.insertBefore(d,document.body.firstChild)},500)});
+</script>
+<div id="busy"></div><div id="app"><div style="padding:60px 20px;text-align:center;color:#5d7274;font:16px Tahoma,Arial,sans-serif">جارٍ التحميل…</div></div>
+<div id="pv"><div class="pvbar">
+ <button class="btn" id="pvx">إغلاق</button>
+ <button class="btn" id="pvp">طباعة / PDF</button>
+ <button class="btn" id="pvs">مشاركة</button>
+ <button class="btn pri" id="pvsend">إرسال التقرير</button><button class="btn pri" id="pvok" style="display:none">اعتماد</button><button class="btn" id="pv1" style="display:none">النسخة الأولى</button><button class="btn" id="pvret" style="display:none">إعادة للمندوب</button>
+</div><div class="pvscroll"><div id="stage"></div></div></div>
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<?!= include('App1'); ?>
+<?!= include('App2'); ?>
+<?!= include('App3'); ?>
+<?!= include('App4'); ?>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<script>
+(window.__parts=window.__parts||[]).push("App2");
+function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.map(rp=>{const a=y.avg[rp.id]||{},c=y.years.map(v=>a[v]),l=c[c.length-1],p=c[c.length-2],dl=(l!=null&&p!=null)?l-p:null;
+ return `<tr><th>${esc(rp.name)}</th>${c.map(v=>`<td>${v==null?"—":v+"%"}</td>`).join("")}<td>${dl==null?"—":(dl>0?"▲ ":dl<0?"▼ ":"")+Math.abs(dl)}</td></tr>`}).join("");
+ $("#cyr").innerHTML=`<h3 style="margin:0 0 8px">متوسط الدرجة بين السنوات</h3><div style="overflow-x:auto"><table class="kt"><tr><th>المندوب</th>${y.years.map(v=>`<th>${v}</th>`).join("")}<th>التغيّر</th></tr>${rows}</table></div>`}
+/* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
+let MS={ent:"Doctors",rows:[]};
+function tabM(){
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
+ <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
+ document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
+ if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
+ $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
+}
+async function loadM(){try{MS.rows=await srv(MS.ent==="Reps"?"repsList":"masterList",{entity:MS.ent});if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){toast(e.message);return}drawM()}
+function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();
+ const f=$("#mf").value,q=norm($("#mq").value),dr=MS.ent==="Doctors",isOff=r=>String(r.active)==="false",isNew=r=>!!r.addedBy&&String(r.reviewed)!=="true"&&!isOff(r);
+ const a=MS.rows.filter(r=>(f==="new"?isNew(r):f==="off"?isOff(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
+ $("#ml").innerHTML=a.length?a.map(r=>{const hasL=r.lat!==""&&r.lat!=null&&!isNaN(+r.lat),pend=hasL&&(r.refState==="مؤقت"||r.refState==="متعارض"),ls=!hasL?"لا موقع مسجّل":pend?"الموقع قيد التأكيد":"الموقع مؤكد ✓",by=isNew(r)?((REPS.find(x=>x.id===r.addedBy)||{}).name||""):"",sub=dr?[r.specialty,r.workplace].filter(Boolean).join(" · "):[r.location,r.nearFacility].filter(Boolean).join(" · ");
+  return `<div class="row" data-id="${esc(r.id)}" style="display:block;${isOff(r)?"opacity:.65":""}"><b>${esc(r.name)}</b>${isNew(r)?' <span class="st s1">جديد</span>':""}
+  <div style="color:var(--mut);font-size:13px">${esc(sub)}${sub?" · ":""}${r.uses} زيارة · ${ls}${by?" · أضافه "+esc(by):""}</div>
+  <div class="acts">${isNew(r)?'<button class="mini" data-a="review">اعتماد</button>':""}<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button>${pend?'<button class="mini" data-a="approveLoc">اعتماد الموقع</button>':""}${hasL?`<a class="mini" href="https://www.google.com/maps?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">الخريطة</a><button class="mini" data-a="clearLoc">مسح الموقع</button>`:""}<button class="mini" data-a="toggle">${isOff(r)?"تفعيل":"تعطيل"}</button></div></div>`}).join(""):'<div class="empty">لا توجد سجلات.</div>';
+ document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),o=b.dataset.a;
+  if(o==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
+  if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else mAct(id,o)});
+}
+function drawR(){if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false";
+ const a=MS.rows.filter(r=>(f==="act"?!off(r):f==="off"?off(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
+ $("#ml").innerHTML='<button class="btn dash" id="radd">＋ إضافة مندوب</button><div style="height:10px"></div>'+(a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="display:block;${off(r)?"opacity:.65":""}"><b>${esc(r.name)}</b> <span class="st ${off(r)?"s4":"s3"}">${off(r)?"معطّل":"فعّال"}</span>
+  <div style="color:var(--mut);font-size:13px">${r.count} تقرير · آخر تقرير: ${esc(r.last||"—")}${r.phone?" · "+esc(r.phone):""}${r.email?"":" · ⚠ بلا بريد (لن يصله تذكير)"}</div>
+  <div class="acts"><button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="lv">إجازة</button><button class="mini" data-a="toggle">${off(r)?"تفعيل":"تعطيل"}</button></div></div>`).join("")||'<div class="empty">لا يوجد مندوبون.</div>');
+ $("#radd").onclick=()=>rForm();
+ document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const r=MS.rows.find(x=>x.id===b.closest(".row").dataset.id);
+  if(b.dataset.a==="edit")rForm(r);else if(b.dataset.a==="lv")lForm(r);else{if(!off(r)&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد التعطيل؟";return}rSave({id:r.id,active:off(r)})}});}
+function rForm(r){const fl=(i,l,v,x)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}" ${x||""}>`;
+ $("#modal").innerHTML=`<h3>${r?"تعديل مندوب":"إضافة مندوب"}</h3>${fl("r_n","الاسم *",r&&r.name)}${fl("r_p","الهاتف (اختياري)",r&&r.phone,'inputmode="tel"')}${fl("r_e","البريد الإلكتروني (للتذكيرات، اختياري)",r&&r.email,'inputmode="email"')}${fl("r_c",r?"رمز دخول جديد (اتركه فارغًا ليبقى كما هو)":"رمز الدخول (3 أرقام) *","",'inputmode="numeric" maxlength="3" autocomplete="off"')}
+ <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{3}$/.test(c)){$("#ferr").textContent="الرمز يجب أن يكون 3 أرقام.";return}
+  rSave({id:r?r.id:undefined,name:$("#r_n").value,phone:$("#r_p").value,email:$("#r_e").value,code:c||undefined})};}
+async function rSave(row){try{await srv("repSave",{row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+async function mAct(id,op,x){try{await srv("masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+function mEdit(r){const d=MS.ent==="Doctors",fl=(i,l,v)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}">`;
+ $("#modal").innerHTML=`<h3>تعديل السجل</h3>${fl("e_n","الاسم *",r.name)}${d?fl("e_s","التخصص",r.specialty)+fl("e_w","مكان العمل",r.workplace)+`<label>القطاع</label><select id="e_c"><option ${r.sector==="خاص"?"selected":""}>خاص</option><option ${r.sector==="عام"?"selected":""}>عام</option></select>`:fl("e_l","الموقع",r.location)+fl("e_f","أقرب منشأة",r.nearFacility)}
+ <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#sv").onclick=()=>mAct(r.id,"edit",{row:d?{name:$("#e_n").value,specialty:$("#e_s").value,workplace:$("#e_w").value,sector:$("#e_c").value}:{name:$("#e_n").value,location:$("#e_l").value,nearFacility:$("#e_f").value}});}
+function mMerge(r){const oth=MS.rows.filter(x=>x.id!==r.id&&String(x.active)!=="false").sort((a,b)=>a.name.localeCompare(b.name,"ar"));
+ $("#modal").innerHTML=`<h3>دمج «${esc(r.name)}»</h3><p style="color:var(--mut);font-size:14px;line-height:1.7">تُنقل زياراته المسجّلة إلى السجل الذي تختاره ويُعطَّل هذا السجل. التقارير المرسلة تحتفظ بنسختها التاريخية كما أُرسلت.</p>
+ <label>دمج داخل</label><input id="m_q" placeholder="ابحث"><select id="m_s" size="6" style="height:auto;margin-top:8px"></select><div class="err" id="ferr"></div>
+ <div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">دمج</button></div>`;
+ const fill=()=>{const q=norm($("#m_q").value);$("#m_s").innerHTML=oth.filter(x=>!q||norm(x.name).indexOf(q)>=0).slice(0,50).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")};fill();$("#m_q").oninput=fill;
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#sv").onclick=()=>{const v=$("#m_s").value;if(!v){$("#ferr").textContent="اختر السجل المراد الدمج داخله.";return}mAct(r.id,"merge",{into:v})};}
+function tabS(){
+ const st=CFG.st||{};
+ $("#av").innerHTML=`<label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="s_e" type="email" multiple value="${esc(st.reportEmail||"")}">
+ <label>ساعة إغلاق التقرير (التقرير يُسلَّم قبلها في اليوم التالي)</label><input id="s_h" type="number" min="0" max="23" value="${esc(st.closeHour||10)}">
+ <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="s_w" value="${esc(st.workDays||"0,1,2,3,4")}"><label>نطاق التحقق من الموقع (بالمتر)</label><input id="s_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"><button class="btn pri full" id="s_go" style="margin-top:14px">حفظ الإعدادات</button>`;
+ $("#s_go").onclick=async()=>{try{const v={reportEmail:$("#s_e").value.trim(),closeHour:$("#s_h").value,workDays:$("#s_w").value.replace(/\s/g,""),gpsRadius:$("#s_g").value};await srv("saveSettings",{values:v});Object.assign(CFG.st,v);toast("تم حفظ الإعدادات")}catch(e){toast(e.message)}};
+}
+$("#pv1").onclick=()=>{CUR.first=!CUR.first;$("#stage").innerHTML=CUR.draw(CUR.first?CUR.snapshot1:CUR.x0);fit();$("#pv1").textContent=CUR.first?"النسخة الحالية":"النسخة الأولى"};
+$("#pvok").onclick=()=>review(true,"");
+$("#pvret").onclick=()=>{$("#modal").innerHTML=`<h3>إعادة التقرير للمندوب</h3><label>ملاحظة للمندوب *</label><textarea id="rn" rows="3"></textarea><div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">إعادة</button></div>`;$("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");$("#sv").onclick=()=>review(false,$("#rn").value.trim())};
+async function loadDay(d){try{S=mapRep(await srv("myReport",{date:d}));PREV=await srv("prevInfo");home()}catch(e){toast(e.message)}}
+function banner(){let h="";const bx=(t,b)=>`<div class="row" style="display:block;background:var(--soft);border-color:var(--brand)"><div>${t}</div><div class="acts">${b}</div></div>`;
+ if(S.date!==TD)h+=bx(`أنت تحرر تقرير يوم <b>${esc(S.date)}</b>`,'<button class="mini" id="bk">العودة لتقرير اليوم</button>');
+ else if(PREV&&PREV.open&&PREV.work&&(!PREV.status||["مسودة","معاد للمندوب"].indexOf(PREV.status)>=0))h+=bx(`لديك تقرير الأمس (${esc(PREV.date)}) لم يُرسل بعد.`,'<button class="mini" id="py">كتابته الآن</button>');
+ if(PREV&&PREV.returned>0&&S.date===TD)h+=bx(`أعادت الإدارة ${PREV.returned} تقرير إليك للتعديل.`,'<button class="mini" id="rh">عرض تقاريري</button>');
+ if(S.status==="مرسل")h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.",'<button class="mini" id="ro">إعادة فتح للتعديل</button>');
+ return h}
+function home(){
+ const di=dateInfo(S.date);
+ $("#app").innerHTML=`<div class="top"><div class="brandrow"><span class="mk">${esc(CFG.company.short)}</span><span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div>
+ <div class="sub">تقرير الزيارات اليومية</div><h2>${esc(rep.name)}</h2><div class="meta"><span>${di.day} ${di.date}</span><span>${esc(S.no||"تقرير جديد")}</span><span class="chip">${esc(S.status)}</span></div>
+ <div class="stats"><div><b>${S.docs.length}</b>أطباء</div><div><b>${S.phs.length}</b>صيدليات</div><div><b>${S.docs.length+S.phs.length}</b>الإجمالي</div></div></div>
+ ${repNav("t")}
+ <div class="wrap">
+ ${banner()}<label for="notes">ملاحظة اليوم</label><textarea id="notes" rows="3" placeholder="ملاحظات عامة عن يوم العمل">${esc(S.notes)}</textarea>
+ <div class="sec"><h3>👨‍⚕️ زيارات الأطباء</h3><span>${S.docs.length}</span></div>
+ ${S.docs.length?S.docs.map((v,i)=>rowHtml("d",v,i,`${esc(v.name)} — ${esc(v.specialty)}`,[v.intro,v.remind,v.place,v.time,v.sector].filter(Boolean).join(" · "))).join(""):'<div class="empty">لا توجد زيارات بعد.</div>'}
+ <button class="btn dash" data-add="d">＋ إضافة زيارة طبيب</button>
+ <div class="sec"><h3>🏥 زيارات الصيدليات</h3><span>${S.phs.length}</span></div>
+ ${S.phs.length?S.phs.map((v,i)=>rowHtml("p",v,i,esc(v.name),[v.loc,v.time,v.product,v.order].filter(Boolean).join(" · "))).join(""):'<div class="empty">لا توجد زيارات بعد.</div>'}
+ <button class="btn dash" data-add="p">＋ إضافة زيارة صيدلية</button><div style="height:20px"></div></div>
+ <div class="bar"><button class="btn" id="draft">حفظ مسودة</button><button class="btn pri" id="review">مراجعة التقرير</button></div>`;
+ $("#notes").oninput=e=>{S.notes=e.target.value;auto()};
+ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>form(b.dataset.add));
+ document.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>form(b.dataset.ed[0],+b.dataset.ed.slice(1)));
+ document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{const k=b.dataset.del[0]==="d"?"docs":"phs";if(confirm("حذف هذه الزيارة؟")){S[k].splice(+b.dataset.del.slice(1),1);auto();home()}});
+ $("#draft").onclick=async()=>{try{await saveNow();home();toast("تم حفظ المسودة")}catch(e){toast(e.message)}};
+ $("#review").onclick=preview;bindNav();if($("#rh"))$("#rh").onclick=screenHistory;
+ if($("#bk"))$("#bk").onclick=()=>loadDay(TD);if($("#py"))$("#py").onclick=()=>loadDay(PREV.date);
+ if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{await srv("reopenReport",{id:S.id});await loadDay(S.date)}catch(e){toast(e.message)}};
+ $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
+ if(locked()){$("#notes").disabled=true;document.querySelectorAll("[data-add],[data-ed],[data-del],#draft").forEach(e=>e.style.display="none")}
+}
+const rowHtml=(k,v,i,t,s)=>`<div class="row"><span class="n">${String(i+1).padStart(2,"0")}</span><div class="t"><b>${t}</b><small>${esc(s)}</small></div><button data-ed="${k}${i}">تعديل</button><button class="del" data-del="${k}${i}" aria-label="حذف">✕</button></div>`;
+let t0;function auto(){if(locked())return;clearTimeout(t0);t0=setTimeout(()=>saveNow().catch(()=>{}),800)}
+
+const opts=(a,v)=>a.map(x=>`<option ${x===v?"selected":""}>${esc(x)}</option>`).join("");
+const seg=(n,v)=>`<div class="seg">${["صباحًا","مساءً"].map(x=>`<label><input type="radio" name="${n}" value="${x}" ${x===v?"checked":""}><span>${x}</span></label>`).join("")}</div>`;
+const norm=t=>String(t||"").toLowerCase().replace(/[\u064B-\u0652\u0640]/g,"").replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/^\s*(د\s*\.?|dr\.?)\s*/i,"").replace(/\s+/g," ").trim();
+let PK={rec:null,isNew:false};
+/* searchable list: pick an existing record, or add a new one (saved immediately on visit save) */
+</script>

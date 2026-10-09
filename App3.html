@@ -1,0 +1,95 @@
+<script>
+(window.__parts=window.__parts||[]).push("App3");
+function setupPicker(recs,fill,lbl){
+ const inp=$("#f_name"),box=$("#f_name_l"),hint=$("#f_name_h");
+ const sub=r=>r.specialty?(r.specialty+(r.workplace?" · "+r.workplace:"")):(r.location||"");
+ const draw=()=>{const q=norm(inp.value),t=inp.value.trim(),m=recs.filter(r=>!q||norm(r.name).indexOf(q)>=0).slice(0,40);
+  box.innerHTML=m.map((r,i)=>`<div class="pi" data-i="${i}">${esc(r.name)}<small>${esc(sub(r))}</small></div>`).join("")+(t&&!recs.some(r=>norm(r.name)===q)?`<div class="pi add" data-a="1">＋ إضافة ${lbl} «${esc(t)}»</div>`:"");
+  box.style.display=box.innerHTML?"block":"none";box._m=m};
+ inp.oninput=()=>{PK={rec:null,isNew:false};hint.textContent="";draw()};inp.onfocus=draw;
+ inp.onblur=()=>setTimeout(()=>{box.style.display="none"},180);
+ box.onpointerdown=e=>{const it=e.target.closest(".pi");if(!it)return;e.preventDefault();
+  if(it.dataset.a){PK={rec:null,isNew:true};hint.textContent="✓ سيُضاف إلى القائمة عند حفظ الزيارة"}
+  else{const r=box._m[+it.dataset.i];PK={rec:r,isNew:false};inp.value=r.name;hint.textContent="";fill(r)}
+  box.style.display="none"};
+}
+function form(k,idx){
+ const cur=idx!=null?(k==="d"?S.docs[idx]:S.phs[idx]):{};
+ const f=n=>esc(cur[n]||"");
+ const html=k==="d"?`<h3>${idx!=null?"تعديل":"إضافة"} زيارة طبيب</h3><div id="geo" class="geo"></div>
+ <label>اسم الطبيب *</label><div class="pk"><input id="f_name" autocomplete="off" placeholder="اكتب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
+ <label>التخصص *</label><select id="f_spec">${opts(CFG.specialties,cur.specialty)}</select>
+ <div class="two"><div><label>للتعريف *</label><select id="f_intro">${opts(CFG.products,cur.intro)}</select></div><div><label>للتذكير</label><select id="f_remind">${opts(CFG.samples,cur.remind)}</select></div></div>
+ <label>مكان العمل</label><input id="f_place" list="wl" value="${f("place")}"><datalist id="wl">${CFG.workplaces.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+ <label>وقت الزيارة</label>${seg("time",cur.time||"صباحًا")}
+ <label>القطاع</label><div class="seg">${["خاص","عام"].map(x=>`<label><input type="radio" name="sector" value="${x}" ${x===(cur.sector||"خاص")?"checked":""}><span>${x}</span></label>`).join("")}</div>
+ <div class="two"><div><label>عينة مجانية 1</label><select id="f_s1">${opts(CFG.samples,cur.s1)}</select></div><div><label>عينة مجانية 2</label><select id="f_s2">${opts(CFG.samples,cur.s2)}</select></div></div>`
+ :`<h3>${idx!=null?"تعديل":"إضافة"} زيارة صيدلية</h3><div id="geo" class="geo"></div>
+ <label>اسم الصيدلية *</label><div class="pk"><input id="f_name" autocomplete="off" placeholder="اكتب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
+ <label>موقع الصيدلية</label><input id="f_loc" value="${f("loc")}">
+ <label>أقرب عيادة / مستشفى</label><input id="f_near" value="${f("near")}">
+ <label>وقت الزيارة</label>${seg("time",cur.time||"صباحًا")}
+ <label>المنتج المراد التعريف به</label><select id="f_product">${opts(CFG.products,cur.product)}</select>
+ <label>النشاط داخل الصيدلية</label><input id="f_act" value="${f("act")}">
+ <label>الطلبية</label><input id="f_order" value="${f("order")}">`;
+ $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
+ $("#ov").classList.add("on");if(idx==null)startGeo();
+ {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
+  setupPicker(recs,k==="d"?(r=>{const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
+   if(r.workplace)$("#f_place").value=r.workplace;const rd=document.querySelector(`input[name=sector][value="${r.sector}"]`);if(rd)rd.checked=true}):(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة")}
+ $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on")};
+ $("#sv").onclick=async()=>{
+  const g=id=>{const e=$("#"+id);return e?e.value.trim():""},r=n=>document.querySelector(`input[name=${n}]:checked`)?.value||"";
+  const typed=g("f_name");if(!typed){$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
+  const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
+  if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
+   try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:g("f_place"),sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
+    if(!recs.some(x=>x.id===rec.id))recs.push(rec)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
+  const v=k==="d"?{name:rec.name,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:g("f_place"),time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
+   :{name:rec.name,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
+  const arr=k==="d"?S.docs:S.phs;let ref;
+  if(idx!=null){v.gps=cur.gps;arr[idx]=v;ref=v}else{v.gps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:{status:"غير متاح"};arr.push(v);ref=v}
+  stopGeo();$("#ov").classList.remove("on");auto();home();
+ };
+}
+/* GPS is optional and never blocks saving: visit is stored first, location attaches later if available */
+function grabGps(v){
+ if(!navigator.geolocation)return;
+ try{navigator.geolocation.getCurrentPosition(p=>{v.gps={status:p.coords.accuracy<=100?"تم التحقق":"غير متاح",lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy,ts:p.timestamp};auto()},()=>{},{timeout:5000,maximumAge:60000})}catch(e){}
+}
+
+/* ===== Report template: Report Data -> render() -> Preview / Print / PDF ===== */
+function render(d){
+  const c=d.company,p2=n=>String(n).padStart(2,"0"),F=(l,t)=>t?`<div class="c"><small>${l}</small>${esc(t)}</div>`:"";
+  const gpt=v=>{const g=v.gps||{};return d.adm?(g.status||"غير متاح")+(g.dist!=null?" ("+g.dist+" م)":""):(g.status==="تم التحقق"?"تم التحقق":g.status==="مرجع غير مؤكد"?"قيد التأكيد":"غير متاح")};
+  const docs=d.docs.map((v,i)=>{const sm=[...new Set([v.s1,v.s2].filter(x=>x&&x!=="—"))].join(" + "),rm=v.remind&&v.remind!=="—"?v.remind:"",pu=v.intro&&rm?"تعريف وتذكير":v.intro?"تعريف":rm?"تذكير":"";
+   return `<div class="v"><div class="h"><i>${p2(i+1)}</i><span><b>اسم الطبيب:</b> ${esc(v.name)}</span></div><div class="g">${F("التخصص",v.specialty)}${F("مكان العمل",v.place)}${F("القطاع",v.sector)}${F("وقت الزيارة",v.time)}${F("الغرض من الزيارة",pu)}${F("المنتج المعرَّف به",v.intro)}${F("المنتج المذكَّر به",rm)}${F("العينات المجانية",sm)}${F("التحقق من الموقع",gpt(v))}</div></div>`}).join("");
+  const phs=d.phs.map((v,i)=>`<div class="v"><div class="h"><i>${p2(i+1)}</i><span><b>اسم الصيدلية:</b> ${esc(v.name)}</span></div><div class="g">${F("العنوان",v.loc)}${F("أقرب عيادة / مستشفى",v.near)}${F("وقت الزيارة",v.time)}${F("المنتج المعرَّف به",v.product)}${F("النشاط داخل الصيدلية",v.act)}${F("الطلبية",v.order)}${F("التحقق من الموقع",gpt(v))}</div></div>`).join("");
+ return `<div class="report" style="--brand:${esc(c.color)}"><div class="rh">${c.logo?`<img src="${c.logo}" alt="" style="height:44px;max-width:120px;object-fit:contain">`:`<div class="logo">${esc(c.short)}</div>`}<div><div class="co">${esc(c.name)}</div><div class="ti">${esc(c.title)}</div>${c.phone||c.address?`<div class="ti" style="font-size:10px">${esc([c.address,c.phone].filter(Boolean).join(" · "))}</div>`:""}</div></div>
+ <div class="rinfo"><div><b>رقم التقرير</b>${esc(d.no)}</div><div><b>المندوب</b>${esc(d.rep)}</div><div><b>اليوم</b>${esc(d.day)}</div><div><b>التاريخ</b>${esc(d.date)}</div></div>
+ ${d.notes?`<div class="rnote"><b>ملاحظة اليوم:</b> ${esc(d.notes)}</div>`:""}
+ ${d.docs.length?`<div class="rsec">👨‍⚕️ زيارات الأطباء</div>${docs}`:""}
+ ${d.phs.length?`<div class="rsec">🏥 زيارات الصيدليات</div>${phs}`:""}
+ <div class="sum"><div><b>${d.docs.length+d.phs.length}</b>إجمالي الزيارات</div><div><b>${d.docs.length}</b>أطباء</div><div><b>${d.phs.length}</b>صيدليات</div></div>
+ <div class="rf"><span>${esc(c.name)}</span><span>${esc(d.no)}</span></div></div>`;
+}
+function snapshot(){const di=dateInfo(S.date);return JSON.parse(JSON.stringify({company:CFG.company,no:S.no,rep:rep.name,day:di.day,date:di.date,notes:S.notes,docs:S.docs,phs:S.phs}))}
+function fit(){const st=$("#stage"),w=document.querySelector(".pvscroll").clientWidth-20,pw=st.firstElementChild.offsetWidth,k=Math.min(1,w/pw);
+ st.style.transform=`scale(${k})`;st.style.width=pw+"px";st.style.height=(st.firstElementChild.offsetHeight*k)+"px";st.style.marginInline=k<1?"0":"auto";st.style.transformOrigin="top right"}
+async function preview(){
+ if(!S.docs.length&&!S.phs.length){toast("أضف زيارة واحدة على الأقل");return}
+ try{if(!locked())await saveNow()}catch(e){toast(e.message);return}
+ $("#pvsend").style.display=locked()?"none":"";$("#pvok").style.display=$("#pvret").style.display=$("#pv1").style.display="none";$("#pvs").style.display="";
+ $("#stage").innerHTML=render(snapshot());$("#pv").classList.add("on");fit();
+}
+addEventListener("resize",()=>{if($("#pv").classList.contains("on"))fit()});
+$("#pvx").onclick=()=>$("#pv").classList.remove("on");
+$("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";print();fit()};
+$("#pvs").onclick=()=>{const d=snapshot(),txt=`${d.company.title}\n${d.company.name}\n${d.no} — ${d.rep}\n${d.day} ${d.date}\nالزيارات: ${d.docs.length+d.phs.length} (${d.docs.length} أطباء، ${d.phs.length} صيدليات)`;
+ navigator.share?navigator.share({title:d.no,text:txt}).catch(()=>{}):(navigator.clipboard&&navigator.clipboard.writeText(txt),toast("تم نسخ الملخص"))};
+$("#pvsend").onclick=async()=>{try{await srv("submitReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));const dd=S.date;S=mapRep(await srv("myReport",{date:dd}));PREV=await srv("prevInfo");$("#pv").classList.remove("on");home();toast("تم إرسال التقرير")}catch(e){toast(e.message)}};
+$("#ov").onclick=e=>{if(e.target.id==="ov"){stopGeo();$("#ov").classList.remove("on")}};
+addEventListener("error",e=>toast("خطأ: "+e.message));addEventListener("unhandledrejection",e=>toast("خطأ: "+((e.reason&&e.reason.message)||e.reason)));
+login();window.__ok=true;
+
+</script>

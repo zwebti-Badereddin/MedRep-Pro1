@@ -1,0 +1,102 @@
+<script>
+(window.__parts=window.__parts||[]).push("App4");
+/* ===== Rep screens: my reports, my performance ===== */
+const SC={"مسودة":"s0","جاهز للمراجعة":"s1","مرسل":"s2","معتمد":"s3","معاد للمندوب":"s4"};
+function repTop(t){return `<div class="top"><div class="brandrow"><span class="mk">${esc(CFG.company.short)}</span><span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:12px">${t}</h2></div>`}
+function repNav(a){return `<div class="tabs">${[["t","اليوم"],["h","تقاريري"],["p","أدائي"]].map(x=>`<button class="btn rn${x[0]===a?" on":""}" data-n="${x[0]}">${x[1]}</button>`).join("")}</div>`}
+function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else screenPerf()});
+ const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
+async function screenHistory(){
+ $("#app").innerHTML=repTop("تقاريري")+repNav("h")+'<div class="wrap"><div id="hl" class="empty">جارٍ التحميل…</div></div>';bindNav();
+ try{const a=await srv("myReports"),h=$("#hl");h.className="";
+  h.innerHTML=a.length?a.map(r=>`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.date)}</b><span class="st ${SC[r.status]||"s0"}">${esc(r.status)}</span></div>
+   <div style="color:var(--mut);font-size:13px">${esc(r.no||"")} · ${r.visits} زيارة${r.reopens?" · عُدّل بعد الإرسال":""}</div>
+   ${r.reviewNote?`<div class="rnote2">ملاحظة الإدارة: ${esc(r.reviewNote)}</div>`:""}
+   <div class="acts"><button class="mini" data-a="v" data-id="${esc(r.id)}">عرض</button>${r.status==="معاد للمندوب"||r.status==="مسودة"?`<button class="mini" data-a="e" data-d="${esc(r.date)}">متابعة الكتابة</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير بعد.</div>';
+  document.querySelectorAll("#hl button.mini").forEach(b=>b.onclick=()=>b.dataset.a==="v"?viewMine(b.dataset.id):loadDay(b.dataset.d))}catch(e){toast(e.message)}}
+async function viewMine(id){
+ try{const r=await srv("getReport",{id}),x=r.snapshot||{company:{},no:r.no,rep:rep.name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
+  $("#stage").innerHTML=render({company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});
+  ["#pvsend","#pvok","#pvret","#pv1","#pvs"].forEach(i=>{$(i).style.display="none"});$("#pv").classList.add("on");fit()}catch(e){toast(e.message)}}
+async function screenPerf(ym){
+ const n=new Date(),op=[];for(let i=0;i<6;i++){const d=new Date(n.getFullYear(),n.getMonth()-i,1);op.push(d.getFullYear()+"-"+pad(d.getMonth()+1))}
+ ym=ym||op[0];
+ $("#app").innerHTML=repTop("أدائي")+repNav("p")+`<div class="wrap"><label>الشهر</label><select id="pm">${op.map(o=>`<option value="${o}" ${o===ym?"selected":""}>${MN[+o.slice(5)-1]} ${o.slice(0,4)}</option>`).join("")}</select><div id="pb2" style="margin-top:14px"><div class="empty">جارٍ الحساب…</div></div></div>`;
+ bindNav();$("#pm").onchange=()=>screenPerf($("#pm").value);
+ try{const r=await srv("myPerformance",{ym});
+  $("#pb2").innerHTML=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>الدرجة النهائية</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
+  <div style="color:var(--mut);font-size:14px">الالتزام: ${r.onTime} من ${r.expected} في الوقت (${r.compliance}%) · الزيارات: ${r.visits}</div></div>
+  <div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div>
+  <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){$("#pb2").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+
+/* ===== Admin settings: company / KPI / products ===== */
+let SS="co",LG;
+function tabSet(){
+ $("#av").innerHTML=`<div class="tabs" style="margin:0 0 12px"><button class="btn" data-s="co">الشركة والنظام</button><button class="btn" data-s="kpi">المؤشرات</button><button class="btn" data-s="prod">المنتجات</button><button class="btn" data-s="hol">العطل</button></div><div id="sv2"></div>`;
+ document.querySelectorAll("[data-s]").forEach(b=>{b.classList.toggle("on",b.dataset.s===SS);b.onclick=()=>{SS=b.dataset.s;tabSet()}});
+ ({co:tabCo,kpi:tabKpi,prod:tabProd,hol:tabHol})[SS]();
+}
+function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.onload=()=>{const im=new Image();im.onerror=()=>cb(null);im.onload=()=>{
+ for(const max of [200,160,120,96]){const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));const x=c.getContext("2d");x.drawImage(im,0,0,c.width,c.height);
+  let u=c.toDataURL("image/png");if(u.length<=45000)return cb(u);
+  x.globalCompositeOperation="destination-over";x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);u=c.toDataURL("image/jpeg",.8);if(u.length<=45000)return cb(u)}
+ cb(null)};im.src=rd.result};rd.readAsDataURL(file)}
+function tabCo(){
+ const st=CFG.st||{},v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true";LG=undefined;
+ $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
+ <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
+ <label>عنوان التقرير</label><input id="c_t" value="${v("reportTitle")}"><label>هاتف الشركة</label><input id="c_p" value="${v("phone")}"><label>عنوان الشركة</label><input id="c_a" value="${v("address")}">
+ <label>الشعار (يظهر في رأس التقرير)</label><div style="display:flex;gap:10px;align-items:center"><img id="c_img" alt="" style="height:44px;max-width:120px;object-fit:contain;display:${st.logo?"block":"none"}" src="${st.logo?esc(st.logo):""}"><input id="c_f" type="file" accept="image/*"><button class="mini" id="c_rm">إزالة</button></div>
+ <div class="sec"><h3>التقارير والموقع</h3></div><label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="c_e" value="${v("reportEmail")}">
+ <div class="two"><div><label>ساعة الإغلاق (0–23)</label><input id="c_ch" type="number" min="0" max="23" value="${esc(st.closeHour||10)}"></div><div><label>نطاق الموقع (متر)</label><input id="c_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"></div></div>
+ <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="c_w" value="${esc(st.workDays||"0,1,2,3,4")}">
+ <div class="sec"><h3>التذكيرات</h3></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="c_r" type="checkbox" style="width:auto;min-height:0" ${re?"checked":""}> تفعيل التذكيرات (للمندوب بالبريد، وملخص للمدير بمن لم يرسل)</label>
+ <div class="two"><div><label>تذكير الصباح (0–23)</label><input id="c_h" type="number" min="0" max="23" value="${esc(st.remindHour||8)}"></div><div><label>تذكير المساء (0–23)</label><input id="c_h2" type="number" min="0" max="23" value="${esc(st.remindEvening||18)}"></div></div><div class="empty" style="margin:8px 0">صباحًا: بتقرير الأمس غير المرسل. مساءً: بتقرير اليوم. وتنبيه ثالث تلقائي قبل ساعة من ساعة الإغلاق لمن لم يرسل بعد. لا تصل التنبيهات لمن في إجازة أو عطلة.</div><div class="err" id="c_err"></div><button class="btn pri full" id="c_go" style="margin-top:14px">حفظ</button>`;
+ const saveLogo=async u=>{try{await srv("saveSettings",{values:{logo:u}});CFG.company.logo=u;CFG.st.logo=u;$("#c_img").src=u;$("#c_img").style.display=u?"block":"none";$("#c_err").style.color="";$("#c_err").textContent=u?"✓ تم رفع الشعار وحفظه":"✓ تمت إزالة الشعار"}catch(e){$("#c_err").textContent="تعذّر حفظ الشعار: "+e.message}};
+ $("#c_f").onchange=e=>{const f=e.target.files[0];if(!f)return;$("#c_err").textContent="جارٍ معالجة الصورة…";pickLogo(f,u=>{if(!u){$("#c_err").textContent="تعذّر استخدام الصورة: الصيغة غير مدعومة أو حجمها كبير حتى بعد التصغير. جرّب PNG أو JPG أبسط.";return}saveLogo(u)})};
+ $("#c_rm").onclick=()=>saveLogo("");
+ $("#c_go").onclick=async()=>{const vals={companyName:$("#c_n").value,shortName:$("#c_s").value,brandColor:$("#c_c").value,reportTitle:$("#c_t").value,phone:$("#c_p").value,address:$("#c_a").value,reportEmail:$("#c_e").value,closeHour:$("#c_ch").value,workDays:$("#c_w").value.replace(/\s/g,""),gpsRadius:$("#c_g").value};
+  const b=$("#c_go");b.disabled=true;$("#c_err").textContent="";
+  try{await srv("saveSettings",{values:vals});let rm="";
+   try{await srv("setReminders",{enabled:$("#c_r").checked,hour:$("#c_h").value,evening:$("#c_h2").value})}catch(e){rm="حُفظت الإعدادات لكن تعذّر ضبط التذكيرات: "+e.message}
+   Object.assign(CFG.st,vals,{remindEnabled:$("#c_r").checked,remindHour:$("#c_h").value,remindEvening:$("#c_h2").value});Object.assign(CFG.company,{name:vals.companyName,short:vals.shortName,color:vals.brandColor,title:vals.reportTitle,phone:vals.phone,address:vals.address});
+   document.documentElement.style.setProperty("--brand",vals.brandColor);if(rm)$("#c_err").textContent=rm;else toast("تم الحفظ")}catch(e){$("#c_err").textContent=e.message}b.disabled=false};
+}
+async function tabKpi(){
+ $("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ try{const a=await srv("kpiList");
+  $("#sv2").innerHTML=a.map(k=>`<div class="row kr" style="display:block" data-k="${esc(k.key)}"><b>${esc(k.name)}</b><div class="two"><div><label>${k.key==="compliance"?"الهدف (يُحسب تلقائيًا)":"الهدف للشهر"}</label><input class="kt_t" type="number" min="0" value="${esc(k.target)}" ${k.key==="compliance"?"disabled":""}></div><div><label>الوزن</label><input class="kt_w" type="number" min="0" value="${esc(k.weight)}"></div></div>
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input class="kt_a" type="checkbox" style="width:auto;min-height:0" ${String(k.active)!=="false"?"checked":""}> مفعّل</label></div>`).join("")+'<div id="kw" class="empty"></div><div class="err" id="k_err"></div><button class="btn pri full" id="kgo">حفظ المؤشرات</button><div class="empty" style="margin-top:8px">بعد التعديل أعد حساب الأشهر المغلقة من تبويب المقارنة إن أردت أن تتأثر بالقيم الجديدة.</div>';
+  const sum=()=>{let t=0;document.querySelectorAll(".kr").forEach(r=>{if(r.querySelector(".kt_a").checked)t+=+r.querySelector(".kt_w").value||0});$("#kw").textContent="مجموع أوزان المؤشرات المفعّلة: "+t+" (تُحتسب النسب منه تلقائيًا)"};
+  document.querySelectorAll(".kr input").forEach(i=>i.oninput=sum);sum();
+  $("#kgo").onclick=async()=>{try{await srv("saveKpi",{rows:[...document.querySelectorAll(".kr")].map(r=>({key:r.dataset.k,target:+r.querySelector(".kt_t").value||0,weight:+r.querySelector(".kt_w").value||0,active:r.querySelector(".kt_a").checked}))});toast("تم الحفظ")}catch(e){$("#k_err").textContent=e.message}}}catch(e){toast(e.message)}}
+let PL=[];
+async function tabProd(){$("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';try{PL=await srv("list",{entity:"Products"});drawProd()}catch(e){toast(e.message)}}
+function drawProd(){if(!$("#sv2"))return;const off=p=>p.status==="متوقف";
+ $("#sv2").innerHTML='<button class="btn dash" id="padd">＋ إضافة منتج</button><div style="height:10px"></div>'+(PL.map(p=>`<div class="row" style="display:block;${off(p)?"opacity:.65":""}" data-id="${esc(p.id)}"><b>${esc(p.name)}</b> <span class="st ${off(p)?"s4":"s3"}">${off(p)?"متوقف":"نشط"}</span><div style="color:var(--mut);font-size:13px">${esc(p.category||"بدون تصنيف")}</div><div class="acts"><button class="mini" data-a="e">تعديل</button><button class="mini" data-a="t">${off(p)?"تفعيل":"إيقاف"}</button></div></div>`).join("")||'<div class="empty">لا توجد منتجات.</div>');
+ $("#padd").onclick=()=>pForm();
+ document.querySelectorAll("#sv2 button.mini").forEach(b=>b.onclick=()=>{const p=PL.find(x=>x.id===b.closest(".row").dataset.id);if(b.dataset.a==="e")pForm(p);else pSave({id:p.id,status:off(p)?"نشط":"متوقف"})})}
+function pForm(p){$("#modal").innerHTML=`<h3>${p?"تعديل منتج":"إضافة منتج"}</h3><label>اسم المنتج *</label><input id="p_n" value="${esc(p?p.name:"")}"><label>التصنيف</label><input id="p_c" value="${esc(p?p.category:"")}"><div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");$("#sv").onclick=()=>pSave({id:p?p.id:undefined,name:$("#p_n").value,category:$("#p_c").value})}
+async function pSave(row){try{await srv("save",{entity:"Products",row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");tabProd()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+/* ===== Leaves / permissions per rep, and official holidays ===== */
+async function lForm(r){
+ const draw=async()=>{let a=[];try{a=await srv("leavesList",{repId:r.id})}catch(e){toast(e.message)}const td=isoD(new Date());
+  $("#modal").innerHTML=`<h3>إجازات وأذونات — ${esc(r.name)}</h3>${a.length?a.map(l=>`<div class="row" style="display:block"><b>${esc(l.type)}</b> · ${esc(l.from)}${l.to!==l.from?" ← "+esc(l.to):""}${l.note?`<div style="color:var(--mut);font-size:13px">${esc(l.note)}</div>`:""}<div class="acts"><button class="mini" data-id="${esc(l.id)}">حذف</button></div></div>`).join(""):'<div class="empty">لا توجد إجازات مسجّلة.</div>'}
+  <div class="sec"><h3>تسجيل جديد</h3></div><label>النوع</label><select id="l_t">${["سنوية","مرضية","مهمة رسمية","إذن"].map(x=>`<option>${x}</option>`).join("")}</select>
+  <div class="two"><div><label>من</label><input type="date" id="l_f" value="${td}"></div><div><label>إلى</label><input type="date" id="l_e" value="${td}"></div></div><label>ملاحظة</label><input id="l_n">
+  <div class="empty" style="margin-top:8px">«إذن» يخفّض أهداف اليوم بنصف يوم ويبقى تقرير ذلك اليوم مطلوبًا. بقية الأنواع تعفي اليوم كاملًا. لإعادة حساب شهر مغلق استخدم تبويب المقارنة.</div>
+  <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إغلاق</button><button class="btn pri" id="sv">إضافة</button></div>`;
+  $("#cx").onclick=()=>$("#ov").classList.remove("on");
+  document.querySelectorAll("#modal button.mini").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد الحذف؟";return}try{await srv("leaveDelete",{id:b.dataset.id});draw()}catch(e){toast(e.message)}});
+  $("#sv").onclick=async()=>{try{await srv("leaveSave",{row:{repId:r.id,type:$("#l_t").value,from:$("#l_f").value,to:$("#l_e").value,note:$("#l_n").value}});toast("تم التسجيل");draw()}catch(e){$("#ferr").textContent=e.message}}};
+ $("#ov").classList.add("on");await draw();
+}
+async function tabHol(){
+ $("#sv2").innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ try{const a=await srv("holidaysList");
+  $("#sv2").innerHTML=`<div class="empty">العطل الرسمية تُستثنى لجميع المندوبين: لا يُطلب فيها تقرير وتُخفَّض الأهداف.</div>`+a.map(h=>`<div class="row"><div class="t"><b>${esc(h.name)}</b><small>${esc(h.date)}</small></div><button class="del" data-id="${esc(h.id)}">✕</button></div>`).join("")
+  +`<div class="sec"><h3>إضافة عطلة</h3></div><label>التاريخ</label><input type="date" id="h_d" value="${isoD(new Date())}"><label>الاسم</label><input id="h_n" placeholder="مثل: عيد الفطر"><div class="err" id="h_err"></div><button class="btn pri full" id="h_go" style="margin-top:14px">إضافة</button>`;
+  document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});tabHol()}catch(e){toast(e.message)}});
+  $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});toast("تمت الإضافة");tabHol()}catch(e){$("#h_err").textContent=e.message}}}catch(e){toast(e.message)}}
+</script>

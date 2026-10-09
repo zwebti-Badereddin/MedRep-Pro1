@@ -1,0 +1,105 @@
+<script>
+(window.__parts=window.__parts||[]).push("App1");
+
+/* All lookups, branding and data now come from the server (Google Sheets) */
+let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],workplaces:[],products:[],samples:["—"]},TOKEN=null;
+let NB=0;const bz=()=>{const e=document.getElementById("busy");if(e)e.style.display=NB?"block":"none"};
+function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
+function _srv(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
+const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[],phs:r.pharmacies||[],status:r.status,no:r.no,date:r.date});
+function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)===i);
+ CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
+ CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.phs=b.pharmacies;CFG.specialties=u(b.doctors.map(d=>d.specialty));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
+ CFG.workplaces=u(b.doctors.map(d=>d.workplace));if(!CFG.workplaces.length)CFG.workplaces=["—"];
+ CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
+ CFG.st=st;document.documentElement.style.setProperty("--brand",CFG.company.color)}
+const locked=()=>S&&["مسودة","معاد للمندوب"].indexOf(S.status)<0;
+function saveNow(){return srv("saveReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs}))).then(r=>{S.no=r.no;S.status=r.status;
+ (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});(r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});return r})}
+/* GPS: captured silently while the visit form is open; verdict is computed on the server */
+let GEO=null,GW=null;
+function startGeo(){GEO=null;if(!navigator.geolocation)return;stopGeo();try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};showGeo()},()=>showGeo(),{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){}}
+function stopGeo(){try{if(GW!=null)navigator.geolocation.clearWatch(GW)}catch(e){}GW=null}
+function showGeo(){const e=$("#geo");if(e)e.textContent=GEO?"✓ تم تحديد موقعك":"… جارٍ تحديد الموقع"}
+function consent(){try{if(localStorage.getItem("mr_gps_ok"))return}catch(e){}
+ $("#modal").innerHTML='<h3>تسجيل الموقع</h3><p style="line-height:1.8">يسجّل النظام موقعك عند إضافة كل زيارة للتحقق من وجودك في مكانها، ولا يطّلع عليه إلا المدير. سيطلب الهاتف إذن الموقع، فاختر «السماح». لا يمنع غياب الموقع حفظ الزيارة.</p><button class="btn pri full" id="okc">موافق</button>';
+ $("#ov").classList.add("on");$("#okc").onclick=()=>{try{localStorage.setItem("mr_gps_ok","1")}catch(e){}$("#ov").classList.remove("on");startGeo();setTimeout(stopGeo,4000)}}
+const $=s=>document.querySelector(s),esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DAYS=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+let rep=null,S=null;
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),5000)}
+function dateInfo(ds){const d=ds?new Date(ds+"T12:00:00"):new Date(),p=n=>String(n).padStart(2,"0");return{day:DAYS[d.getDay()],date:`${p(d.getDate())} / ${p(d.getMonth()+1)} / ${d.getFullYear()}`}}
+
+let REPS=[],STAT=[],CUR=null,PREV=null,TD=null,RO=false;
+function login(adm){
+ $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 3 أرقام"}</div>
+ ${adm?'<input id="code" type="password" style="letter-spacing:0;font-size:18px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="3" autocomplete="off" aria-label="رمز الدخول">'}
+ <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
+ <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a></div></div>`;
+ $("#sw").onclick=e=>{e.preventDefault();login(!adm)};
+ const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
+  try{const r=await srv("login",adm?{role:"admin",password:$("#code").value}:{code:$("#code").value.trim()});TOKEN=r.token;rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
+   if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;home();consent()}}
+  catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
+ $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};$("#code").focus();
+}
+/* ===== Admin ===== */
+const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+function adminHome(){
+ const n=new Date();
+ $("#app").innerHTML=`<div class="top"><div class="brandrow"><span class="mk">${esc(CFG.company.short)}</span><span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
+ <div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
+ <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
+ $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
+ const show=t=>{document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
+ document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("r");
+}
+function tabR(){
+ $("#av").innerHTML=`<div class="two"><div><label>المندوب</label><select id="fr"><option value="">الكل</option>${REPS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
+ <div><label>الحالة</label><select id="fs"><option value="">الكل</option>${STAT.map(x=>`<option>${x}</option>`).join("")}</select></div></div>
+ <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div>`;
+ $("#fgo").onclick=async()=>{const q=$("#fq").value.trim(),isNo=/^[A-Za-z]+-|^\d{4,}$/.test(q);
+  try{const a=await srv("listReports",{from:$("#fa").value,to:$("#fb").value,repId:$("#fr").value,status:$("#fs").value,no:isNo?q:"",q:isNo?"":q});
+   $("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';
+   document.querySelectorAll("#rl .row").forEach(e=>e.onclick=()=>openRep(e.dataset.id))}catch(e){toast(e.message)}};
+ $("#fgo").click();
+}
+const coOf=c=>({name:c.companyName||c.name||CFG.company.name,short:c.shortName||c.short||CFG.company.short,color:c.brandColor||c.color||CFG.company.color,title:c.reportTitle||c.title||CFG.company.title,phone:c.phone!==undefined?c.phone:CFG.company.phone,address:c.address!==undefined?c.address:CFG.company.address,logo:CFG.company.logo});
+async function openRep(id){
+ try{const r=await srv("getReport",{id});CUR=r;const x=r.snapshot||{company:{},no:r.no,rep:(REPS.find(y=>y.id===r.repId)||{}).name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
+  const draw=x=>render({adm:true,company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});CUR.draw=draw;CUR.x0=x;CUR.first=false;$("#stage").innerHTML=draw(x);$("#pv1").style.display=r.snapshot1?"":"none";$("#pv1").textContent="النسخة الأولى";
+  $("#pvsend").style.display=$("#pvs").style.display="none";$("#pvok").style.display=$("#pvret").style.display=r.status==="مرسل"?"":"none";
+  $("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
+}
+async function review(ok,note){
+ if(!ok&&!note){$("#ferr").textContent="اكتب ملاحظة للمندوب.";return}
+ try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){toast(e.message)}
+}
+async function tabP(){
+ $("#av").innerHTML='<div class="empty">جارٍ الحساب…</div>';
+ try{const a=await srv("performance",{from:$("#fa").value,to:$("#fb").value});
+  $("#av").innerHTML=(a.map(r=>{const c=r.compliance;return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${r.rank}. ${esc(r.name)}</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
+  ${r.off&&r.off.avail<r.off.total?`<div style="color:var(--mut);font-size:14px">أيام مستثناة (إجازات وعطل): ${+(r.off.total-r.off.avail).toFixed(1)} من ${r.off.total} يوم عمل</div>`:""}
+  <div style="color:var(--mut);font-size:14px">الموقع: ${r.gps.ver} من ${r.gps.total} متحقق · ${r.gps.out} خارج النطاق</div>
+  <div style="color:var(--mut);font-size:14px">الالتزام: ${c.onTime} من ${c.expected} في الوقت (${c.pct}%) · متأخر ${c.late} · غير مرسل ${c.missing}</div>
+  <details><summary style="padding:8px 0;color:var(--brand);cursor:pointer">تفاصيل المؤشرات</summary><div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div></details></div>`}).join("")||'<div class="empty">لا توجد بيانات.</div>')+'<div class="empty">الأهداف في جدول KPI تخص الفترة المختارة. هدف الالتزام يُحسب تلقائيًا من أيام العمل.</div>'}catch(e){toast(e.message);$("#av").innerHTML=""}
+}
+/* ----- comparison: months (heat table) and years ----- */
+const MN=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+let CM={year:new Date().getFullYear(),metric:"score",data:null,yr:null};
+async function tabC(){
+ const y0=new Date().getFullYear();
+ $("#av").innerHTML=`<div class="two"><div><label>السنة</label><select id="cy">${[y0,y0-1,y0-2].map(y=>`<option ${y===CM.year?"selected":""}>${y}</option>`).join("")}</select></div>
+ <div><label>المؤشر</label><select id="cm"><option value="score">الدرجة %</option><option value="compliance">الالتزام %</option><option value="visits">عدد الزيارات</option></select></div></div>
+ <div id="cb" style="margin-top:12px"><div class="empty">جارٍ الحساب… قد يطول أول تحميل لسنة لم تُحسب من قبل.</div></div><div id="cyr" style="margin-top:16px"></div>
+ <label style="margin-top:18px">إعادة حساب شهر (بعد تغيير الأهداف أو الأوزان)</label><div class="two"><select id="rm">${MN.map((m,i)=>`<option value="${i+1}">${m}</option>`).join("")}</select><button class="btn" id="rg">إعادة الحساب</button></div>`;
+ $("#cm").value=CM.metric;
+ $("#cy").onchange=()=>{CM.year=+$("#cy").value;tabC()};$("#cm").onchange=()=>{CM.metric=$("#cm").value;drawC()};
+ $("#rg").onclick=async()=>{try{await srv("closeMonth",{ym:CM.year+"-"+pad(+$("#rm").value)});toast("تمت إعادة الحساب");tabC()}catch(e){toast(e.message)}};
+ try{CM.data=await srv("trend",{year:CM.year});drawC();CM.yr=await srv("yearly",{years:[CM.year-2,CM.year-1,CM.year]});drawY()}catch(e){toast(e.message)}
+}
+function drawC(){if(!$("#cb"))return;const d=CM.data,k=CM.metric,col=v=>k==="visits"?"":v>=85?"rgba(23,104,58,.22)":v>=60?"rgba(255,170,0,.28)":"rgba(179,38,30,.22)",fmt=v=>k==="visits"?v:v+"%";
+ const body=d.reps.map(rp=>{const vs=d.months.map(m=>{const r=m.rows&&m.rows.find(x=>x.repId===rp.id);return r?r[k]:null}),ok=vs.filter(v=>v!=null),avg=ok.length?Math.round(ok.reduce((a,b)=>a+b,0)/ok.length):null;
+  return `<tr><th>${esc(rp.name)}</th>${vs.map(v=>v==null?"<td>—</td>":`<td style="background:${col(v)}">${fmt(v)}</td>`).join("")}<td><b>${avg==null?"—":fmt(avg)}</b></td></tr>`}).join("");
+ $("#cb").innerHTML=`<div style="overflow-x:auto"><table class="kt" style="min-width:740px"><tr><th>المندوب</th>${MN.map(m=>`<th>${m.slice(0,3)}</th>`).join("")}<th>المتوسط</th></tr>${body}</table></div><div class="empty" style="margin-top:8px">أخضر: 85% فأكثر · أصفر: 60–84% · أحمر: أقل من 60%. الأشهر المغلقة تحتفظ بدرجتها كما حُسبت.</div>`}
+</script>
