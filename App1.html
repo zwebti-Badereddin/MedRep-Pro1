@@ -59,7 +59,7 @@ function adminHome(){
  <div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
- const show=t=>{adminNavSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
+ const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("r");
 }
 function tabR(){
