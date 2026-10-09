@@ -14,8 +14,15 @@ function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)==
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
  CFG.st=st;document.documentElement.style.setProperty("--brand",CFG.company.color)}
 const locked=()=>S&&["مسودة","معاد للمندوب"].indexOf(S.status)<0;
-function saveNow(){return srv("saveReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs}))).then(r=>{S.no=r.no;S.status=r.status;
- (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});(r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});return r})}
+let saveChain=Promise.resolve();
+function saveNow(){
+ if(typeof cancelAuto==="function")cancelAuto();
+ const payload=JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs}));
+ const task=saveChain.catch(()=>{}).then(()=>srv("saveReport",payload)).then(r=>{S.no=r.no;S.status=r.status;
+  (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});(r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});return r});
+ saveChain=task;
+ return task
+}
 /* GPS: captured silently while the visit form is open; verdict is computed on the server */
 let GEO=null,GW=null;
 function startGeo(){GEO=null;if(!navigator.geolocation)return;stopGeo();try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};showGeo()},()=>showGeo(),{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){}}
