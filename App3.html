@@ -87,7 +87,21 @@ $("#pvx").onclick=()=>$("#pv").classList.remove("on");
 $("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";print();fit()};
 $("#pvs").onclick=()=>{const d=snapshot(),txt=`${d.company.title}\n${d.company.name}\n${d.no} — ${d.rep}\n${d.day} ${d.date}\nالزيارات: ${d.docs.length+d.phs.length} (${d.docs.length} أطباء، ${d.phs.length} صيدليات)`;
  navigator.share?navigator.share({title:d.no,text:txt}).catch(()=>{}):(navigator.clipboard&&navigator.clipboard.writeText(txt),toast("تم نسخ الملخص"))};
-$("#pvsend").onclick=async()=>{try{await srv("submitReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));const dd=S.date;S=mapRep(await srv("myReport",{date:dd}));PREV=await srv("prevInfo");$("#pv").classList.remove("on");home();toast("تم إرسال التقرير")}catch(e){toast(e.message)}};
+let sendingReport=false;
+$("#pvsend").onclick=async()=>{
+ if(sendingReport)return;
+ sendingReport=true;
+ const btn=$("#pvsend"),label=btn.textContent;
+ btn.disabled=true;btn.textContent="جارٍ الإرسال…";
+ cancelAuto();
+ try{
+  await saveChain;
+  await srv("submitReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));
+  const dd=S.date;S=mapRep(await srv("myReport",{date:dd}));PREV=await srv("prevInfo");
+  $("#pv").classList.remove("on");home();toast("تم إرسال التقرير")
+ }catch(e){toast(e.message)}
+ finally{sendingReport=false;if(btn.isConnected){btn.disabled=false;btn.textContent=label}}
+};
 $("#ov").onclick=e=>{if(e.target.id==="ov"){stopGeo();$("#ov").classList.remove("on")}};
 addEventListener("error",e=>toast("خطأ: "+e.message));addEventListener("unhandledrejection",e=>toast("خطأ: "+((e.reason&&e.reason.message)||e.reason)));
 login();window.__ok=true;
