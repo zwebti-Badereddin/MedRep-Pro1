@@ -175,7 +175,13 @@ function session_(token) {
 function lookups_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('lk'); if (hit) return JSON.parse(hit);
   const act = r => String(r.active) !== 'false';
-  const v = { doctors: dbAll_('Doctors').filter(act), pharmacies: dbAll_('Pharmacies').filter(act), products: dbAll_('Products').filter(r => r.status !== 'متوقف') };
+  // Only send fields needed to fill a visit. Reference GPS coordinates and internal review metadata
+  // remain server-side and are available to administrators through masterList_.
+  const v = {
+    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active })),
+    pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
+    products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status }))
+  };
   try { cache.put('lk', JSON.stringify(v), 300); } catch (e) {}
   return v;
 }
