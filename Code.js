@@ -1067,6 +1067,105 @@ function migrateLegacyFacilitiesV1() {
     lock.releaseLock();
   }
 }
+
+/*
+ * Link historical operational visit JSON to the new facility IDs when the match is unique.
+ * Only adds facilityId to Reports.doctors / Reports.pharmacies; frozen snapshots are never written.
+ */
+function linkLegacyVisitFacilitiesV1() {
+  ownerOnly_();
+  const ui = SpreadsheetApp.getUi();
+  const answer = ui.alert(
+    'ربط الزيارات بالمنشآت',
+    'سيُضاف facilityId للزيارات التي يمكن ربطها بسجل واحد بشكل واضح. لن تُدمج الأسماء ولن تُعدّل snapshot أو snapshot1. خذ نسخة احتياطية قبل المتابعة. هل تريد المتابعة؟',
+    ui.ButtonSet.YES_NO
+  );
+  if (answer !== ui.Button.YES) return { cancelled: true };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    initializeFacilitySchema();
+    const facilities = dbAll_('Facilities'), relations = dbAll_('DoctorPlaces');
+    if (!facilities.length || !relations.length) throw new Error('لم تُرحّل بيانات المنشآت بعد. نفّذ معاينة الترحيل ثم migrateLegacyFacilitiesV1 أولًا.');
+    const doctors = dbAll_('Doctors'), workplaces = dbAll_('DoctorWorkplaces'), pharmacies = dbAll_('Pharmacies');
+    const byDoctorId = new Map(doctors.map(d => [String(d.id), d]));
+    const doctorNames = {};
+    doctors.forEach(d => { const k = normName_(d.name); (doctorNames[k] = doctorNames[k] || []).push(d); });
+    const byWorkplaceId = new Map(workplaces.map(w => [String(w.id), w]));
+    const relationByWorkplace = {};
+    relations.forEach(r => { const k = String(r.legacyWorkplaceId || ''); if (k) (relationByWorkplace[k] = relationByWorkplace[k] || []).push(r); });
+    const facilityByLegacy = {};
+    facilities.forEach(f => { if (f.legacyEntity && f.legacyId) facilityByLegacy[f.legacyEntity + '|' + f.legacyId] = f; });
+    const facilityByPharmacyName = {};
+    facilities.filter(f => f.legacyEntity === 'Pharmacies').forEach(f => {
+      const k = normName_(f.name); if (k) (facilityByPharmacyName[k] = facilityByPharmacyName[k] || []).push(f);
+    });
+    const rs = sheet_('Reports'), values = rs.getDataRange().getValues();
+    const di = T.Reports.indexOf('doctors'), pi = T.Reports.indexOf('pharmacies');
+    const parseArray = (raw, rowNo, field) => {
+      try { const a = JSON.parse(raw || '[]'); if (!Array.isArray(a)) throw new Error('not array'); return a; }
+      catch (e) { throw new Error('توقف الربط قبل تعديل التقارير: JSON غير صالح في الصف ' + rowNo + '، الحقل ' + field + '.'); }
+    };
+    const plans = [];
+    let linkedDoctors = 0, linkedPharmacies = 0, ambiguousDoctors = 0, ambiguousPharmacies = 0, unresolvedDoctors = 0, unresolvedPharmacies = 0;
+    for (let i = 1; i < values.length; i++) {
+      if (!values[i][0]) continue;
+      const docs = parseArray(values[i][di], i + 1, 'doctors'), phs = parseArray(values[i][pi], i + 1, 'pharmacies');
+      let changedDocs = false, changedPhs = false;
+      docs.forEach(v => {
+        if (v.facilityId) return;
+        let doctor = v.doctorId ? byDoctorId.get(String(v.doctorId)) : null;
+        if (!doctor) {
+          const candidates = doctorNames[normName_(v.name)] || [];
+          if (candidates.length === 1) doctor = candidates[0];
+          else { if (candidates.length > 1) ambiguousDoctors++; else unresolvedDoctors++; return; }
+        }
+        if (normName_(doctor.name) !== normName_(v.name)) { ambiguousDoctors++; return; }
+        let wps = [];
+        if (v.workplaceId) {
+          const w = byWorkplaceId.get(String(v.workplaceId));
+          if (w && String(w.doctorId) === String(doctor.id) && (!v.place || normName_(w.workplace) === normName_(v.place))) wps = [w];
+          else { ambiguousDoctors++; return; }
+        } else {
+          wps = workplaces.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
+        }
+        const mapped = wps.flatMap(w => (relationByWorkplace[String(w.id)] || []).filter(r => String(r.doctorId) === String(doctor.id)));
+        if (mapped.length === 1 && facilities.some(f => f.id === mapped[0].facilityId)) { v.facilityId = mapped[0].facilityId; changedDocs = true; linkedDoctors++; }
+        else if (mapped.length > 1) ambiguousDoctors++;
+        else unresolvedDoctors++;
+      });
+      phs.forEach(v => {
+        if (v.facilityId) return;
+        let facility = null;
+        if (v.pharmacyId) facility = facilityByLegacy['Pharmacies|' + String(v.pharmacyId)] || null;
+        else {
+          const candidates = facilityByPharmacyName[normName_(v.name)] || [];
+          if (candidates.length === 1) facility = candidates[0];
+          else { if (candidates.length > 1) ambiguousPharmacies++; else unresolvedPharmacies++; return; }
+        }
+        if (facility && normName_(facility.name) === normName_(v.name)) { v.facilityId = facility.id; changedPhs = true; linkedPharmacies++; }
+        else { unresolvedPharmacies++; }
+      });
+      if (changedDocs || changedPhs) plans.push({ row: i + 1, docs: changedDocs ? JSON.stringify(docs) : null, phs: changedPhs ? JSON.stringify(phs) : null });
+    }
+    // All JSON is validated and all mappings planned before the first report cell is written.
+    plans.forEach(p => {
+      if (p.docs !== null) rs.getRange(p.row, di + 1).setValue(p.docs);
+      if (p.phs !== null) rs.getRange(p.row, pi + 1).setValue(p.phs);
+    });
+    clearCache_();
+    return {
+      cancelled: false, reportsUpdated: plans.length, linkedDoctors: linkedDoctors, linkedPharmacies: linkedPharmacies,
+      ambiguousDoctors: ambiguousDoctors, ambiguousPharmacies: ambiguousPharmacies,
+      unresolvedDoctors: unresolvedDoctors, unresolvedPharmacies: unresolvedPharmacies,
+      snapshotsChanged: false,
+      message: 'تمت إضافة روابط المنشآت المطابقة فقط. الحالات الملتبسة تُركت دون تعديل.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function offData_() {
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
   const hol = {}, lv = {};
