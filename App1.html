@@ -55,7 +55,7 @@ const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMont
 let adminNavSeq=0;
 function adminHome(){
  const n=new Date();
- $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:54px;height:34px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
+ $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
  <div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
@@ -72,7 +72,7 @@ function tabSet(){
  <label>هاتف الشركة</label><input id="c_p" value="${esc(st.phone||"")}">
  <label>عنوان الشركة</label><input id="c_a" value="${esc(st.address||"")}">
  <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https://drive.google.com/file/d/..." value="${esc(st.logo||"")}">
- <div style="display:flex;gap:10px;align-items:center;margin:8px 0 14px"><img id="c_img" alt="معاينة الشعار" style="height:44px;max-width:120px;object-fit:contain;display:${st.logo?"block":"none"}" src="${esc(st.logo||"")}"><button class="mini" id="c_logo_save" type="button">حفظ رابط الشعار</button><button class="mini" id="c_rm" type="button">إزالة الشعار</button></div>
+ <div style="display:flex;gap:10px;align-items:center;margin:8px 0 14px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${st.logo?"block":"none"}" src="${esc(st.logo||"")}"><button class="mini" id="c_logo_save" type="button">حفظ رابط الشعار</button><button class="mini" id="c_rm" type="button">إزالة الشعار</button></div>
  <label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="s_e" type="text" value="${esc(st.reportEmail||"")}">
  <label>ساعة إغلاق التقرير</label><input id="s_h" type="number" min="0" max="23" value="${esc(st.closeHour===undefined?10:st.closeHour)}">
  <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="s_w" value="${esc(st.workDays||"0,1,2,3,4")}">
