@@ -764,7 +764,7 @@ function performance_(s, p) {
 
 /* ---------- GPS verification (visit never blocked; verdict is for management) ----------
  * Only an administrator-approved map reference is authoritative. Visit readings never create or move it.
- * Boundary overlap produces 'غير حاسم'; weak readings produce 'غير متاح'. */
+ * Boundary overlap or weak/invalid accuracy produces 'غير حاسم'; missing coordinates produce 'غير متاح'. */
 function dist_(a, b, c, d) {
   const t = x => x * Math.PI / 180, dl = t(c - a), dg = t(d - b);
   const h = Math.pow(Math.sin(dl / 2), 2) + Math.cos(t(a)) * Math.cos(t(c)) * Math.pow(Math.sin(dg / 2), 2);
