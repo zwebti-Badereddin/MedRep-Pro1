@@ -686,6 +686,7 @@ function geo_(v, ent, sheet, s, st) {
   g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng);
   const r = +ent.radius || rad;
   if (g.acc > r) { g.status = 'غير متاح'; return; }
+  if (sheet === 'DoctorWorkplaces' && ent.refState === 'مؤقت') { g.status = 'مرجع غير مؤكد'; return; }
   if (ent.refState === 'مؤقت') {
     if (ent.refBy === s.uid) { g.status = 'مرجع غير مؤكد'; return; }
     if (g.dist <= rad) { ent.refState = 'مؤكد'; save(); g.status = 'تم التحقق'; }
