@@ -674,7 +674,7 @@ function repSave_(s, p) {
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addToUi();
 }
 function addRepsFromSheet() {
   ownerOnly_();
