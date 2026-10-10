@@ -9,6 +9,9 @@ const T = {
   Reps: ['id', 'name', 'codeHash', 'phone', 'active', 'email'],
   Doctors: ['id', 'name', 'specialty', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
+  Facilities: ['id', 'name', 'type', 'region', 'address', 'status', 'legacyEntity', 'legacyId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
+  FacilityLocations: ['id', 'facilityId', 'lat', 'lng', 'radius', 'source', 'state', 'proposedBy', 'proposedAt', 'approvedBy', 'approvedAt', 'version', 'active', 'note'],
+  DoctorPlaces: ['id', 'doctorId', 'facilityId', 'workDays', 'notes', 'active', 'legacyWorkplaceId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Pharmacies: ['id', 'name', 'location', 'nearFacility', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   Products: ['id', 'name', 'category', 'status'],
   KPI: ['key', 'name', 'target', 'weight', 'active'],
@@ -854,6 +857,38 @@ const isDate_ = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 function ensureSheet_(n) {
   const ss = SpreadsheetApp.getActive(); let sh = ss.getSheetByName(n);
   if (!sh) { sh = ss.insertSheet(n); sh.appendRow(T[n]); sh.setFrozenRows(1); sh.getRange(1, 1, sh.getMaxRows(), T[n].length).setNumberFormat('@'); }
+}
+
+/*
+ * Safe additive migration: create only the new facility schema.
+ * It never rewrites headers or data in existing non-empty sheets.
+ * Run manually from the bound Apps Script editor after taking a spreadsheet backup.
+ */
+function initializeFacilitySchema() {
+  ownerOnly_();
+  const ss = SpreadsheetApp.getActive();
+  const names = ['Facilities', 'FacilityLocations', 'DoctorPlaces'];
+  const plan = names.map(name => {
+    const sh = ss.getSheetByName(name);
+    if (!sh || sh.getLastRow() === 0) return { name: name, sheet: sh, create: !sh, initialize: true };
+    const expected = T[name], actual = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), expected.length)).getValues()[0];
+    if (actual.length !== expected.length || expected.some((h, i) => actual[i] !== h)) {
+      throw new Error('توقف الترحيل دون تعديل البيانات: عناوين جدول ' + name + ' لا تطابق المخطط المتوقع.');
+    }
+    return { name: name, sheet: sh, create: false, initialize: false };
+  });
+  const created = [];
+  plan.forEach(item => {
+    let sh = item.sheet;
+    if (item.create) sh = ss.insertSheet(item.name);
+    if (item.initialize) {
+      sh.getRange(1, 1, 1, T[item.name].length).setValues([T[item.name]]);
+      sh.setFrozenRows(1);
+      sh.getRange(1, 1, sh.getMaxRows(), T[item.name].length).setNumberFormat('@');
+      created.push(item.name);
+    }
+  });
+  return { created: created, verified: names.filter(name => created.indexOf(name) < 0), message: 'تم تجهيز مخطط المنشآت الإضافي دون نقل أو تعديل أي سجل قديم.' };
 }
 function offData_() {
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
