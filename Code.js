@@ -772,7 +772,7 @@ function dist_(a, b, c, d) {
 }
 // Conservative geofence verdict: include the reported GPS accuracy as an uncertainty margin.
 function geoVerdict_(distance, accuracy, radius, maxAccuracy) {
-  if (!isFinite(+accuracy) || +accuracy <= 0 || +accuracy > maxAccuracy) return 'غير متاح';
+  if (!isFinite(+accuracy) || +accuracy <= 0 || +accuracy > maxAccuracy) return 'غير حاسم';
   if (distance + accuracy <= radius) return 'تم التحقق';
   if (distance - accuracy > radius) return 'خارج النطاق';
   return 'غير حاسم';
