@@ -62,7 +62,17 @@ function tabS(){
 $("#pv1").onclick=()=>{CUR.first=!CUR.first;$("#stage").innerHTML=CUR.draw(CUR.first?CUR.snapshot1:CUR.x0);fit();$("#pv1").textContent=CUR.first?"النسخة الحالية":"النسخة الأولى"};
 $("#pvok").onclick=()=>review(true,"");
 $("#pvret").onclick=()=>{$("#modal").innerHTML=`<h3>إعادة التقرير للمندوب</h3><label>ملاحظة للمندوب *</label><textarea id="rn" rows="3"></textarea><div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">إعادة</button></div>`;$("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");$("#sv").onclick=()=>review(false,$("#rn").value.trim())};
-async function loadDay(d){try{S=mapRep(await srv("myReport",{date:d}));PREV=await srv("prevInfo");home()}catch(e){toast(e.message)}}
+async function loadDay(d){
+ const seq=++reportContextSeq;
+ if(typeof cancelAuto==="function")cancelAuto();
+ try{
+  const next=mapRep(await srv("myReport",{date:d}));
+  if(seq!==reportContextSeq)return;
+  const prev=await srv("prevInfo");
+  if(seq!==reportContextSeq)return;
+  S=next;PREV=prev;home()
+ }catch(e){if(seq===reportContextSeq)toast(e.message)}
+}
 function banner(){let h="";const bx=(t,b)=>`<div class="row" style="display:block;background:var(--soft);border-color:var(--brand)"><div>${t}</div><div class="acts">${b}</div></div>`;
  if(S.date!==TD)h+=bx(`أنت تحرر تقرير يوم <b>${esc(S.date)}</b>`,'<button class="mini" id="bk">العودة لتقرير اليوم</button>');
  else if(PREV&&PREV.open&&PREV.work&&(!PREV.status||["مسودة","معاد للمندوب"].indexOf(PREV.status)>=0))h+=bx(`لديك تقرير الأمس (${esc(PREV.date)}) لم يُرسل بعد.`,'<button class="mini" id="py">كتابته الآن</button>');
