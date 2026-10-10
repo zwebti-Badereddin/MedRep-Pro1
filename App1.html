@@ -124,12 +124,59 @@ function perfChart(r){
 }
 function printPerformance(repId){
  const host=$("#av");if(!host)return;
- host.querySelectorAll(".perf-person").forEach(el=>el.classList.toggle("print-selected",repId!=="all"&&el.dataset.perfRep===repId));
- host.dataset.printOnly=repId||"all";
- const restore=()=>{delete host.dataset.printOnly;host.querySelectorAll(".perf-person").forEach(el=>el.classList.remove("print-selected"));window.removeEventListener("afterprint",restore)};
- window.addEventListener("afterprint",restore,{once:true});
- window.print();
- setTimeout(restore,1500);
+ const cards=Array.from(host.querySelectorAll(".perf-person"));
+ const chosen=repId==="all"?cards:cards.filter(el=>el.dataset.perfRep===repId);
+ if(!chosen.length){toast("لا توجد بيانات جاهزة للتصدير.");return}
+ const win=window.open("","_blank");
+ if(!win){toast("تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.");return}
+ const company=esc(CFG.company.name||"MedRep Pro");
+ const title=esc(CFG.company.title||"تقرير أداء المندوبين");
+ const range=esc($("#fa").value)+" — "+esc($("#fb").value);
+ const content=chosen.map(el=>{
+  const clone=el.cloneNode(true);
+  clone.querySelectorAll(".perf-single-pdf").forEach(b=>b.remove());
+  clone.querySelectorAll("details").forEach(d=>d.open=true);
+  return clone.outerHTML;
+ }).join('<div class="page-break"></div>');
+ const css=`
+  @page{size:A4 portrait;margin:12mm}
+  *{box-sizing:border-box}
+  body{font-family:Arial,"Noto Sans Arabic",sans-serif;direction:rtl;color:#172b2b;margin:0;font-size:12px}
+  .print-heading{display:flex;align-items:center;gap:14px;border-bottom:2px solid #267c79;padding-bottom:10px;margin-bottom:14px}
+  .print-heading img{max-width:100px;max-height:58px;object-fit:contain}
+  .print-heading h1{font-size:19px;margin:0 0 5px}
+  .print-heading p{margin:3px 0;color:#526568}
+  .perf-person{display:block!important;border:1px solid #d6e1e1;border-radius:8px;padding:12px;margin:0 0 14px;break-inside:avoid;page-break-inside:avoid}
+  .perf-pdf-head{display:none!important}
+  .perf-person-title{display:flex;justify-content:space-between;align-items:center;font-size:16px;margin-bottom:8px}
+  .sc{font-weight:bold}
+  .pb{height:8px;background:#e5eeee;border-radius:8px;overflow:hidden;margin:8px 0 12px}
+  .pb i{display:block;height:100%;background:#267c79;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .perf-facts{display:grid;gap:5px;color:#526568;font-size:11px;margin:8px 0}
+  table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}
+  th,td{border:1px solid #cbd7d7;padding:5px;text-align:right}
+  th{background:#edf4f4;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .perf-chart{margin-top:12px;border:1px solid #cbd7d7;border-radius:8px;padding:10px;break-inside:avoid}
+  .perf-chart-title{font-weight:bold;margin-bottom:8px}
+  .perf-chart-row{margin:8px 0}
+  .perf-chart-label{display:flex;justify-content:space-between;font-size:11px;font-weight:bold}
+  .perf-chart-track{height:9px;background:#e5eeee;border-radius:8px;overflow:hidden;margin-top:4px}
+  .perf-chart-track i{display:block;height:100%;background:#267c79;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .perf-chart-meta{font-size:10px;color:#526568;margin-top:3px}
+  .perf-kpi-details summary{display:none}
+  .perf-kpi-details>div{display:block!important}
+  .perf-toolbar,.perf-single-pdf,.perf-screen-note{display:none!important}
+  .page-break{break-before:page;page-break-before:always}
+  `;
+ win.document.open();
+ win.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>'+title+'</title><style>'+css+'</style></head><body><header class="print-heading">'+
+ (CFG.company.logo?'<img src="'+esc(CFG.company.logo)+'" alt="شعار الشركة">':'')+
+ '<div><h1>'+company+'</h1><p>'+title+'</p><p>الفترة: '+range+'</p></div></header>'+content+'</body></html>');
+ win.document.close();
+ const doPrint=()=>{try{win.focus();win.print()}catch(e){toast("تعذر تشغيل الطباعة: "+e.message)}};
+ const imgs=Array.from(win.document.images);
+ if(!imgs.length)win.setTimeout(doPrint,300);
+ else Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;win.setTimeout(resolve,4000)}))).then(()=>win.setTimeout(doPrint,250));
 }
 async function tabP(){
  const nav=adminNavSeq;
