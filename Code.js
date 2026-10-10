@@ -491,30 +491,11 @@ function reverifyWorkplace_(ent) {
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
     if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); changed = true; n++; } }); return changed; };
-  for (let i = 1; i < vals.length; i++) { const writes = [], op = parse(vals[i][ix('doctors')]); if (op && fix(op)) writes.push([ix('doctors'), op]); ['snapshot', 'snapshot1'].forEach(k => { const snap = parse(vals[i][ix(k)]); if (snap && fix(snap.doctors)) writes.push([ix(k), snap]); }); writes.forEach(x => rs.getRange(i + 1, x[0] + 1).setValue(JSON.stringify(x[1]))); }
+  // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
+  for (let i = 1; i < vals.length; i++) { const op = parse(vals[i][ix('doctors')]); if (op && fix(op)) rs.getRange(i + 1, ix('doctors') + 1).setValue(JSON.stringify(op)); }
   return n;
 }
 
-/* ---------- admin review of doctors/pharmacies (review, edit/rename, merge, disable) ---------- */
-function masterSheet_(e) { if (e !== 'Doctors' && e !== 'Pharmacies') throw new Error('كيان غير مسموح'); return e; }
-function masterList_(s, p) {
-  const sh = masterSheet_(p.entity), col = sh === 'Doctors' ? 'doctors' : 'pharmacies', cnt = {};
-  dbAll_('Reports').forEach(r => JSON.parse(r[col] || '[]').forEach(v => { cnt[v.name] = (cnt[v.name] || 0) + 1; }));
-  return dbAll_(sh).map(r => Object.assign({}, r, { uses: cnt[r.name] || 0 }));
-}
-// Rewrites names in the operational report columns (used by KPI coverage). Frozen snapshots are never touched.
-function rewriteNames_(sheet, from, to) {
-  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), sh = sheet_('Reports'), vals = sh.getDataRange().getValues();
-  let n = 0;
-  for (let i = 1; i < vals.length; i++) {
-    let arr; try { arr = JSON.parse(vals[i][ci] || '[]'); } catch (e) { continue; }
-    let ch = false; arr.forEach(v => { if (v.name === from) { v.name = to; ch = true; } });
-    if (ch) { sh.getRange(i + 1, ci + 1).setValue(JSON.stringify(arr)); n++; }
-  }
-  return n;
-}
-// After the admin approves a reference, visits that were waiting ('مرجع غير مؤكد') get their real verdict.
-// Only the GPS verdict/distance of pending visits is updated (also inside snapshots); no other content changes.
 function reverify_(sheet, ent) {
   const st = settings_(), rad = +ent.radius || +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
   const ix = k => T.Reports.indexOf(k), mine = sheet === 'Doctors' ? 'doctors' : 'pharmacies';
@@ -523,13 +504,14 @@ function reverify_(sheet, ent) {
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
     if (v.name === ent.name && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
       g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); ch = true; n++; } }); return ch; };
+  // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) {
-    const w = [], op = parse(vals[i][ix(mine)]); if (op && fix(op)) w.push([ix(mine), op]);
-    ['snapshot', 'snapshot1'].forEach(k => { const o = parse(vals[i][ix(k)]); if (o && fix(o[mine])) w.push([ix(k), o]); });
-    w.forEach(x => rs.getRange(i + 1, x[0] + 1).setValue(JSON.stringify(x[1])));
+    const op = parse(vals[i][ix(mine)]);
+    if (op && fix(op)) rs.getRange(i + 1, ix(mine) + 1).setValue(JSON.stringify(op));
   }
   return n;
 }
+
 function mergeDoctorWorkplaces_(fromDoctor, toDoctor) {
   ensureDoctorWorkplaces_(); const rows = dbAll_('DoctorWorkplaces');
   rows.filter(w => w.doctorId === fromDoctor.id).forEach(w => {
