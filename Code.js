@@ -420,7 +420,7 @@ function ensureDoctorWorkplaces_() {
     dbAppend_('DoctorWorkplaces', w); places.push(w);
   });
 }
-function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w) => Math.max(m, +(String(w.id).match(/(\\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-5); }
+function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w) => Math.max(m, +(String(w.id).match(/(\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-5); }
 function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
   const name = String(workplace || '').trim().slice(0, 100);
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
