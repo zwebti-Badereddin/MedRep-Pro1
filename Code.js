@@ -562,7 +562,7 @@ function workplaceAct_(s, p) {
 function reverifyWorkplace_(ent) {
   const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
-  const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
+  const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, identityMatches = (!v.doctorId || String(v.doctorId) === String(ent.doctorId)) && normName_(v.name) === normName_(ent.doctorName), matches = identityMatches && (v.workplaceId ? String(v.workplaceId) === String(ent.id) : normName_(v.place) === normName_(ent.workplace));
     if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { recordGpsReverification_(g, ent, rad, refAcc); changed = true; n++; } }); return changed; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) { const op = parse(vals[i][ix('doctors')]); if (op && fix(op)) rs.getRange(i + 1, ix('doctors') + 1).setValue(JSON.stringify(op)); }
@@ -575,7 +575,7 @@ function reverify_(sheet, ent) {
   const parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
-    if (v.name === ent.name && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
+    if ((v.pharmacyId ? String(v.pharmacyId) === String(ent.id) && normName_(v.name) === normName_(ent.name) : normName_(v.name) === normName_(ent.name)) && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
       recordGpsReverification_(g, ent, rad, refAcc); ch = true; n++; } }); return ch; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) {
