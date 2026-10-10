@@ -207,7 +207,7 @@ function lookups_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('lk'); if (hit) return JSON.parse(hit);
   ensureDoctorWorkplaces_();
   const act = r => String(r.active) !== 'false';
-  const workplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
+  const workplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, active: w.active, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
   // GPS coordinates and internal review metadata remain server-side.
   const v = {
     doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces.filter(w => w.doctorId === r.id) })),
@@ -416,7 +416,7 @@ function ensureDoctorWorkplaces_() {
   doctors.forEach(d => {
     const name = String(d.workplace || '').trim();
     if (!name || places.some(w => w.doctorId === d.id && normName_(w.workplace) === normName_(name))) return;
-    const w = { id: nextWorkplaceId_(places), doctorId: d.id, doctorName: d.name, workplace: name, sector: d.sector || '', lat: d.lat || '', lng: d.lng || '', radius: d.radius || '', active: String(d.active) === 'false' ? false : true, refState: d.refState || '', refBy: d.refBy || '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
+    const w = { id: nextWorkplaceId_(places), doctorId: d.id, doctorName: d.name, workplace: name, sector: d.sector || '', lat: '', lng: '', radius: '', active: String(d.active) === 'false' ? false : true, refState: '', refBy: '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
     dbAppend_('DoctorWorkplaces', w); places.push(w);
   });
 }
@@ -464,6 +464,7 @@ function workplaceAct_(s, p) {
     w.reviewed = 'true';
   } else if (p.op === 'approveLoc') {
     if (w.lat === '' || w.lat == null || isNaN(+w.lat) || w.lng === '' || w.lng == null || isNaN(+w.lng)) throw new Error('لا توجد إحداثيات مرجعية لهذا المكان بعد.');
+    if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
     w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
   } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; }
   else throw new Error('عملية غير معروفة');
@@ -513,6 +514,15 @@ function reverify_(sheet, ent) {
   }
   return n;
 }
+function mergeDoctorWorkplaces_(fromDoctor, toDoctor) {
+  ensureDoctorWorkplaces_(); const rows = dbAll_('DoctorWorkplaces');
+  rows.filter(w => w.doctorId === fromDoctor.id).forEach(w => {
+    const duplicate = rows.find(x => x.doctorId === toDoctor.id && normName_(x.workplace) === normName_(w.workplace) && String(x.active) !== 'false');
+    if (duplicate) { w.active = false; w.reviewed = 'true'; }
+    else { w.doctorId = toDoctor.id; w.doctorName = toDoctor.name; }
+    dbUpsert_('DoctorWorkplaces', 'id', w);
+  });
+}
 function masterAct_(s, p) {
   const sh = masterSheet_(p.entity), rows = dbAll_(sh), r = rows.find(x => x.id === p.id);
   if (!r) throw new Error('السجل غير موجود');
@@ -523,12 +533,16 @@ function masterAct_(s, p) {
     const t = rows.find(x => x.id === p.into);
     if (!t || t.id === r.id) throw new Error('اختر سجلًا صحيحًا للدمج');
     note = 'into ' + t.id + ', reports: ' + rewriteNames_(sh, r.name, t.name);
+    if (sh === 'Doctors') mergeDoctorWorkplaces_(r, t);
     r.active = false; r.reviewed = 'true';
   } else if (p.op === 'edit') {
     const row = p.row || {}, nm = String(row.name || '').trim().slice(0, 80), cut = v => String(v || '').trim().slice(0, 80);
     if (nm.length < 3) throw new Error('الاسم قصير جدًا');
     if (rows.some(x => x.id !== r.id && normName_(x.name) === normName_(nm))) throw new Error('الاسم موجود مسبقًا. استخدم «دمج».');
-    if (nm !== r.name) { note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm; }
+    if (nm !== r.name) {
+      note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm;
+      if (sh === 'Doctors') { ensureDoctorWorkplaces_(); dbAll_('DoctorWorkplaces').filter(w => w.doctorId === r.id).forEach(w => { w.doctorName = nm; dbUpsert_('DoctorWorkplaces', 'id', w); }); }
+    }
     (sh === 'Doctors' ? ['specialty', 'workplace', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
   } else if (p.op === 'approveLoc') {
