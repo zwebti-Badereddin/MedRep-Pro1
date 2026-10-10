@@ -202,10 +202,16 @@ const today_ = () => Utilities.formatDate(new Date(), settings_().timezone || Se
 
 /* ---------- edit windows: today; yesterday until closeHour; returned reports; reopen before approval ---------- */
 function yesterday_() { return Utilities.formatDate(new Date(new Date(today_() + 'T12:00:00Z').getTime() - 864e5), 'UTC', 'yyyy-MM-dd'); }
+function closeHour_(st) {
+  const raw = st && st.closeHour;
+  if (raw === '' || raw === null || raw === undefined) return 10;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : 10;
+}
 function editable_(date, existing) {
   const td = today_(); if (date === td) return true;
   if (existing && existing.status === 'معاد للمندوب') return true;
-  const st = settings_(), tz = st.timezone || Session.getScriptTimeZone(), hh = ('0' + (+st.closeHour || 10)).slice(-2);
+  const st = settings_(), tz = st.timezone || Session.getScriptTimeZone(), hh = ('0' + closeHour_(st)).slice(-2);
   return date === yesterday_() && Date.now() <= Utilities.parseDate(td + ' ' + hh + ':00', tz, 'yyyy-MM-dd HH:mm').getTime();
 }
 function prevInfo_(s) {
@@ -280,7 +286,7 @@ function submitReport_(s, p) {
   const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
   if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
   const rep = dbAll_('Reps').find(x => x.id === s.uid);
-  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; delete x.logo; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
+  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
   r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
   r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
   dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
@@ -557,7 +563,7 @@ function notify_(snap) {
 
 /* ---------- compliance: on-time = submitted before (day+1) at closeHour, on workDays (0=Sun) ---------- */
 function compliance_(from, to) {
-  const st = settings_(), tz = st.timezone || Session.getScriptTimeZone(), close = ('0' + (+st.closeHour || 10)).slice(-2);
+  const st = settings_(), tz = st.timezone || Session.getScriptTimeZone(), close = ('0' + closeHour_(st)).slice(-2);
   const wd = String(st.workDays || '0,1,2,3,4').split(',').map(Number), DAY = 864e5, f = d => Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
   const yesterday = f(new Date(new Date(today_() + 'T12:00:00Z').getTime() - DAY)), end = to < yesterday ? to : yesterday, days = [];
   for (let d = new Date(from + 'T12:00:00Z'); f(d) <= end; d = new Date(d.getTime() + DAY)) if (wd.indexOf(d.getUTCDay()) >= 0) days.push(f(d));
@@ -753,7 +759,7 @@ function remindCore_(day, subject, bodyFn, tellManager) {
   const st = settings_(); if (String(st.remindEnabled) !== 'true') return;
   const wd = String(st.workDays || '0,1,2,3,4').split(',').map(Number), off = offData_();
   if (wd.indexOf(new Date(day + 'T12:00:00Z').getUTCDay()) < 0 || off.hol[day]) return;
-  const reports = dbAll_('Reports').filter(r => r.date === day), missing = [], url = ScriptApp.getService().getUrl(), hh = ('0' + (+st.closeHour || 10)).slice(-2);
+  const reports = dbAll_('Reports').filter(r => r.date === day), missing = [], url = ScriptApp.getService().getUrl(), hh = ('0' + closeHour_(st)).slice(-2);
   dbAll_('Reps').filter(r => String(r.active) !== 'false').forEach(rep => {
     if (offWeight_(off, rep.id, day) >= 1) return; // on leave
     const r = reports.find(x => x.repId === rep.id);
@@ -782,7 +788,7 @@ function sendEveningReminder_() { // evening: today's report
 }
 function setReminders_(s, p) {
   const clamp = (v, d) => Math.min(23, Math.max(0, isNaN(+v) || v === '' || v === null || v === undefined ? d : +v));
-  const on = !!p.enabled, h1 = clamp(p.hour, 8), h2 = clamp(p.evening, 18), hf = Math.max(0, (+settings_().closeHour || 10) - 1);
+  const on = !!p.enabled, h1 = clamp(p.hour, 8), h2 = clamp(p.evening, 18), hf = Math.max(0, closeHour_(settings_()) - 1);
   dbUpsert_('Settings', 'key', { key: 'remindEnabled', value: on ? 'true' : 'false' });
   dbUpsert_('Settings', 'key', { key: 'remindHour', value: String(h1) }); dbUpsert_('Settings', 'key', { key: 'remindEvening', value: String(h2) });
   const names = ['sendReminders_', 'sendFinalReminder_', 'sendEveningReminder_'];
