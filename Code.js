@@ -487,10 +487,10 @@ function workplaceAct_(s, p) {
   dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_(); audit_(s, 'workplace_' + p.op, w.id, note); return true;
 }
 function reverifyWorkplace_(ent) {
-  const rad = +ent.radius || +settings_().gpsRadius || 150, rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
+  const st = settings_(), rad = +ent.radius || +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
-    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = g.acc > rad ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); changed = true; n++; } }); return changed; };
+    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); changed = true; n++; } }); return changed; };
   for (let i = 1; i < vals.length; i++) { const writes = [], op = parse(vals[i][ix('doctors')]); if (op && fix(op)) writes.push([ix('doctors'), op]); ['snapshot', 'snapshot1'].forEach(k => { const snap = parse(vals[i][ix(k)]); if (snap && fix(snap.doctors)) writes.push([ix(k), snap]); }); writes.forEach(x => rs.getRange(i + 1, x[0] + 1).setValue(JSON.stringify(x[1]))); }
   return n;
 }
@@ -516,13 +516,13 @@ function rewriteNames_(sheet, from, to) {
 // After the admin approves a reference, visits that were waiting ('مرجع غير مؤكد') get their real verdict.
 // Only the GPS verdict/distance of pending visits is updated (also inside snapshots); no other content changes.
 function reverify_(sheet, ent) {
-  const st = settings_(), rad = +ent.radius || +st.gpsRadius || 150, rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
+  const st = settings_(), rad = +ent.radius || +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
   const ix = k => T.Reports.indexOf(k), mine = sheet === 'Doctors' ? 'doctors' : 'pharmacies';
   const parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
     if (v.name === ent.name && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
-      g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = g.acc > rad ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); ch = true; n++; } }); return ch; };
+      g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); ch = true; n++; } }); return ch; };
   for (let i = 1; i < vals.length; i++) {
     const w = [], op = parse(vals[i][ix(mine)]); if (op && fix(op)) w.push([ix(mine), op]);
     ['snapshot', 'snapshot1'].forEach(k => { const o = parse(vals[i][ix(k)]); if (o && fix(o[mine])) w.push([ix(k), o]); });
@@ -561,6 +561,11 @@ function masterAct_(s, p) {
     }
     (sh === 'Doctors' ? ['specialty', 'workplace', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
+  } else if (p.op === 'setLoc') {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (p.lat === '' || p.lng === '' || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new Error('حدد إحداثيات صحيحة من الخريطة.');
+    r.lat = lat; r.lng = lng; r.refState = 'مؤقت'; r.refBy = 'ADMIN_MAP';
+    note = 'admin map coordinates: ' + lat + ',' + lng;
   } else if (p.op === 'approveLoc') {
     if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     r.refState = 'مؤكد'; note = 'reverified visits: ' + reverify_(sh, r);
