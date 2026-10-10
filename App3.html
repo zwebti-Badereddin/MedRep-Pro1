@@ -2,14 +2,14 @@
 (window.__parts=window.__parts||[]).push("App3");
 function setupPicker(recs,fill,lbl){
  const inp=$("#f_name"),box=$("#f_name_l"),hint=$("#f_name_h");
- const sub=r=>r.specialty?(r.specialty+(r.workplace?" · "+r.workplace:"")):(r.location||"");
+  const sub=r=>r.specialty?(r.specialty+((r.workplaces||[]).length?" · "+r.workplaces.map(w=>w.workplace).join("، "):r.workplace?" · "+r.workplace:"")):(r.location||"");
  const draw=()=>{const q=norm(inp.value),t=inp.value.trim(),m=recs.filter(r=>!q||norm(r.name).indexOf(q)>=0).slice(0,40);
   box.innerHTML=m.map((r,i)=>`<div class="pi" data-i="${i}">${esc(r.name)}<small>${esc(sub(r))}</small></div>`).join("")+(t&&!recs.some(r=>norm(r.name)===q)?`<div class="pi add" data-a="1">＋ إضافة ${lbl} «${esc(t)}»</div>`:"");
   box.style.display=box.innerHTML?"block":"none";box._m=m};
  inp.oninput=()=>{PK={rec:null,isNew:false};hint.textContent="";draw()};inp.onfocus=draw;
  inp.onblur=()=>setTimeout(()=>{box.style.display="none"},180);
  box.onpointerdown=e=>{const it=e.target.closest(".pi");if(!it)return;e.preventDefault();
-  if(it.dataset.a){PK={rec:null,isNew:true};hint.textContent="✓ سيُضاف إلى القائمة عند حفظ الزيارة"}
+  if(it.dataset.a){PK={rec:null,isNew:true};hint.textContent="✓ سيُضاف إلى القائمة عند حفظ الزيارة";if(fill)fill({isNew:true})}
   else{const r=box._m[+it.dataset.i];PK={rec:r,isNew:false};inp.value=r.name;hint.textContent="";fill(r)}
   box.style.display="none"};
 }
@@ -20,7 +20,7 @@ function form(k,idx){
  <label>اسم الطبيب *</label><div class="pk"><input id="f_name" autocomplete="off" placeholder="اكتب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
  <label>التخصص *</label><select id="f_spec">${opts(CFG.specialties,cur.specialty)}</select>
  <div class="two"><div><label>للتعريف *</label><select id="f_intro">${opts(CFG.products,cur.intro)}</select></div><div><label>للتذكير</label><select id="f_remind">${opts(CFG.samples,cur.remind)}</select></div></div>
- <label>مكان العمل</label><input id="f_place" list="wl" value="${f("place")}"><datalist id="wl">${CFG.workplaces.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+  <label>مكان العمل *</label><select id="f_workplace"><option value="">اختر الطبيب أولًا</option></select><div id="f_newplace_wrap" style="display:none"><label>اقتراح مكان عمل جديد</label><input id="f_newplace" placeholder="اسم المصحة أو العيادة" value=""></div><div id="f_place_status" class="geo"></div>
  <label>وقت الزيارة</label>${seg("time",cur.time||"صباحًا")}
  <label>القطاع</label><div class="seg">${["خاص","عام"].map(x=>`<label><input type="radio" name="sector" value="${x}" ${x===(cur.sector||"خاص")?"checked":""}><span>${x}</span></label>`).join("")}</div>
  <div class="two"><div><label>عينة مجانية 1</label><select id="f_s1">${opts(CFG.samples,cur.s1)}</select></div><div><label>عينة مجانية 2</label><select id="f_s2">${opts(CFG.samples,cur.s2)}</select></div></div>`
@@ -34,19 +34,38 @@ function form(k,idx){
  <label>الطلبية</label><input id="f_order" value="${f("order")}">`;
  $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
  $("#ov").classList.add("on");if(idx==null)startGeo();
- {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
-  setupPicker(recs,k==="d"?(r=>{const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
-   if(r.workplace)$("#f_place").value=r.workplace;const rd=document.querySelector(`input[name=sector][value="${r.sector}"]`);if(rd)rd.checked=true}):(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة")}
+  {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
+   const fillDoctor=r=>{if(r.isNew){$("#f_workplace").innerHTML='<option value="__new__">＋ اقتراح مكان عمل جديد</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent="سيُرسل المكان الجديد إلى الإدارة للمراجعة.";return}
+    const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
+    const list=(r.workplaces||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح مكان عمل جديد</option>';
+    let selected=(cur.workplaceId&&list.find(w=>w.id===cur.workplaceId))||list.find(w=>norm(w.workplace)===norm(cur.place));
+    if(selected){$("#f_workplace").value=selected.id;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.reviewed?"مكان عمل مسجل":"تنبيه: هذا المكان بانتظار اعتماد الإدارة."}
+    else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل مكان؛ راجعه قبل الحفظ.":"اختر مكانًا مسجلًا أو اقترح مكانًا جديدًا."}
+    const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true};
+   $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"سيُرسل المكان الجديد إلى الإدارة للمراجعة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: هذا المكان بانتظار اعتماد الإدارة.":"مكان عمل مسجل")};
+   setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on")};
  $("#sv").onclick=async()=>{
   const g=id=>{const e=$("#"+id);return e?e.value.trim():""},r=n=>document.querySelector(`input[name=${n}]:checked`)?.value||"";
   const typed=g("f_name");if(!typed){$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
-  const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
-  if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
-   try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:g("f_place"),sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
-    if(!recs.some(x=>x.id===rec.id))recs.push(rec)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
-  const v=k==="d"?{name:rec.name,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:g("f_place"),time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
-   :{name:rec.name,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
+   const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
+   if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
+    try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:$("#f_workplace").value==="__new__"?g("f_newplace"):($("#f_workplace").selectedOptions[0]?.dataset.place||""),sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
+     if(!recs.some(x=>x.id===rec.id))recs.push(rec)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
+   let placeId="",placeName="";
+   if(k==="d"){
+    const chosen=$("#f_workplace").value;
+    if(chosen==="__new__"){
+     placeName=g("f_newplace");if(placeName.length<2){$("#ferr").textContent="اختر مكان عمل مسجلًا أو أدخل اسم المكان الجديد.";$("#sv").disabled=false;return}
+     if(rec.workplaceId){placeId=rec.workplaceId;rec.workplaces=rec.workplaces||[];rec.workplaces.push({id:placeId,workplace:placeName,reviewed:false})}
+     else{try{const wp=await srv("addDoctorWorkplace",{doctorId:rec.id,workplace:placeName,sector:r("sector")});placeId=wp.id;placeName=wp.workplace;rec.workplaces=rec.workplaces||[];if(!rec.workplaces.some(w=>w.id===wp.id))rec.workplaces.push(wp)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
+    }else{
+     const option=$("#f_workplace").selectedOptions[0];placeId=chosen;placeName=option?.dataset.place||"";
+     if(!placeId||!placeName){$("#ferr").textContent="اختر مكان العمل الذي تمت زيارته.";$("#sv").disabled=false;return}
+    }
+   }
+   const v=k==="d"?{name:rec.name,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,workplaceId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
+    :{name:rec.name,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
   const arr=k==="d"?S.docs:S.phs;let ref;
   if(idx!=null){v.gps=cur.gps;arr[idx]=v;ref=v}else{v.gps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:{status:"غير متاح"};arr.push(v);ref=v}
   stopGeo();$("#ov").classList.remove("on");auto();home();
