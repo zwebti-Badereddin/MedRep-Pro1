@@ -690,8 +690,13 @@ function geo_(v, ent, sheet, s, st) {
   delete v._v;
   const g = v.gps, rad = +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, save = () => dbUpsert_(sheet, 'id', ent);
   if (!ent) { g.status = 'غير متاح'; return; }
+  // A workplace without explicit admin approval is never initialized or moved by a rep's GPS reading.
+  // Visits remain saveable; the location stays pending until an administrator sets/reviews the map point.
   if (sheet === 'DoctorWorkplaces' && String(ent.reviewed) !== 'true') {
-    if ((ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) && g.acc <= refAcc) { ent.lat = g.lat; ent.lng = g.lng; ent.refState = 'مؤقت'; ent.refBy = s.uid; save(); }
+    g.status = 'مرجع غير مؤكد'; return;
+  }
+  // Even inconsistent records marked reviewed must not acquire coordinates from a rep when no reference exists.
+  if (sheet === 'DoctorWorkplaces' && (ent.lat === '' || ent.lat == null || isNaN(+ent.lat))) {
     g.status = 'مرجع غير مؤكد'; return;
   }
   if (ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) {
