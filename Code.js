@@ -8,6 +8,7 @@ const T = {
   Settings: ['key', 'value'],
   Reps: ['id', 'name', 'codeHash', 'phone', 'active', 'email'],
   Doctors: ['id', 'name', 'specialty', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
+  DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   Pharmacies: ['id', 'name', 'location', 'nearFacility', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   Products: ['id', 'name', 'category', 'status'],
   KPI: ['key', 'name', 'target', 'weight', 'active'],
@@ -52,6 +53,9 @@ const ROUTES = {
   bootstrap:     { role: 'any',   fn: bootstrap_ },
   masterList:    { role: 'admin', fn: masterList_ },
   masterAct:     { role: 'admin', fn: masterAct_ },
+  workplacesList:{ role: 'admin', fn: workplacesList_ },
+  workplaceAct:  { role: 'admin', fn: workplaceAct_ },
+  addDoctorWorkplace: { role: 'rep', fn: (s, p) => addDoctorWorkplace_(s, p) },
   reopenReport:  { role: 'rep',   fn: reopenReport_ },
   prevInfo:      { role: 'rep',   fn: prevInfo_ },
   trend:         { role: 'admin', fn: trend_ },
@@ -201,11 +205,12 @@ function session_(token) {
 /* ---------- bootstrap: lookups + settings for the UI (nothing hardcoded client-side) ---------- */
 function lookups_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('lk'); if (hit) return JSON.parse(hit);
+  ensureDoctorWorkplaces_();
   const act = r => String(r.active) !== 'false';
-  // Only send fields needed to fill a visit. Reference GPS coordinates and internal review metadata
-  // remain server-side and are available to administrators through masterList_.
+  const workplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
+  // GPS coordinates and internal review metadata remain server-side.
   const v = {
-    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active })),
+    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces.filter(w => w.doctorId === r.id) })),
     pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
     products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status }))
   };
@@ -294,9 +299,16 @@ function persistReport_(s, p, lockHeld) {
   });
   const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
   if (docs.concat(phs).some(v => v._v)) {
-    const st = settings_(), D = dbAll_('Doctors'), P = dbAll_('Pharmacies');
-    docs.forEach(v => { if (v._v) geo_(v, D.find(x => x.name === v.name), 'Doctors', s, st); });
-    phs.forEach(v => { if (v._v) geo_(v, P.find(x => x.name === v.name), 'Pharmacies', s, st); });
+    ensureDoctorWorkplaces_();
+    const st = settings_(), D = dbAll_('Doctors'), W = dbAll_('DoctorWorkplaces'), P = dbAll_('Pharmacies');
+    docs.forEach(v => { if (v._v) {
+      const doctor = D.find(x => normName_(x.name) === normName_(v.name));
+      let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
+      if (!place && doctor) place = W.find(x => x.doctorId === doctor.id && normName_(x.workplace) === normName_(v.place));
+      if (place && !v.workplaceId) v.workplaceId = place.id;
+      geo_(v, place, 'DoctorWorkplaces', s, st);
+    }});
+    phs.forEach(v => { if (v._v) geo_(v, P.find(x => normName_(x.name) === normName_(v.name)), 'Pharmacies', s, st); });
   }
   const now = new Date().toISOString();
   const row = {
@@ -373,6 +385,7 @@ function normName_(t) {
     .replace(/^\s*(د\s*\.?|dr\.?)\s*/i, '').replace(/\s+/g, ' ').trim();
 }
 function addMaster_(s, sheet, p) {
+  if (sheet === 'Doctors') ensureDoctorWorkplaces_();
   const name = String(p.name || '').trim().slice(0, 80);
   if (name.length < 3) throw new Error('الاسم قصير جدًا');
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
@@ -385,10 +398,84 @@ function addMaster_(s, sheet, p) {
       : { name: name, location: cut(p.location), nearFacility: cut(p.nearFacility), active: true, addedBy: s.uid };
     const mx = rows.reduce((a, r) => Math.max(a, +String(r.id).split('-')[1] || 0), 0);
     row.id = PREFIX[sheet === 'Doctors' ? 'Doctors' : 'Pharmacies'] + '-' + ('0000' + (mx + 1)).slice(-4);
-    dbAppend_(sheet, row); clearCache_();
+    dbAppend_(sheet, row);
+    if (sheet === 'Doctors' && cut(p.workplace)) {
+      const wp = addDoctorWorkplaceRow_(s, row, cut(p.workplace), cut(p.sector), false);
+      row.workplaceId = wp.id;
+    }
+    clearCache_();
     audit_(s, 'add_' + sheet.toLowerCase(), row.id, name);
     return row;
   } finally { lock.releaseLock(); }
+}
+
+/* ---------- doctor workplaces: one doctor may work at multiple facilities ---------- */
+function ensureDoctorWorkplaces_() {
+  ensureSheet_('DoctorWorkplaces');
+  const doctors = dbAll_('Doctors'), places = dbAll_('DoctorWorkplaces');
+  doctors.forEach(d => {
+    const name = String(d.workplace || '').trim();
+    if (!name || places.some(w => w.doctorId === d.id && normName_(w.workplace) === normName_(name))) return;
+    const w = { id: nextWorkplaceId_(places), doctorId: d.id, doctorName: d.name, workplace: name, sector: d.sector || '', lat: d.lat || '', lng: d.lng || '', radius: d.radius || '', active: String(d.active) === 'false' ? false : true, refState: d.refState || '', refBy: d.refBy || '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
+    dbAppend_('DoctorWorkplaces', w); places.push(w);
+  });
+}
+function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w) => Math.max(m, +(String(w.id).match(/(\\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-5); }
+function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
+  const name = String(workplace || '').trim().slice(0, 100);
+  if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
+  const rows = dbAll_('DoctorWorkplaces'), old = rows.find(w => w.doctorId === doctor.id && normName_(w.workplace) === normName_(name));
+  if (old) return old;
+  const row = { id: nextWorkplaceId_(rows), doctorId: doctor.id, doctorName: doctor.name, workplace: name, sector: String(sector || doctor.sector || '').trim().slice(0, 30), active: true, addedBy: s.uid, reviewed: reviewed ? 'true' : 'false' };
+  dbAppend_('DoctorWorkplaces', row); return row;
+}
+function addDoctorWorkplace_(s, p) {
+  ensureDoctorWorkplaces_();
+  const doctor = dbAll_('Doctors').find(d => d.id === p.doctorId && String(d.active) !== 'false');
+  if (!doctor) throw new Error('اختر طبيبًا مسجلًا أولًا.');
+  const name = String(p.workplace || '').trim();
+  if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
+  const row = addDoctorWorkplaceRow_(s, doctor, name, p.sector, false);
+  clearCache_();
+  audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace);
+  return { id: row.id, doctorId: row.doctorId, doctorName: row.doctorName, workplace: row.workplace, sector: row.sector, reviewed: String(row.reviewed) === 'true', refState: row.refState || '' };
+}
+function workplacesList_(s, p) {
+  ensureDoctorWorkplaces_();
+  const counts = {};
+  dbAll_('Reports').forEach(r => JSON.parse(r.doctors || '[]').forEach(v => {
+    const key = v.workplaceId || (v.name + '|' + (v.place || ''));
+    counts[key] = (counts[key] || 0) + 1;
+  }));
+  return dbAll_('DoctorWorkplaces').map(w => Object.assign({}, w, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 }));
+}
+function workplaceAct_(s, p) {
+  ensureDoctorWorkplaces_();
+  const rows = dbAll_('DoctorWorkplaces'), w = rows.find(x => x.id === p.id);
+  if (!w) throw new Error('مكان العمل غير موجود');
+  let note = '';
+  if (p.op === 'review') w.reviewed = 'true';
+  else if (p.op === 'toggle') w.active = String(w.active) === 'false';
+  else if (p.op === 'edit') {
+    const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
+    if (name.length < 2) throw new Error('اسم مكان العمل قصير جدًا');
+    if (rows.some(x => x.id !== w.id && x.doctorId === w.doctorId && normName_(x.workplace) === normName_(name))) throw new Error('هذا المكان مسجل للطبيب نفسه.');
+    w.workplace = name; w.sector = String((p.row || {}).sector || w.sector || '').trim().slice(0, 30);
+    w.reviewed = 'true';
+  } else if (p.op === 'approveLoc') {
+    if (w.lat === '' || w.lat == null || isNaN(+w.lat) || w.lng === '' || w.lng == null || isNaN(+w.lng)) throw new Error('لا توجد إحداثيات مرجعية لهذا المكان بعد.');
+    w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
+  } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; }
+  else throw new Error('عملية غير معروفة');
+  dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_(); audit_(s, 'workplace_' + p.op, w.id, note); return true;
+}
+function reverifyWorkplace_(ent) {
+  const rad = +ent.radius || +settings_().gpsRadius || 150, rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
+  let n = 0;
+  const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
+    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = g.acc > rad ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); changed = true; n++; } }); return changed; };
+  for (let i = 1; i < vals.length; i++) { const writes = [], op = parse(vals[i][ix('doctors')]); if (op && fix(op)) writes.push([ix('doctors'), op]); ['snapshot', 'snapshot1'].forEach(k => { const snap = parse(vals[i][ix(k)]); if (snap && fix(snap.doctors)) writes.push([ix(k), snap]); }); writes.forEach(x => rs.getRange(i + 1, x[0] + 1).setValue(JSON.stringify(x[1]))); }
+  return n;
 }
 
 /* ---------- admin review of doctors/pharmacies (review, edit/rename, merge, disable) ---------- */
@@ -573,6 +660,10 @@ function geo_(v, ent, sheet, s, st) {
   delete v._v;
   const g = v.gps, rad = +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, save = () => dbUpsert_(sheet, 'id', ent);
   if (!ent) { g.status = 'غير متاح'; return; }
+  if (sheet === 'DoctorWorkplaces' && String(ent.reviewed) !== 'true') {
+    if ((ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) && g.acc <= refAcc) { ent.lat = g.lat; ent.lng = g.lng; ent.refState = 'مؤقت'; ent.refBy = s.uid; save(); }
+    g.status = 'مرجع غير مؤكد'; return;
+  }
   if (ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) {
     if (g.acc > refAcc) { g.status = 'غير متاح'; return; }
     ent.lat = g.lat; ent.lng = g.lng; ent.refState = 'مؤقت'; ent.refBy = s.uid; save();
