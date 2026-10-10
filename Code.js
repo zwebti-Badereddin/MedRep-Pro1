@@ -446,10 +446,13 @@ function addDoctorWorkplace_(s, p) {
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
   const counts = {};
-  dbAll_('Reports').forEach(r => JSON.parse(r.doctors || '[]').forEach(v => {
-    const key = v.workplaceId || (v.name + '|' + (v.place || ''));
-    counts[key] = (counts[key] || 0) + 1;
-  }));
+  dbAll_('Reports').forEach(r => {
+    let visits; try { visits = JSON.parse(r.doctors || '[]'); } catch (e) { return; }
+    visits.forEach(v => {
+      const key = v.workplaceId || (v.name + '|' + (v.place || ''));
+      counts[key] = (counts[key] || 0) + 1;
+    });
+  });
   return dbAll_('DoctorWorkplaces').map(w => Object.assign({}, w, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 }));
 }
 
@@ -460,7 +463,10 @@ function masterSheet_(e) {
 }
 function masterList_(s, p) {
   const sh = masterSheet_(p.entity), col = sh === 'Doctors' ? 'doctors' : 'pharmacies', cnt = {};
-  dbAll_('Reports').forEach(r => JSON.parse(r[col] || '[]').forEach(v => { cnt[v.name] = (cnt[v.name] || 0) + 1; }));
+  dbAll_('Reports').forEach(r => {
+    let visits; try { visits = JSON.parse(r[col] || '[]'); } catch (e) { return; }
+    visits.forEach(v => { cnt[v.name] = (cnt[v.name] || 0) + 1; });
+  });
   return dbAll_(sh).map(r => Object.assign({}, r, { uses: cnt[r.name] || 0 }));
 }
 // Update operational report names only; immutable submitted snapshots remain unchanged.
