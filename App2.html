@@ -6,14 +6,14 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="DoctorWorkplaces">أماكن عمل الأطباء</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
-async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
-function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();
+async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="DoctorWorkplaces"?"workplacesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
+function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent==="DoctorWorkplaces")return drawWorkplaces();
  const f=$("#mf").value,q=norm($("#mq").value),dr=MS.ent==="Doctors",isOff=r=>String(r.active)==="false",isNew=r=>!!r.addedBy&&String(r.reviewed)!=="true"&&!isOff(r);
  const a=MS.rows.filter(r=>(f==="new"?isNew(r):f==="off"?isOff(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
  $("#ml").innerHTML=a.length?a.map(r=>{const hasL=r.lat!==""&&r.lat!=null&&!isNaN(+r.lat),pend=hasL&&(r.refState==="مؤقت"||r.refState==="متعارض"),ls=!hasL?"لا موقع مسجّل":pend?"الموقع قيد التأكيد":"الموقع مؤكد ✓",by=isNew(r)?((REPS.find(x=>x.id===r.addedBy)||{}).name||""):"",sub=dr?[r.specialty,r.workplace].filter(Boolean).join(" · "):[r.location,r.nearFacility].filter(Boolean).join(" · ");
@@ -24,6 +24,20 @@ function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();
   if(o==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
   if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else mAct(id,o)});
 }
+function drawWorkplaces(){
+ if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false",pending=r=>String(r.reviewed)!=="true"&&!off(r);
+ const a=MS.rows.filter(r=>(f==="new"?pending(r):f==="off"?off(r):true)&&(!q||norm(r.doctorName+" "+r.workplace).includes(q)));
+ $("#ml").innerHTML=a.length?a.map(w=>{const has=w.lat!==""&&w.lat!=null&&!isNaN(+w.lat),gps=!has?"لا إحداثيات":w.refState==="مؤكد"?"الموقع مؤكد ✓":w.refState==="متعارض"?"الموقع متعارض":"الموقع قيد التأكيد";
+  return '<div class="row" data-id="'+esc(w.id)+'" style="display:block;'+(off(w)?"opacity:.65":"")+'"><b>'+esc(w.workplace)+'</b> '+(pending(w)?'<span class="st s1">بانتظار الاعتماد</span>':'')+
+  '<div style="color:var(--mut);font-size:13px">الطبيب: '+esc(w.doctorName)+' · '+esc(w.sector||"—")+' · '+w.uses+' زيارة · '+gps+'</div><div class="acts">'+(pending(w)?'<button class="mini" data-a="review">اعتماد المكان</button>':'')+
+  '<button class="mini" data-a="edit">تعديل</button>'+(has?'<a class="mini" href="https://www.google.com/maps?q='+encodeURIComponent(w.lat+','+w.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">الخريطة</a>':'')+(has&&String(w.reviewed)==="true"?'<button class="mini" data-a="approveLoc">اعتماد GPS</button>':'')+(has?'<button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
+  '<button class="mini" data-a="toggle">'+(off(w)?"تفعيل":"تعطيل")+'</button></div></div>'}).join(""):'<div class="empty">لا توجد أماكن عمل مطابقة.</div>';
+ document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const id=b.closest(".row").dataset.id,w=MS.rows.find(x=>x.id===id),op=b.dataset.a;
+  if(op==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
+  if(op==="edit"){const workplace=prompt("اسم مكان العمل:",w.workplace);if(workplace==null)return;const sector=prompt("القطاع (خاص/عام):",w.sector||"خاص");if(sector==null)return;mAct(id,"edit",{row:{workplace,sector}})}
+  else mAct(id,op)});
+}
+
 function drawR(){if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false";
  const a=MS.rows.filter(r=>(f==="act"?!off(r):f==="off"?off(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
  $("#ml").innerHTML='<button class="btn dash" id="radd">＋ إضافة مندوب</button><div style="height:10px"></div>'+(a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="display:block;${off(r)?"opacity:.65":""}"><b>${esc(r.name)}</b> <span class="st ${off(r)?"s4":"s3"}">${off(r)?"معطّل":"فعّال"}</span>
@@ -39,7 +53,7 @@ function rForm(r){const fl=(i,l,v,x)=>`<label>${l}</label><input id="${i}" value
  $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{5}$/.test(c)){$("#ferr").textContent="رمز الدخول الجديد يجب أن يكون 5 أرقام.";return}
   rSave({id:r?r.id:undefined,name:$("#r_n").value,phone:$("#r_p").value,email:$("#r_e").value,code:c||undefined})};}
 async function rSave(row){try{await srv("repSave",{row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
-async function mAct(id,op,x){try{await srv("masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+async function mAct(id,op,x){try{await srv(MS.ent==="DoctorWorkplaces"?"workplaceAct":"masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
 function mEdit(r){const d=MS.ent==="Doctors",fl=(i,l,v)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}">`;
  $("#modal").innerHTML=`<h3>تعديل السجل</h3>${fl("e_n","الاسم *",r.name)}${d?fl("e_s","التخصص",r.specialty)+fl("e_w","مكان العمل",r.workplace)+`<label>القطاع</label><select id="e_c"><option ${r.sector==="خاص"?"selected":""}>خاص</option><option ${r.sector==="عام"?"selected":""}>عام</option></select>`:fl("e_l","الموقع",r.location)+fl("e_f","أقرب منشأة",r.nearFacility)}
  <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
