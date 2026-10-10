@@ -34,10 +34,10 @@ function saveNow(){
  return task
 }
 /* GPS: captured silently while the visit form is open; verdict is computed on the server */
-let GEO=null,GW=null;
-function startGeo(){GEO=null;if(!navigator.geolocation)return;stopGeo();try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};showGeo()},()=>showGeo(),{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){}}
+let GEO=null,GW=null,GEO_FAILED=false;
+function startGeo(){GEO=null;GEO_FAILED=false;stopGeo();if(!navigator.geolocation){GEO_FAILED=true;showGeo();return}try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};GEO_FAILED=false;showGeo()},()=>{GEO_FAILED=true;showGeo()},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){GEO_FAILED=true;showGeo()}}
 function stopGeo(){try{if(GW!=null)navigator.geolocation.clearWatch(GW)}catch(e){}GW=null}
-function showGeo(){const e=$("#geo");if(e)e.textContent=GEO?"✓ تم تحديد موقعك":"… جارٍ تحديد الموقع"}
+function showGeo(){const e=$("#geo");if(e)e.textContent=GEO?"✓ تم تحديد موقعك":GEO_FAILED?"لم يتم التحقق من الموقع":"… جارٍ تحديد الموقع"}
 function consent(){try{if(localStorage.getItem("mr_gps_ok"))return}catch(e){}
  $("#modal").innerHTML='<h3>تسجيل الموقع</h3><p style="line-height:1.8">يسجّل النظام موقعك عند إضافة كل زيارة للتحقق من وجودك في مكانها، ولا يطّلع عليه إلا المدير. سيطلب الهاتف إذن الموقع، فاختر «السماح». لا يمنع غياب الموقع حفظ الزيارة.</p><button class="btn pri full" id="okc">موافق</button>';
  $("#ov").classList.add("on");$("#okc").onclick=()=>{try{localStorage.setItem("mr_gps_ok","1")}catch(e){}$("#ov").classList.remove("on");startGeo();setTimeout(stopGeo,4000)}}
