@@ -212,7 +212,9 @@ async function tabC(){
 #av .cmp-tools .btn,#av .cmp-tools select{width:100%;max-width:none;min-width:0}
 #av .cmp-table-wrap{width:100%;max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);overscroll-behavior-x:contain}
 #av .cmp-table{border-collapse:separate;border-spacing:0;min-width:850px;width:100%;font-size:13px}
-#av .cmp-table th,#av .cmp-table td{padding:9px 7px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line);border-inline-end:1px solid var(--line)}
+#av .cmp-table th,#av .cmp-table td{padding:9px 7px;text-align:center;white-space:normal;overflow-wrap:normal;word-break:normal;min-width:74px;line-height:1.5;border-bottom:1px solid var(--line);border-inline-end:1px solid var(--line)}
+#av .cmp-table thead th:not(:first-child){min-width:86px}
+#av .cmp-table tbody td{white-space:nowrap}
 #av .cmp-table thead th{position:sticky;top:0;background:var(--soft);z-index:2}
 #av .cmp-table th:first-child{position:sticky;right:0;z-index:3;background:var(--card);text-align:right;min-width:120px;max-width:170px;white-space:normal}
 #av .cmp-table thead th:first-child{background:var(--soft)}
