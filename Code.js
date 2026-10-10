@@ -490,7 +490,7 @@ function workplaceAct_(s, p) {
   dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_(); audit_(s, 'workplace_' + p.op, w.id, note); return true;
 }
 function reverifyWorkplace_(ent) {
-  const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
+  const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
     if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = geoVerdict_(g.dist, g.acc, rad, refAcc); changed = true; n++; } }); return changed; };
@@ -500,7 +500,7 @@ function reverifyWorkplace_(ent) {
 }
 
 function reverify_(sheet, ent) {
-  const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
+  const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
   const ix = k => T.Reports.indexOf(k), mine = sheet === 'Doctors' ? 'doctors' : 'pharmacies';
   const parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
