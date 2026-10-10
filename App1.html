@@ -107,7 +107,8 @@ function tabR(){
 }
 const coOf=c=>({name:c.companyName||c.name||CFG.company.name,short:c.shortName||c.short||CFG.company.short,color:c.brandColor||c.color||CFG.company.color,title:c.reportTitle||c.title||CFG.company.title,phone:c.phone!==undefined?c.phone:CFG.company.phone,address:c.address!==undefined?c.address:CFG.company.address,logo:CFG.company.logo});
 async function openRep(id){
- try{const r=await srv("getReport",{id});CUR=r;const x=r.snapshot||{company:{},no:r.no,rep:(REPS.find(y=>y.id===r.repId)||{}).name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
+ const nav=adminNavSeq;
+ try{const r=await srv("getReport",{id});if(nav!==adminNavSeq)return;CUR=r;const x=r.snapshot||{company:{},no:r.no,rep:(REPS.find(y=>y.id===r.repId)||{}).name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
   const draw=x=>render({adm:true,company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});CUR.draw=draw;CUR.x0=x;CUR.first=false;$("#stage").innerHTML=draw(x);$("#pv1").style.display=r.snapshot1?"":"none";$("#pv1").textContent="النسخة الأولى";
   $("#pvsend").style.display=$("#pvs").style.display="none";$("#pvok").style.display=$("#pvret").style.display=r.status==="مرسل"?"":"none";
   $("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
