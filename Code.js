@@ -567,7 +567,7 @@ function masterAct_(s, p) {
       note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm;
       if (sh === 'Doctors') { ensureDoctorWorkplaces_(); dbAll_('DoctorWorkplaces').filter(w => w.doctorId === r.id).forEach(w => { w.doctorName = nm; dbUpsert_('DoctorWorkplaces', 'id', w); }); }
     }
-    (sh === 'Doctors' ? ['specialty', 'workplace', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
+    (sh === 'Doctors' ? ['specialty', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
   } else if (p.op === 'setLoc') {
     if (sh === 'Doctors') throw new Error('مرجع الزيارة هو مكان عمل الطبيب، وليس سجل الطبيب نفسه. استخدم «أماكن عمل الأطباء».');
