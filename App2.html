@@ -65,7 +65,7 @@ function loadWorkplaceMapLib(){
 function openWorkplaceMap(w){
  workplaceMapMarker=null;
  workplaceMapPoint=(w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng))?{lat:+w.lat,lng:+w.lng}:null;
- $("#modal").innerHTML='<h3>تحديد موقع مكان العمل</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName)+'</b><br>المكان: <b>'+esc(w.workplace)+'</b></div>'+
+ $("#modal").innerHTML='<h3>تحديد موقع مكان العمل</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName||w.name||"") +'</b><br>المكان: <b>'+esc(w.workplace||w.location||w.nearFacility||"")+'</b></div>'+
  '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc(w.workplace+" "+w.doctorName)+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
  '<div id="wpSearchStatus" style="font-size:12px;color:var(--mut);min-height:20px"></div><div id="wpMap" style="height:350px;min-height:300px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
  '<div id="wpCoords" style="font-size:13px;color:var(--mut);margin:8px 0">انقر على الخريطة لتحديد الموقع الدقيق.</div>'+
