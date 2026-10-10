@@ -890,6 +890,47 @@ function initializeFacilitySchema() {
   });
   return { created: created, verified: names.filter(name => created.indexOf(name) < 0), message: 'تم تجهيز مخطط المنشآت الإضافي دون نقل أو تعديل أي سجل قديم.' };
 }
+
+
+// Read-only pre-migration inventory. It reports counts and ambiguities without changing any sheet.
+function previewFacilityMigration() {
+  ownerOnly_();
+  const read = name => { const sh = sheet_(name); return sh ? dbAll_(name) : []; };
+  const parse = value => { try { return value ? JSON.parse(value) : []; } catch (e) { return null; } };
+  const doctors = read('Doctors'), workplaces = read('DoctorWorkplaces'), pharmacies = read('Pharmacies'), reports = read('Reports');
+  const doctorIds = new Set(doctors.map(d => String(d.id)));
+  const norm = value => normName_(String(value || ''));
+  const groupNames = (rows, key) => {
+    const groups = {};
+    rows.forEach(row => { const name = norm(key(row)); if (name) (groups[name] = groups[name] || []).push(row); });
+    return Object.keys(groups).filter(name => groups[name].length > 1).map(name => ({ normalizedName: name, count: groups[name].length }));
+  };
+  let doctorVisits = 0, pharmacyVisits = 0, doctorVisitsWithoutPlaceId = 0, orphanWorkplaces = 0;
+  let malformedReportFields = 0, reportsWithSnapshots = 0;
+  reports.forEach(report => {
+    const docs = parse(report.doctors), phs = parse(report.pharmacies);
+    if (docs === null || phs === null) { malformedReportFields++; return; }
+    doctorVisits += docs.length; pharmacyVisits += phs.length;
+    doctorVisitsWithoutPlaceId += docs.filter(v => !v.workplaceId && String(v.place || '').trim()).length;
+    if (report.snapshot || report.snapshot1) reportsWithSnapshots++;
+  });
+  orphanWorkplaces = workplaces.filter(w => w.doctorId && !doctorIds.has(String(w.doctorId))).length;
+  return {
+    readOnly: true,
+    counts: {
+      doctors: doctors.length, doctorWorkplaces: workplaces.length, pharmacies: pharmacies.length,
+      reports: reports.length, doctorVisits: doctorVisits, pharmacyVisits: pharmacyVisits,
+      doctorVisitsWithoutPlaceId: doctorVisitsWithoutPlaceId, orphanWorkplaces: orphanWorkplaces,
+      reportsWithSnapshots: reportsWithSnapshots, malformedReportFields: malformedReportFields
+    },
+    possibleDuplicates: {
+      doctors: groupNames(doctors, r => r.name),
+      pharmacies: groupNames(pharmacies, r => r.name),
+      workplaces: groupNames(workplaces, r => r.workplace)
+    },
+    warning: 'هذه معاينة فقط؛ لا تُدمج الأسماء المتشابهة تلقائيًا ولا تُنقل أي بيانات.'
+  };
+}
 function offData_() {
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
   const hol = {}, lv = {};
