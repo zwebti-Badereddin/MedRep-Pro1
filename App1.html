@@ -14,12 +14,22 @@ function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)==
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
  CFG.st=st;document.documentElement.style.setProperty("--brand",CFG.company.color)}
 const locked=()=>S&&["مسودة","معاد للمندوب"].indexOf(S.status)<0;
-let saveChain=Promise.resolve();
+// Each save belongs to the report context in which it was created.
+let saveChain=Promise.resolve(),reportContextSeq=0;
 function saveNow(){
+ if(!S)return Promise.reject(new Error("لا يوجد تقرير للحفظ"));
  if(typeof cancelAuto==="function")cancelAuto();
- const payload=JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs}));
- const task=saveChain.catch(()=>{}).then(()=>srv("saveReport",payload)).then(r=>{S.no=r.no;S.status=r.status;
-  (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});(r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});return r});
+ const target=S,context=reportContextSeq,targetId=target.id||null,targetDate=target.date;
+ const payload=JSON.parse(JSON.stringify({date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs}));
+ const task=saveChain.catch(()=>{}).then(()=>srv("saveReport",payload)).then(r=>{
+  // A delayed response may update UI state only if its original report is still active.
+  if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
+   S.no=r.no;S.status=r.status;
+   (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});
+   (r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});
+  }
+  return r
+ });
  saveChain=task;
  return task
 }
