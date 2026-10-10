@@ -452,6 +452,29 @@ function workplacesList_(s, p) {
   }));
   return dbAll_('DoctorWorkplaces').map(w => Object.assign({}, w, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 }));
 }
+
+/* ---------- admin review of doctors/pharmacies ---------- */
+function masterSheet_(e) {
+  if (e !== 'Doctors' && e !== 'Pharmacies') throw new Error('كيان غير مسموح');
+  return e;
+}
+function masterList_(s, p) {
+  const sh = masterSheet_(p.entity), col = sh === 'Doctors' ? 'doctors' : 'pharmacies', cnt = {};
+  dbAll_('Reports').forEach(r => JSON.parse(r[col] || '[]').forEach(v => { cnt[v.name] = (cnt[v.name] || 0) + 1; }));
+  return dbAll_(sh).map(r => Object.assign({}, r, { uses: cnt[r.name] || 0 }));
+}
+// Update operational report names only; immutable submitted snapshots remain unchanged.
+function rewriteNames_(sheet, from, to) {
+  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), sh = sheet_('Reports'), vals = sh.getDataRange().getValues();
+  let n = 0;
+  for (let i = 1; i < vals.length; i++) {
+    let arr; try { arr = JSON.parse(vals[i][ci] || '[]'); } catch (e) { continue; }
+    let changed = false;
+    arr.forEach(v => { if (v.name === from) { v.name = to; changed = true; } });
+    if (changed) { sh.getRange(i + 1, ci + 1).setValue(JSON.stringify(arr)); n++; }
+  }
+  return n;
+}
 function workplaceAct_(s, p) {
   ensureDoctorWorkplaces_();
   const rows = dbAll_('DoctorWorkplaces'), w = rows.find(x => x.id === p.id);
