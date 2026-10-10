@@ -1167,7 +1167,7 @@ function linkLegacyVisitFacilitiesV1() {
   try {
     initializeFacilitySchema();
     const facilities = dbAll_('Facilities'), relations = dbAll_('DoctorPlaces');
-    if (!facilities.length || !relations.length) throw new Error('لم تُرحّل بيانات المنشآت بعد. نفّذ معاينة الترحيل ثم migrateLegacyFacilitiesV1 أولًا.');
+    if (!facilities.length) throw new Error('لم تُرحّل بيانات المنشآت بعد. نفّذ معاينة الترحيل ثم migrateLegacyFacilitiesV1 أولًا.');
     const doctors = dbAll_('Doctors'), workplaces = dbAll_('DoctorWorkplaces'), pharmacies = dbAll_('Pharmacies');
     const byDoctorId = new Map(doctors.map(d => [String(d.id), d]));
     const doctorNames = {};
