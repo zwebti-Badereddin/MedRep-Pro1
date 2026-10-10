@@ -490,7 +490,7 @@ function reverifyWorkplace_(ent) {
   const st = settings_(), rad = +ent.radius || +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
-    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); changed = true; n++; } }); return changed; };
+    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = geoVerdict_(g.dist, g.acc, rad, refAcc); changed = true; n++; } }); return changed; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) { const op = parse(vals[i][ix('doctors')]); if (op && fix(op)) rs.getRange(i + 1, ix('doctors') + 1).setValue(JSON.stringify(op)); }
   return n;
@@ -503,7 +503,7 @@ function reverify_(sheet, ent) {
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
     if (v.name === ent.name && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
-      g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = !isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc ? 'غير متاح' : (g.dist <= rad ? 'تم التحقق' : 'خارج النطاق'); ch = true; n++; } }); return ch; };
+      g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = geoVerdict_(g.dist, g.acc, rad, refAcc); ch = true; n++; } }); return ch; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) {
     const op = parse(vals[i][ix(mine)]);
@@ -673,6 +673,13 @@ function dist_(a, b, c, d) {
   const h = Math.pow(Math.sin(dl / 2), 2) + Math.cos(t(a)) * Math.cos(t(c)) * Math.pow(Math.sin(dg / 2), 2);
   return Math.round(2 * 6371000 * Math.asin(Math.sqrt(h)));
 }
+// Conservative geofence verdict: include the reported GPS accuracy as an uncertainty margin.
+function geoVerdict_(distance, accuracy, radius, maxAccuracy) {
+  if (!isFinite(+accuracy) || +accuracy <= 0 || +accuracy > maxAccuracy) return 'غير متاح';
+  if (distance + accuracy <= radius) return 'تم التحقق';
+  if (distance - accuracy > radius) return 'خارج النطاق';
+  return 'غير حاسم';
+}
 function geo_(v, ent, sheet, s, st) {
   delete v._v;
   const g = v.gps, rad = Math.max(20, +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
@@ -698,12 +705,8 @@ function geo_(v, ent, sheet, s, st) {
   }
 
   g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng);
-  // Accuracy is measured in meters too, but it is not the allowed geofence radius.
-  if (!isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc) {
-    g.status = 'غير متاح';
-    return;
-  }
-  g.status = g.dist <= rad ? 'تم التحقق' : 'خارج النطاق';
+  // A point near the boundary is inconclusive when its accuracy circle crosses the geofence.
+  g.status = geoVerdict_(g.dist, g.acc, rad, refAcc);
 }
 
 /* ---------- email notification (never blocks submission) ---------- */
