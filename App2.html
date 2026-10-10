@@ -33,10 +33,10 @@ function drawR(){if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").valu
  document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const r=MS.rows.find(x=>x.id===b.closest(".row").dataset.id);
   if(b.dataset.a==="edit")rForm(r);else if(b.dataset.a==="lv")lForm(r);else{if(!off(r)&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد التعطيل؟";return}rSave({id:r.id,active:off(r)})}});}
 function rForm(r){const fl=(i,l,v,x)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}" ${x||""}>`;
- $("#modal").innerHTML=`<h3>${r?"تعديل مندوب":"إضافة مندوب"}</h3>${fl("r_n","الاسم *",r&&r.name)}${fl("r_p","الهاتف (اختياري)",r&&r.phone,'inputmode="tel"')}${fl("r_e","البريد الإلكتروني (للتذكيرات، اختياري)",r&&r.email,'inputmode="email"')}${fl("r_c",r?"رمز دخول جديد (اتركه فارغًا ليبقى كما هو)":"رمز الدخول (3 أرقام) *","",'inputmode="numeric" maxlength="3" autocomplete="off"')}
+ $("#modal").innerHTML=`<h3>${r?"تعديل مندوب":"إضافة مندوب"}</h3>${fl("r_n","الاسم *",r&&r.name)}${fl("r_p","الهاتف (اختياري)",r&&r.phone,'inputmode="tel"')}${fl("r_e","البريد الإلكتروني (للتذكيرات، اختياري)",r&&r.email,'inputmode="email"')}${fl("r_c",r?"رمز دخول جديد (اتركه فارغًا ليبقى كما هو)":"رمز الدخول (5 أرقام) *","",'inputmode="numeric" maxlength="5" autocomplete="off"')}
  <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
  $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
- $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{3}$/.test(c)){$("#ferr").textContent="الرمز يجب أن يكون 3 أرقام.";return}
+ $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{5}$/.test(c)){$("#ferr").textContent="رمز الدخول الجديد يجب أن يكون 5 أرقام.";return}
   rSave({id:r?r.id:undefined,name:$("#r_n").value,phone:$("#r_p").value,email:$("#r_e").value,code:c||undefined})};}
 async function rSave(row){try{await srv("repSave",{row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
 async function mAct(id,op,x){try{await srv("masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
