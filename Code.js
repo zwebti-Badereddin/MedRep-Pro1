@@ -322,6 +322,38 @@ function persistReport_(s, p, lockHeld) {
       else geo_(v, pharmacy, 'Pharmacies', s, st);
     }});
   }
+  // facilityId is server-derived metadata; never trust a client-supplied facilityId.
+  const hasFacilitySchema = !!sheet_('Facilities') && !!sheet_('DoctorPlaces');
+  docs.concat(phs).forEach(v => { delete v.facilityId; });
+  if (hasFacilitySchema) {
+    const readMaster = name => sheet_(name) ? dbAll_(name) : [];
+    const facilityRows = readMaster('Facilities'), relationRows = readMaster('DoctorPlaces');
+    const doctorRows = readMaster('Doctors'), workplaceRows = readMaster('DoctorWorkplaces');
+    const findDoctor = v => v.doctorId
+      ? doctorRows.find(d => String(d.id) === String(v.doctorId))
+      : doctorRows.filter(d => normName_(d.name) === normName_(v.name)).length === 1
+        ? doctorRows.find(d => normName_(d.name) === normName_(v.name)) : null;
+    docs.forEach(v => {
+      const doctor = findDoctor(v);
+      if (!doctor || normName_(doctor.name) !== normName_(v.name)) return;
+      let candidates = [];
+      if (v.workplaceId) {
+        const w = workplaceRows.find(x => String(x.id) === String(v.workplaceId));
+        if (w && String(w.doctorId) === String(doctor.id) && (!v.place || normName_(w.workplace) === normName_(v.place))) candidates = [w];
+      } else {
+        candidates = workplaceRows.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
+      }
+      const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id) && String(rel.doctorId) === String(doctor.id)));
+      if (mapped.length === 1 && facilityRows.some(f => String(f.id) === String(mapped[0].facilityId))) v.facilityId = mapped[0].facilityId;
+    });
+    const pharmacyFacilities = facilityRows.filter(f => f.legacyEntity === 'Pharmacies');
+    phs.forEach(v => {
+      const candidates = v.pharmacyId
+        ? pharmacyFacilities.filter(f => String(f.legacyId) === String(v.pharmacyId))
+        : pharmacyFacilities.filter(f => normName_(f.name) === normName_(v.name));
+      if (candidates.length === 1 && normName_(candidates[0].name) === normName_(v.name)) v.facilityId = candidates[0].id;
+    });
+  }
   const now = new Date().toISOString();
   const row = {
     id: r ? r.id : 'REPORT-' + Utilities.getUuid(), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
