@@ -454,8 +454,20 @@ function workplaceAct_(s, p) {
   const rows = dbAll_('DoctorWorkplaces'), w = rows.find(x => x.id === p.id);
   if (!w) throw new Error('مكان العمل غير موجود');
   let note = '';
-  if (p.op === 'review') w.reviewed = 'true';
-  else if (p.op === 'toggle') w.active = String(w.active) === 'false';
+  if (p.op === 'review') {
+    if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || +w.lat < -90 || +w.lat > 90 ||
+        w.lng === '' || w.lng == null || !isFinite(+w.lng) || +w.lng < -180 || +w.lng > 180) {
+      throw new Error('لا يمكن اعتماد المكان قبل مراجعة الخريطة وتسجيل إحداثياته الصحيحة.');
+    }
+    w.reviewed = 'true';
+  } else if (p.op === 'setLoc') {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (p.lat === '' || p.lng === '' || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      throw new Error('أدخل إحداثيات صحيحة من الخريطة.');
+    }
+    w.lat = lat; w.lng = lng; w.refState = 'مؤقت'; w.refBy = 'ADMIN_MAP';
+    note = 'admin map coordinates: ' + lat + ',' + lng;
+  } else if (p.op === 'toggle') w.active = String(w.active) === 'false';
   else if (p.op === 'edit') {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
     if (name.length < 2) throw new Error('اسم مكان العمل قصير جدًا');
