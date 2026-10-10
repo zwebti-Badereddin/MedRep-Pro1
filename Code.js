@@ -963,6 +963,12 @@ function migrateLegacyFacilitiesV1() {
     const now = new Date().toISOString();
     let facilitiesAdded = 0, locationsAdded = 0, relationsAdded = 0, skippedRelations = 0;
     const facilities = read('Facilities'), locations = read('FacilityLocations'), relations = read('DoctorPlaces');
+    const workplaces = read('DoctorWorkplaces'), doctors = read('Doctors');
+    const workplaceKeys = new Set(workplaces.map(w => String(w.doctorId) + '|' + normName_(String(w.workplace || ''))));
+    const missingWorkplaces = doctors.filter(d => String(d.workplace || '').trim() &&
+      !workplaceKeys.has(String(d.id) + '|' + normName_(String(d.workplace || ''))));
+    if (missingWorkplaces.length) throw new Error('توقف الترحيل قبل نقل البيانات: يوجد ' + missingWorkplaces.length +
+      ' طبيبًا له مكان عمل في السجل الأساسي دون سجل مطابق في DoctorWorkplaces. راجع معاينة الترحيل أولًا.');
     const existingFacility = (entity, id) => facilities.find(f => f.legacyEntity === entity && String(f.legacyId) === String(id));
     const addFacility = (entity, legacy, type, name, address, active) => {
       const oldId = String(legacy.id || '').trim();
@@ -993,7 +999,6 @@ function migrateLegacyFacilitiesV1() {
       };
       dbAppend_('FacilityLocations', row); locations.push(row); locationsAdded++;
     };
-    const workplaces = read('DoctorWorkplaces');
     workplaces.forEach(w => {
       const facility = addFacility('DoctorWorkplaces', w, 'منشأة طبية', w.workplace, '', w.active);
       if (!facility) return;
