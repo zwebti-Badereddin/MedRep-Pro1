@@ -1032,7 +1032,7 @@ function previewFacilityMigration() {
     if (report.snapshot || report.snapshot1) reportsWithSnapshots++;
   });
   orphanWorkplaces = workplaces.filter(w => w.doctorId && !doctorIds.has(String(w.doctorId))).length;
-  return {
+  const result = {
     readOnly: true,
     counts: {
       doctors: doctors.length, doctorWorkplaces: workplaces.length, pharmacies: pharmacies.length,
@@ -1048,6 +1048,8 @@ function previewFacilityMigration() {
     },
     warning: 'هذه معاينة فقط؛ لا تُدمج الأسماء المتشابهة تلقائيًا ولا تُنقل أي بيانات.'
   };
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 
@@ -1132,11 +1134,16 @@ function migrateLegacyFacilitiesV1() {
       if (facility) addLocation('Pharmacies', p, facility, p.reviewed);
     });
     clearCache_();
-    return {
+    const result = {
       cancelled: false, facilitiesAdded: facilitiesAdded, locationsAdded: locationsAdded,
       doctorPlacesAdded: relationsAdded, skippedRelations: skippedRelations,
       message: 'اكتملت الإضافة إلى الجداول الجديدة فقط. لم تُعدّل التقارير أو الجداول القديمة.'
     };
+    ui.alert('نتيجة ترحيل المنشآت', 'منشآت جديدة: ' + facilitiesAdded + '\nمراجع جغرافية: ' + locationsAdded +
+      '\nروابط أطباء ومنشآت: ' + relationsAdded + '\nعلاقات لم تكتمل: ' + skippedRelations +
+      '\n\nلم تُعدّل التقارير أو الجداول القديمة.');
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
   } finally {
     lock.releaseLock();
   }
@@ -1228,13 +1235,20 @@ function linkLegacyVisitFacilitiesV1() {
       if (p.phs !== null) rs.getRange(p.row, pi + 1).setValue(p.phs);
     });
     clearCache_();
-    return {
+    const result = {
       cancelled: false, reportsUpdated: plans.length, linkedDoctors: linkedDoctors, linkedPharmacies: linkedPharmacies,
       ambiguousDoctors: ambiguousDoctors, ambiguousPharmacies: ambiguousPharmacies,
       unresolvedDoctors: unresolvedDoctors, unresolvedPharmacies: unresolvedPharmacies,
       snapshotsChanged: false,
       message: 'تمت إضافة روابط المنشآت المطابقة فقط. الحالات الملتبسة تُركت دون تعديل.'
     };
+    ui.alert('نتيجة ربط الزيارات', 'تقارير تم تحديثها: ' + plans.length +
+      '\nزيارات أطباء مرتبطة: ' + linkedDoctors + '\nزيارات صيدليات مرتبطة: ' + linkedPharmacies +
+      '\nمطابقات ملتبسة: ' + (ambiguousDoctors + ambiguousPharmacies) +
+      '\nزيارات غير مرتبطة: ' + (unresolvedDoctors + unresolvedPharmacies) +
+      '\n\nالنسخ التاريخية لم تُعدّل.');
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
   } finally {
     lock.releaseLock();
   }
