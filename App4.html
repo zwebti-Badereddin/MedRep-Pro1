@@ -8,7 +8,7 @@ function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{co
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
 async function screenHistory(){
  $("#app").innerHTML=repTop("تقاريري")+repNav("h")+'<div class="wrap"><div id="hl" class="empty">جارٍ التحميل…</div></div>';bindNav();
- try{const a=await srv("myReports"),h=$("#hl");h.className="";
+ try{const a=await srv("myReports"),h=$("#hl");if(!h)return;h.className="";
   h.innerHTML=a.length?a.map(r=>`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.date)}</b><span class="st ${SC[r.status]||"s0"}">${esc(r.status)}</span></div>
    <div style="color:var(--mut);font-size:13px">${esc(r.no||"")} · ${r.visits} زيارة${r.reopens?" · عُدّل بعد الإرسال":""}</div>
    ${r.reviewNote?`<div class="rnote2">ملاحظة الإدارة: ${esc(r.reviewNote)}</div>`:""}
@@ -23,11 +23,11 @@ async function screenPerf(ym){
  ym=ym||op[0];
  $("#app").innerHTML=repTop("أدائي")+repNav("p")+`<div class="wrap"><label>الشهر</label><select id="pm">${op.map(o=>`<option value="${o}" ${o===ym?"selected":""}>${MN[+o.slice(5)-1]} ${o.slice(0,4)}</option>`).join("")}</select><div id="pb2" style="margin-top:14px"><div class="empty">جارٍ الحساب…</div></div></div>`;
  bindNav();$("#pm").onchange=()=>screenPerf($("#pm").value);
- try{const r=await srv("myPerformance",{ym});
-  $("#pb2").innerHTML=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>الدرجة النهائية</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
+ try{const r=await srv("myPerformance",{ym}),pb=$("#pb2");if(!pb)return;
+  pb.innerHTML=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>الدرجة النهائية</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
   <div style="color:var(--mut);font-size:14px">الالتزام: ${r.onTime} من ${r.expected} في الوقت (${r.compliance}%) · الزيارات: ${r.visits}</div></div>
   <div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div>
-  <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){$("#pb2").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+  <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){const pb=$("#pb2");if(pb)pb.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
 
 /* ===== Admin settings: company / KPI / products ===== */
 let SS="co",LG,settingsViewSeq=0;
