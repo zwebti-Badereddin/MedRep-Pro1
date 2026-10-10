@@ -239,7 +239,7 @@ function printComparison(repId){
  const metric=CM.metric,metricName=metric==="score"?"الدرجة":metric==="compliance"?"الالتزام":"عدد الزيارات",fmt=v=>v==null?"—":metric==="visits"?String(v):v+"%",years=CM.yr.years||[];
  const escH=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const charts=reps.map(rp=>{
-  const months=CM.data.months.map((m,i)=>{const row=m.rows&&m.rows.find(x=>x.repId===rp.id),v=row?row[metric]:null;return {label:MN[i].slice(0,3),v}});
+  const months=CM.data.months.map((m,i)=>{const row=m.rows&&m.rows.find(x=>x.repId===rp.id),v=row?row[metric]:null;return {label:String(i+1),v}});
   const max=metric==="visits"?Math.max(1,...months.map(x=>x.v||0)):100;
   const bars=months.map(x=>'<div class="mbar"><div class="mval">'+fmt(x.v)+'</div><div class="track"><i style="height:'+Math.max(0,Math.min(100,(x.v||0)/max*100))+'%"></i></div><small>'+x.label+'</small></div>').join("");
   const av=CM.yr.avg[rp.id]||{},yb=years.map(y=>({y,v:av[y]}));
@@ -247,7 +247,7 @@ function printComparison(repId){
   const yearBars=yb.map(x=>'<div class="ybar"><b>'+x.y+'</b><div class="track"><i style="height:'+Math.max(0,Math.min(100,(x.v||0)/yMax*100))+'%"></i></div><span>'+(x.v==null?"—":x.v+"%")+'</span></div>').join("");
   const tableMonths=months.map(x=>'<tr><td>'+x.label+'</td><td>'+fmt(x.v)+'</td></tr>').join("");
   const tableYears=yb.map(x=>'<tr><td>'+x.y+'</td><td>'+(x.v==null?"—":x.v+"%")+'</td></tr>').join("");
-  return '<section class="rep"><h2>'+escH(rp.name)+'</h2><h3>الاتجاه الشهري — '+escH(metricName)+'</h3><div class="months">'+bars+'</div><table><tr><th>الشهر</th><th>'+escH(metricName)+'</th></tr>'+tableMonths+'</table><h3>متوسط الدرجة السنوي</h3><div class="years">'+yearBars+'</div><table><tr><th>السنة</th><th>متوسط الدرجة</th></tr>'+tableYears+'</table></section>';
+  return '<section class="rep"><h2>'+escH(rp.name)+'</h2><h3>الاتجاه الشهري — '+escH(metricName)+'</h3><div class="months">'+bars+'</div><table><tr><th>الشهر</th><th>'+escH(metricName)+'</th></tr>'+tableMonths+'</table><p class="month-legend">الأشهر: 1 يناير، 2 فبراير، 3 مارس، 4 أبريل، 5 مايو، 6 يونيو، 7 يوليو، 8 أغسطس، 9 سبتمبر، 10 أكتوبر، 11 نوفمبر، 12 ديسمبر</p><h3>متوسط الدرجة السنوي</h3><div class="years">'+yearBars+'</div><table><tr><th>السنة</th><th>متوسط الدرجة</th></tr>'+tableYears+'</table></section>';
  }).join("");
  const logo=CFG.company.logo?'<img class="logo" src="'+escH(CFG.company.logo)+'" alt="شعار الشركة">':'';
  const heading=repId==="all"?"تقرير مقارنة جميع المندوبين":"تقرير مقارنة المندوب";
@@ -261,5 +261,5 @@ function printComparison(repId){
 function drawC(){if(!$("#cb"))return;const d=CM.data,k=CM.metric,col=v=>k==="visits"?"":v>=85?"rgba(23,104,58,.22)":v>=60?"rgba(255,170,0,.28)":"rgba(179,38,30,.22)",fmt=v=>k==="visits"?v:v+"%";
  const body=d.reps.map(rp=>{const vs=d.months.map(m=>{const r=m.rows&&m.rows.find(x=>x.repId===rp.id);return r?r[k]:null}),ok=vs.filter(v=>v!=null),avg=ok.length?Math.round(ok.reduce((a,b)=>a+b,0)/ok.length):null;
   return `<tr><th>${esc(rp.name)}</th>${vs.map(v=>v==null?"<td>—</td>":`<td style="background:${col(v)}">${fmt(v)}</td>`).join("")}<td><b>${avg==null?"—":fmt(avg)}</b></td></tr>`}).join("");
- $("#cb").innerHTML=`<div class="cmp-table-wrap" role="region" aria-label="جدول المقارنة الشهرية" tabindex="0"><table class="cmp-table"><thead><tr><th>المندوب</th>${MN.map(m=>`<th>${m}</th>`).join("")}<th>المتوسط</th></tr></thead><tbody>${body}</tbody></table></div><div class="empty cmp-legend">الأخضر: 85% فأكثر · الأصفر: 60–84% · الأحمر: أقل من 60%. الأشهر المغلقة تحتفظ بدرجتها كما حُسبت. اسحب الجدول أفقيًا لرؤية جميع الأشهر.</div>`}
+ $("#cb").innerHTML=`<div class="cmp-table-wrap" role="region" aria-label="جدول المقارنة الشهرية" tabindex="0"><table class="cmp-table"><thead><tr><th>المندوب</th>${MN.map((m,i)=>`<th>${i+1}</th>`).join("")}<th>المتوسط</th></tr></thead><tbody>${body}</tbody></table></div><div class="empty cmp-legend">الأخضر: 85% فأكثر · الأصفر: 60–84% · الأحمر: أقل من 60%. الأشهر المغلقة تحتفظ بدرجتها كما حُسبت. اسحب الجدول أفقيًا لرؤية جميع الأشهر.</div>`}
 </script>
