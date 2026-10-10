@@ -302,11 +302,32 @@ function persistReport_(s, p, lockHeld) {
     return o;
   });
   const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
+  // Validate explicit master IDs even when GPS is unavailable; IDs are not trusted merely because the client sent them.
+  const masterDoctors = dbAll_('Doctors'), masterWorkplaces = dbAll_('DoctorWorkplaces'), masterPharmacies = dbAll_('Pharmacies');
+  docs.forEach(v => {
+    const namedDoctors = masterDoctors.filter(d => normName_(d.name) === normName_(v.name));
+    const doctor = v.doctorId
+      ? masterDoctors.find(d => String(d.id) === String(v.doctorId))
+      : (namedDoctors.length === 1 ? namedDoctors[0] : null);
+    if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
+    if (v.workplaceId) {
+      const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
+      if (!doctor || !place || String(place.doctorId) !== String(doctor.id) ||
+          (v.place && normName_(place.workplace) !== normName_(v.place))) {
+        throw new Error('مكان العمل المحدد لا يتبع للطبيب المختار. أعد اختيار مكان العمل.');
+      }
+    }
+  });
+  phs.forEach(v => {
+    if (!v.pharmacyId) return;
+    const pharmacy = masterPharmacies.find(p => String(p.id) === String(v.pharmacyId));
+    if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية لا يطابق اسم الزيارة. أعد اختيار الصيدلية.');
+  });
   if (docs.concat(phs).some(v => v._v)) {
     ensureDoctorWorkplaces_();
     const st = settings_(), D = dbAll_('Doctors'), W = dbAll_('DoctorWorkplaces'), P = dbAll_('Pharmacies');
     docs.forEach(v => { if (v._v) {
-      const doctor = v.doctorId ? D.find(x => x.id === v.doctorId) : D.find(x => normName_(x.name) === normName_(v.name));
+      const namedDoctors = D.filter(x => normName_(x.name) === normName_(v.name)); const doctor = v.doctorId ? D.find(x => String(x.id) === String(v.doctorId)) : (namedDoctors.length === 1 ? namedDoctors[0] : null);
       const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
       let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
       // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
@@ -318,7 +339,7 @@ function persistReport_(s, p, lockHeld) {
       geo_(v, place, 'DoctorWorkplaces', s, st);
     }});
     phs.forEach(v => { if (v._v) {
-      const pharmacy = v.pharmacyId ? P.find(x => x.id === v.pharmacyId) : P.find(x => normName_(x.name) === normName_(v.name));
+      const pharmacyMatches = v.pharmacyId ? P.filter(x => String(x.id) === String(v.pharmacyId)) : P.filter(x => normName_(x.name) === normName_(v.name)); const pharmacy = pharmacyMatches.length === 1 ? pharmacyMatches[0] : null;
       if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) geo_(v, null, 'Pharmacies', s, st);
       else geo_(v, pharmacy, 'Pharmacies', s, st);
     }});
