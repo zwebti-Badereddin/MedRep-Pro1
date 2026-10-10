@@ -531,7 +531,7 @@ function reverifyWorkplace_(ent) {
   const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, matches = v.workplaceId ? v.workplaceId === ent.id : v.name === ent.doctorName && normName_(v.place) === normName_(ent.workplace);
-    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = geoVerdict_(g.dist, g.acc, rad, refAcc); changed = true; n++; } }); return changed; };
+    if (matches && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { recordGpsReverification_(g, ent, rad, refAcc); changed = true; n++; } }); return changed; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) { const op = parse(vals[i][ix('doctors')]); if (op && fix(op)) rs.getRange(i + 1, ix('doctors') + 1).setValue(JSON.stringify(op)); }
   return n;
@@ -544,7 +544,7 @@ function reverify_(sheet, ent) {
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
     if (v.name === ent.name && g && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
-      g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng); g.status = geoVerdict_(g.dist, g.acc, rad, refAcc); ch = true; n++; } }); return ch; };
+      recordGpsReverification_(g, ent, rad, refAcc); ch = true; n++; } }); return ch; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) {
     const op = parse(vals[i][ix(mine)]);
@@ -723,6 +723,25 @@ function geoVerdict_(distance, accuracy, radius, maxAccuracy) {
   if (distance - accuracy > radius) return 'خارج النطاق';
   return 'غير حاسم';
 }
+function geoReferenceSnapshot_(ent, radius, maxAccuracy) {
+  return {
+    id: String(ent.id || ''), lat: +ent.lat, lng: +ent.lng, radius: radius,
+    source: ent.refBy || '', state: ent.refState || '', accuracyLimit: maxAccuracy,
+    checkedAt: new Date().toISOString()
+  };
+}
+function recordGpsReverification_(g, ent, radius, maxAccuracy) {
+  const previousStatus = g.status, previousDistance = g.dist;
+  const reference = geoReferenceSnapshot_(ent, radius, maxAccuracy);
+  const distance = dist_(reference.lat, reference.lng, g.lat, g.lng);
+  const status = geoVerdict_(distance, g.acc, radius, maxAccuracy);
+  g.recheck = {
+    checkedAt: reference.checkedAt, previousStatus: previousStatus || '',
+    previousDistance: previousDistance == null ? '' : previousDistance,
+    status: status, distance: distance, reference: reference
+  };
+  g.dist = distance; g.status = status; g.reference = reference;
+}
 function geo_(v, ent, sheet, s, st) {
   delete v._v;
   const g = v.gps, rad = Math.max(20, +ent?.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
@@ -748,7 +767,8 @@ function geo_(v, ent, sheet, s, st) {
   }
 
   g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng);
-  // A point near the boundary is inconclusive when its accuracy circle crosses the geofence.
+  // Freeze the exact approved reference and thresholds used for this visit.
+  g.reference = geoReferenceSnapshot_(ent, rad, refAcc);
   g.status = geoVerdict_(g.dist, g.acc, rad, refAcc);
 }
 
