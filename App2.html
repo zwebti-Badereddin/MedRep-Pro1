@@ -22,7 +22,7 @@ function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent
   <div class="acts">${isNew(r)?'<button class="mini" data-a="review">اعتماد</button>':""}<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button>${pend?'<button class="mini" data-a="approveLoc">اعتماد الموقع</button>':""}${hasL?`<a class="mini" href="https://www.google.com/maps?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">الخريطة</a><button class="mini" data-a="clearLoc">مسح الموقع</button>`:""}<button class="mini" data-a="toggle">${isOff(r)?"تفعيل":"تعطيل"}</button></div></div>`}).join(""):'<div class="empty">لا توجد سجلات.</div>';
  document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),o=b.dataset.a;
   if(o==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
-  if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else mAct(id,o)});
+  if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else if(o==="map")openWorkplaceMap(r);else mAct(id,o)});
 }
 function drawWorkplaces(){
  if(!$("#mf"))return;
