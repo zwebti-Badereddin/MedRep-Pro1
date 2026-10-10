@@ -145,17 +145,41 @@ function disableDemoRepAccounts() {
   ui.alert('تم تعطيل الحسابات التجريبية: ' + reps.map(rep => rep.name).join('، '));
 }
 
+// Shared throttle for failed representative logins: 15 failures per 10-minute window.
+// It is independent of the entered PIN, so rotating guessed codes cannot bypass it.
+function repLoginThrottle_(recordFailure) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    const cache = CacheService.getScriptCache(), key = 'rep_login_global';
+    const now = Date.now(), raw = cache.get(key);
+    let state = raw ? JSON.parse(raw) : null;
+    if (!state || now - state.start >= 600000) state = { start: now, count: 0 };
+    if (!recordFailure && state.count >= 15) throw new Error('محاولات دخول كثيرة. حاول بعد 10 دقائق.');
+    if (recordFailure) state.count++;
+    const ttl = Math.max(1, Math.ceil((600000 - (now - state.start)) / 1000));
+    cache.put(key, JSON.stringify(state), ttl);
+  } finally {
+    lock.releaseLock();
+  }
+}
 function login_(p) {
-  const cache = CacheService.getScriptCache(), key = 'try_' + (p.role === 'admin' ? 'admin' : p.code);
+  const isAdmin = p.role === 'admin';
+  const cache = CacheService.getScriptCache(), key = 'try_' + (isAdmin ? 'admin' : p.code);
+  if (!isAdmin) repLoginThrottle_(false);
   if (+cache.get(key) >= 5) throw new Error('محاولات كثيرة. حاول بعد 10 دقائق.');
   let user = null;
-  if (p.role === 'admin') {
+  if (isAdmin) {
     if (hash_(p.password || '') === PropertiesService.getScriptProperties().getProperty('ADMIN_HASH')) user = { id: 'ADMIN', name: 'الإدارة', role: 'admin' };
   } else {
     const h = hash_(String(p.code || '')); const r = dbAll_('Reps').find(x => String(x.active) !== 'false' && x.codeHash === h);
     if (r) user = { id: r.id, name: r.name, role: 'rep' };
   }
-  if (!user) { cache.put(key, String((+cache.get(key) || 0) + 1), 600); throw new Error('بيانات الدخول غير صحيحة'); }
+  if (!user) {
+    cache.put(key, String((+cache.get(key) || 0) + 1), 600);
+    if (!isAdmin) repLoginThrottle_(true);
+    throw new Error('بيانات الدخول غير صحيحة');
+  }
   cache.remove(key);
   const token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('s_' + token, JSON.stringify({ uid: user.id, name: user.name, role: user.role }), SESSION_SEC);
@@ -443,7 +467,7 @@ function saveEntity_(s, p) {
     if (!row.id) row.status = row.status || 'نشط';
   }
   if (sheet === 'Reps') { // login code is stored hashed only
-    if (row.code) { if (!/^\d{3}$/.test(row.code)) throw new Error('الرمز يجب أن يكون 3 أرقام'); 
+    if (row.code) { if (!/^\d{3,5}$/.test(String(row.code))) throw new Error('الرمز يجب أن يكون من 3 إلى 5 أرقام'); 
       if (dbAll_('Reps').some(r => r.id !== row.id && r.codeHash === hash_(row.code))) throw new Error('الرمز مستخدم');
       row.codeHash = hash_(row.code); }
     delete row.code;
