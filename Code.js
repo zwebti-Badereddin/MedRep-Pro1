@@ -425,7 +425,7 @@ function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
   const name = String(workplace || '').trim().slice(0, 100);
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
   const rows = dbAll_('DoctorWorkplaces'), old = rows.find(w => w.doctorId === doctor.id && normName_(w.workplace) === normName_(name));
-  if (old) return old;
+  if (old) { if (String(old.active) === 'false') throw new Error('مكان العمل معطّل؛ اطلب من الإدارة تفعيله.'); return old; }
   const row = { id: nextWorkplaceId_(rows), doctorId: doctor.id, doctorName: doctor.name, workplace: name, sector: String(sector || doctor.sector || '').trim().slice(0, 30), active: true, addedBy: s.uid, reviewed: reviewed ? 'true' : 'false' };
   dbAppend_('DoctorWorkplaces', row); return row;
 }
