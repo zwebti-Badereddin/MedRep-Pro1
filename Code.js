@@ -886,9 +886,10 @@ function initializeFacilitySchema() {
     if (item.initialize) {
       sh.getRange(1, 1, 1, T[item.name].length).setValues([T[item.name]]);
       sh.setFrozenRows(1);
-      sh.getRange(1, 1, sh.getMaxRows(), T[item.name].length).setNumberFormat('@');
       created.push(item.name);
     }
+    // Keep IDs and ISO timestamps as text; this changes formatting only, never cell values.
+    sh.getRange(1, 1, sh.getMaxRows(), T[item.name].length).setNumberFormat('@');
   });
   return { created: created, verified: names.filter(name => created.indexOf(name) < 0), message: 'تم تجهيز مخطط المنشآت الإضافي دون نقل أو تعديل أي سجل قديم.' };
 }
@@ -902,6 +903,8 @@ function previewFacilityMigration() {
   const doctors = read('Doctors'), workplaces = read('DoctorWorkplaces'), pharmacies = read('Pharmacies'), reports = read('Reports');
   const doctorIds = new Set(doctors.map(d => String(d.id)));
   const norm = value => normName_(String(value || ''));
+  const workplaceKeys = new Set(workplaces.map(w => String(w.doctorId) + '|' + norm(w.workplace)));
+  const doctorsWithoutWorkplaceRecord = doctors.filter(d => String(d.workplace || '').trim() && !workplaceKeys.has(String(d.id) + '|' + norm(d.workplace))).length;
   const groupNames = (rows, key) => {
     const groups = {};
     rows.forEach(row => { const name = norm(key(row)); if (name) (groups[name] = groups[name] || []).push(row); });
@@ -923,6 +926,7 @@ function previewFacilityMigration() {
       doctors: doctors.length, doctorWorkplaces: workplaces.length, pharmacies: pharmacies.length,
       reports: reports.length, doctorVisits: doctorVisits, pharmacyVisits: pharmacyVisits,
       doctorVisitsWithoutPlaceId: doctorVisitsWithoutPlaceId, orphanWorkplaces: orphanWorkplaces,
+      doctorsWithoutWorkplaceRecord: doctorsWithoutWorkplaceRecord,
       reportsWithSnapshots: reportsWithSnapshots, malformedReportFields: malformedReportFields
     },
     possibleDuplicates: {
