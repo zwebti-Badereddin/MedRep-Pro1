@@ -64,8 +64,8 @@ function form(k,idx){
      if(!placeId||!placeName){$("#ferr").textContent="اختر مكان العمل الذي تمت زيارته.";$("#sv").disabled=false;return}
     }
    }
-   const v=k==="d"?{name:rec.name,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,workplaceId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
-    :{name:rec.name,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
+   const v=k==="d"?{name:rec.name,doctorId:rec.id,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,workplaceId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
+    :{name:rec.name,pharmacyId:rec.id,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
   const arr=k==="d"?S.docs:S.phs;let ref;
   if(idx!=null){v.gps=cur.gps;arr[idx]=v;ref=v}else{v.gps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:{status:"غير متاح"};arr.push(v);ref=v}
   stopGeo();$("#ov").classList.remove("on");auto();home();
