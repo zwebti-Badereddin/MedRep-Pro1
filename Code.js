@@ -685,7 +685,7 @@ function geoVerdict_(distance, accuracy, radius, maxAccuracy) {
 }
 function geo_(v, ent, sheet, s, st) {
   delete v._v;
-  const g = v.gps, rad = Math.max(20, +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
+  const g = v.gps, rad = Math.max(20, +ent?.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
   if (!g || typeof g.lat !== 'number' || typeof g.lng !== 'number' ||
       !isFinite(g.lat) || !isFinite(g.lng) || g.lat < -90 || g.lat > 90 || g.lng < -180 || g.lng > 180) {
     v.gps = { status: 'غير متاح' };
