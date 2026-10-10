@@ -70,6 +70,7 @@ function banner(){let h="";const bx=(t,b)=>`<div class="row" style="display:bloc
  if(S.status==="مرسل")h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.",'<button class="mini" id="ro">إعادة فتح للتعديل</button>');
  return h}
 function home(){
+  repScreenSeq++;
  const di=dateInfo(S.date);
  $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="شعار الشركة" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div>
  <div class="sub">تقرير الزيارات اليومية</div><h2>${esc(rep.name)}</h2><div class="meta"><span>${di.day} ${di.date}</span><span>${esc(S.no||"تقرير جديد")}</span><span class="chip">${esc(S.status)}</span></div>
