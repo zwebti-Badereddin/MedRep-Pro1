@@ -479,7 +479,7 @@ function workplaceAct_(s, p) {
       w.reviewed = 'false'; w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = '';
     }
   } else if (p.op === 'approveLoc') {
-    if (w.lat === '' || w.lat == null || isNaN(+w.lat) || w.lng === '' || w.lng == null || isNaN(+w.lng)) throw new Error('لا توجد إحداثيات مرجعية لهذا المكان بعد.');
+    if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || w.lat < -90 || w.lat > 90 || w.lng === '' || w.lng == null || !isFinite(+w.lng) || w.lng < -180 || w.lng > 180 || w.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
     w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
   } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; }
@@ -562,7 +562,7 @@ function masterAct_(s, p) {
     (sh === 'Doctors' ? ['specialty', 'workplace', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
   } else if (p.op === 'approveLoc') {
-    if (r.lat === '' || r.lat == null || isNaN(+r.lat)) throw new Error('لا يوجد موقع مسجّل لهذا السجل بعد.');
+    if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     r.refState = 'مؤكد'; note = 'reverified visits: ' + reverify_(sh, r);
   } else if (p.op === 'clearLoc') { r.lat = ''; r.lng = ''; r.refState = ''; r.refBy = ''; }
   else throw new Error('عملية غير معروفة');
