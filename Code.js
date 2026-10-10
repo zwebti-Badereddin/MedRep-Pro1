@@ -695,6 +695,10 @@ function geo_(v, ent, sheet, s, st) {
   if (sheet === 'DoctorWorkplaces' && String(ent.reviewed) !== 'true') {
     g.status = 'مرجع غير مؤكد'; return;
   }
+  // Even inconsistent records marked reviewed must not acquire coordinates from a rep when no reference exists.
+  if (sheet === 'DoctorWorkplaces' && (ent.lat === '' || ent.lat == null || isNaN(+ent.lat))) {
+    g.status = 'مرجع غير مؤكد'; return;
+  }
   if (ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) {
     if (g.acc > refAcc) { g.status = 'غير متاح'; return; }
     ent.lat = g.lat; ent.lng = g.lng; ent.refState = 'مؤقت'; ent.refBy = s.uid; save();
