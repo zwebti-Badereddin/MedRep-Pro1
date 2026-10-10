@@ -688,34 +688,35 @@ function dist_(a, b, c, d) {
 }
 function geo_(v, ent, sheet, s, st) {
   delete v._v;
-  const g = v.gps, rad = +st.gpsRadius || 150, refAcc = +st.gpsRefAcc || 50, save = () => dbUpsert_(sheet, 'id', ent);
-  if (!ent) { g.status = 'غير متاح'; return; }
-  // A workplace without explicit admin approval is never initialized or moved by a rep's GPS reading.
-  // Visits remain saveable; the location stays pending until an administrator sets/reviews the map point.
-  if (sheet === 'DoctorWorkplaces' && String(ent.reviewed) !== 'true') {
-    g.status = 'مرجع غير مؤكد'; return;
-  }
-  // Even inconsistent records marked reviewed must not acquire coordinates from a rep when no reference exists.
-  if (sheet === 'DoctorWorkplaces' && (ent.lat === '' || ent.lat == null || isNaN(+ent.lat))) {
-    g.status = 'مرجع غير مؤكد'; return;
-  }
-  if (ent.lat === '' || ent.lat == null || isNaN(+ent.lat)) {
-    if (g.acc > refAcc) { g.status = 'غير متاح'; return; }
-    ent.lat = g.lat; ent.lng = g.lng; ent.refState = 'مؤقت'; ent.refBy = s.uid; save();
-    g.status = 'مرجع غير مؤكد'; g.dist = 0; return;
-  }
-  g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng);
-  const r = +ent.radius || rad;
-  if (g.acc > r) { g.status = 'غير متاح'; return; }
-  if (sheet === 'DoctorWorkplaces' && ent.refState === 'مؤقت') { g.status = 'مرجع غير مؤكد'; return; }
-  if (ent.refState === 'مؤقت') {
-    if (ent.refBy === s.uid) { g.status = 'مرجع غير مؤكد'; return; }
-    if (g.dist <= rad) { ent.refState = 'مؤكد'; save(); g.status = 'تم التحقق'; }
-    else { ent.refState = 'متعارض'; save(); audit_(s, 'gps_conflict', ent.id, 'dist ' + g.dist + 'm'); g.status = 'مرجع غير مؤكد'; }
+  const g = v.gps, rad = Math.max(20, +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
+  if (!g || typeof g.lat !== 'number' || typeof g.lng !== 'number' ||
+      !isFinite(g.lat) || !isFinite(g.lng) || g.lat < -90 || g.lat > 90 || g.lng < -180 || g.lng > 180) {
+    v.gps = { status: 'غير متاح' };
     return;
   }
-  if (ent.refState === 'متعارض') { g.status = 'مرجع غير مؤكد'; return; }
-  g.status = g.dist <= r ? 'تم التحقق' : 'خارج النطاق';
+  if (!ent || ent.active === false || String(ent.active) === 'false') {
+    g.status = 'مرجع غير مؤكد';
+    return;
+  }
+
+  // A visit's phone reading is evidence only; it must NEVER create or move a master reference.
+  // References are valid only when an administrator explicitly placed them on the map.
+  const hasReference = ent.lat !== '' && ent.lat != null && isFinite(+ent.lat) &&
+    ent.lng !== '' && ent.lng != null && isFinite(+ent.lng);
+  if (!hasReference || ent.refBy !== 'ADMIN_MAP' || ent.refState !== 'مؤكد' ||
+      (sheet === 'DoctorWorkplaces' && String(ent.reviewed) !== 'true')) {
+    g.status = 'مرجع غير مؤكد';
+    delete g.dist;
+    return;
+  }
+
+  g.dist = dist_(+ent.lat, +ent.lng, g.lat, g.lng);
+  // Accuracy is measured in meters too, but it is not the allowed geofence radius.
+  if (!isFinite(+g.acc) || +g.acc <= 0 || +g.acc > refAcc) {
+    g.status = 'غير متاح';
+    return;
+  }
+  g.status = g.dist <= rad ? 'تم التحقق' : 'خارج النطاق';
 }
 
 /* ---------- email notification (never blocks submission) ---------- */
