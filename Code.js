@@ -239,10 +239,10 @@ function myReport_(s, p) {
 }
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
 function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: JSON.parse(r.doctors), phs: JSON.parse(r.pharmacies) }; }
-function persistReport_(s, p) {
+function persistReport_(s, p, lockHeld) {
   // Serialize report lookup + ID/number allocation + write to prevent concurrent saves overwriting each other.
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  if (!lockHeld) lock.waitLock(10000);
   try {
   const date = p.date || today_(), all = dbAll_('Reports');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ غير صالح');
@@ -276,22 +276,31 @@ function persistReport_(s, p) {
   audit_(s, r ? 'edit_report' : 'create_report', row.no);
   return row;
   } finally {
-    lock.releaseLock();
+    if (!lockHeld) lock.releaseLock();
   }
 }
 // Submit = validate + freeze historical snapshot (names/products copied as text, immune to later edits)
 function submitReport_(s, p) {
-  const r = parseReport_(persistReport_(s, p));
-  if (!r.doctors.length && !r.pharmacies.length) throw new Error('أضف زيارة واحدة على الأقل.');
-  const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
-  if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
-  const rep = dbAll_('Reps').find(x => x.id === s.uid);
-  const snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
-  r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
-  r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
-  dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  let snap, result;
+  try {
+    const r = parseReport_(persistReport_(s, p, true));
+    if (!r.doctors.length && !r.pharmacies.length) throw new Error('أضف زيارة واحدة على الأقل.');
+    const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
+    if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
+    const rep = dbAll_('Reps').find(x => x.id === s.uid);
+    if (!rep) throw new Error('تعذّر العثور على حساب المندوب.');
+    snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
+    r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
+    r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
+    dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
+    result = { no: r.no, status: r.status };
+  } finally {
+    lock.releaseLock();
+  }
   notify_(snap);
-  return { no: r.no, status: r.status };
+  return result;
 }
 function getReport_(s, p) {
   const r = dbAll_('Reports').find(x => x.id === p.id);
