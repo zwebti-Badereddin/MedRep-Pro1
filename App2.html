@@ -129,7 +129,7 @@ function mEdit(r){const d=MS.ent==="Doctors",fl=(i,l,v)=>`<label>${l}</label><in
  $("#modal").innerHTML=`<h3>تعديل السجل</h3>${fl("e_n","الاسم *",r.name)}${d?fl("e_s","التخصص",r.specialty)+`<div class="empty">أماكن عمل الطبيب تُدار من قسم «أماكن عمل الأطباء».</div>`+`<label>القطاع</label><select id="e_c"><option ${r.sector==="خاص"?"selected":""}>خاص</option><option ${r.sector==="عام"?"selected":""}>عام</option></select>`:fl("e_l","الموقع",r.location)+fl("e_f","أقرب منشأة",r.nearFacility)}
  <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;
  $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
- $("#sv").onclick=()=>mAct(r.id,"edit",{row:d?{name:$("#e_n").value,specialty:$("#e_s").value,workplace:$("#e_w").value,sector:$("#e_c").value}:{name:$("#e_n").value,location:$("#e_l").value,nearFacility:$("#e_f").value}});}
+ $("#sv").onclick=()=>mAct(r.id,"edit",{row:d?{name:$("#e_n").value,specialty:$("#e_s").value,sector:$("#e_c").value}:{name:$("#e_n").value,location:$("#e_l").value,nearFacility:$("#e_f").value}});}
 function mMerge(r){const oth=MS.rows.filter(x=>x.id!==r.id&&String(x.active)!=="false").sort((a,b)=>a.name.localeCompare(b.name,"ar"));
  $("#modal").innerHTML=`<h3>دمج «${esc(r.name)}»</h3><p style="color:var(--mut);font-size:14px;line-height:1.7">تُنقل زياراته المسجّلة إلى السجل الذي تختاره ويُعطَّل هذا السجل. التقارير المرسلة تحتفظ بنسختها التاريخية كما أُرسلت.</p>
  <label>دمج داخل</label><input id="m_q" placeholder="ابحث"><select id="m_s" size="6" style="height:auto;margin-top:8px"></select><div class="err" id="ferr"></div>
