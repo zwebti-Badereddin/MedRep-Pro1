@@ -63,6 +63,7 @@ function loadWorkplaceMapLib(){
  return workplaceMapLibPromise;
 }
 function openWorkplaceMap(w){
+ workplaceMapMarker=null;
  workplaceMapPoint=(w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng))?{lat:+w.lat,lng:+w.lng}:null;
  $("#modal").innerHTML='<h3>تحديد موقع مكان العمل</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName)+'</b><br>المكان: <b>'+esc(w.workplace)+'</b></div>'+
  '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc(w.workplace+" "+w.doctorName)+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
@@ -71,8 +72,8 @@ function openWorkplaceMap(w){
  '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ الإحداثيات</button></div>'+
  '<div style="font-size:11px;color:var(--mut);margin-top:8px">الخريطة والبحث الجغرافي من OpenStreetMap/Nominatim. تحقق بصريًا من موقع المنشأة قبل الحفظ.</div>';
  $("#ov").classList.add("on");
- $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}};
- $("#wpSave").onclick=()=>{if(!workplaceMapPoint)return;const point={lat:workplaceMapPoint.lat,lng:workplaceMapPoint.lng};if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}mAct(w.id,"setLoc",point)};
+ $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null};
+ $("#wpSave").onclick=()=>{if(!workplaceMapPoint)return;const point={lat:workplaceMapPoint.lat,lng:workplaceMapPoint.lng};if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null;mAct(w.id,"setLoc",point)};
  $("#wpSearch").onsubmit=async e=>{
   e.preventDefault();const query=$("#wpQuery").value.trim();if(!query)return;
   $("#wpSearchStatus").textContent="جارٍ البحث عن المكان…";
