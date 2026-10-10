@@ -44,7 +44,7 @@ function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.
  cb(null)};im.src=rd.result};rd.readAsDataURL(file)}
 function tabCo(){
  const view=settingsViewSeq,live=()=>view===settingsViewSeq&&!!$("#sv2");
- const st=CFG.st||{},defaultLogo="https://drive.google.com/uc?export=view&id=1Ka0h277zrkHkFueb03JQTV3lI0AP12sj",logoInitial=st.logo===undefined?defaultLogo:st.logo,v=k=>esc(k==="logo"?logoInitial:(st[k]===undefined?"":st[k])),re=String(st.remindEnabled)==="true";LG=undefined;
+ const st=CFG.st||{},defaultLogo="https://drive.google.com/uc?export=view&id=1Ka0h277zrkHkFueb03JQTV3lI0AP12sj",logoInitial=st.logo||defaultLogo,v=k=>esc(k==="logo"?logoInitial:(st[k]===undefined?"":st[k])),re=String(st.remindEnabled)==="true";LG=undefined;
  $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
  <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
  <label>عنوان التقرير</label><input id="c_t" value="${v("reportTitle")}"><label>هاتف الشركة</label><input id="c_p" value="${v("phone")}"><label>عنوان الشركة</label><input id="c_a" value="${v("address")}">
