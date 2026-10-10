@@ -305,13 +305,22 @@ function persistReport_(s, p, lockHeld) {
     ensureDoctorWorkplaces_();
     const st = settings_(), D = dbAll_('Doctors'), W = dbAll_('DoctorWorkplaces'), P = dbAll_('Pharmacies');
     docs.forEach(v => { if (v._v) {
-      const doctor = D.find(x => normName_(x.name) === normName_(v.name));
+      const doctor = v.doctorId ? D.find(x => x.id === v.doctorId) : D.find(x => normName_(x.name) === normName_(v.name));
+      const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
       let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
-      if (!place && doctor) place = W.find(x => x.doctorId === doctor.id && normName_(x.workplace) === normName_(v.place));
-      if (place && !v.workplaceId) v.workplaceId = place.id;
+      // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
+      if (v.workplaceId && !place) { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
+      if (place && (!doctorMatches || place.doctorId !== doctor.id)) { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
+      if (!place && !v.workplaceId && doctorMatches) place = W.find(x => x.doctorId === doctor.id && normName_(x.workplace) === normName_(v.place));
+      if (place && doctorMatches && place.doctorId === doctor.id) v.workplaceId = place.id;
+      else { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
       geo_(v, place, 'DoctorWorkplaces', s, st);
     }});
-    phs.forEach(v => { if (v._v) geo_(v, P.find(x => normName_(x.name) === normName_(v.name)), 'Pharmacies', s, st); });
+    phs.forEach(v => { if (v._v) {
+      const pharmacy = v.pharmacyId ? P.find(x => x.id === v.pharmacyId) : P.find(x => normName_(x.name) === normName_(v.name));
+      if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) geo_(v, null, 'Pharmacies', s, st);
+      else geo_(v, pharmacy, 'Pharmacies', s, st);
+    }});
   }
   const now = new Date().toISOString();
   const row = {
