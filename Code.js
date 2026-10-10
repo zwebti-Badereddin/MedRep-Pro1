@@ -172,7 +172,10 @@ function login_(p) {
   if (isAdmin) {
     if (hash_(p.password || '') === PropertiesService.getScriptProperties().getProperty('ADMIN_HASH')) user = { id: 'ADMIN', name: 'الإدارة', role: 'admin' };
   } else {
-    const h = hash_(String(p.code || '')); const r = dbAll_('Reps').find(x => String(x.active) !== 'false' && x.codeHash === h);
+    const code = String(p.code || '').trim();
+    const r = /^\d{5}$/.test(code)
+      ? dbAll_('Reps').find(x => String(x.active) !== 'false' && x.codeHash === hash_(code))
+      : null;
     if (r) user = { id: r.id, name: r.name, role: 'rep' };
   }
   if (!user) {
@@ -467,7 +470,7 @@ function saveEntity_(s, p) {
     if (!row.id) row.status = row.status || 'نشط';
   }
   if (sheet === 'Reps') { // login code is stored hashed only
-    if (row.code) { if (!/^\d{3,5}$/.test(String(row.code))) throw new Error('الرمز يجب أن يكون من 3 إلى 5 أرقام'); 
+    if (row.code) { if (!/^\d{5}$/.test(String(row.code))) throw new Error('رمز الدخول يجب أن يتكون من 5 أرقام بالضبط'); 
       if (dbAll_('Reps').some(r => r.id !== row.id && r.codeHash === hash_(row.code))) throw new Error('الرمز مستخدم');
       row.codeHash = hash_(row.code); }
     delete row.code;
@@ -705,19 +708,21 @@ function addRepsFromSheet() {
   const ui = SpreadsheetApp.getUi(), ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName('NewReps');
   if (!sh) {
-    sh = ss.insertSheet('NewReps'); sh.getRange(1, 1, 1, 2).setValues([['الاسم', 'الرمز (3 أرقام)']]);
+    sh = ss.insertSheet('NewReps'); sh.getRange(1, 1, 1, 2).setValues([['الاسم', 'رمز الدخول (5 أرقام)']]);
     sh.getRange(2, 2, 200, 1).setNumberFormat('@'); sh.setFrozenRows(1);
     ui.alert('أُنشئت ورقة NewReps.\nاكتب الاسم في العمود الأول والرمز في الثاني، ثم شغّل الأمر من القائمة مرة أخرى.'); return;
   }
+  sh.getRange(1, 1, 1, 2).setValues([['الاسم', 'رمز الدخول (5 أرقام)']]);
+  sh.getRange(2, 2, Math.max(200, sh.getMaxRows() - 1), 1).setNumberFormat('@');
   const n = Math.max(sh.getLastRow() - 1, 0); if (!n) { ui.alert('لا توجد أسماء في ورقة NewReps.'); return; }
   const vals = sh.getRange(2, 1, n, 2).getValues(), errs = []; let done = 0;
   vals.forEach((r, i) => {
     const name = String(r[0]).trim(), raw = String(r[1]).trim(); if (!name && !raw) return;
     try {
       if (name.length < 2) throw new Error('الاسم قصير');
-      if (!/^\d{1,3}$/.test(raw)) throw new Error('الرمز يجب أن يكون 3 أرقام');
+      if (!/^\d{5}$/.test(raw)) throw new Error('رمز الدخول يجب أن يتكون من 5 أرقام بالضبط');
       if (dbAll_('Reps').some(x => normName_(x.name) === normName_(name))) throw new Error('الاسم موجود مسبقًا');
-      saveEntity_({ uid: 'ADMIN', role: 'admin' }, { entity: 'Reps', row: { name: name, code: ('00' + raw).slice(-3), active: true } });
+      saveEntity_({ uid: 'ADMIN', role: 'admin' }, { entity: 'Reps', row: { name: name, code: raw, active: true } });
       sh.getRange(i + 2, 1, 1, 2).clearContent(); // the plain-text code is removed right after it is stored hashed
       done++;
     } catch (e) { errs.push('الصف ' + (i + 2) + ': ' + e.message); }
