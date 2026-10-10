@@ -931,6 +931,93 @@ function previewFacilityMigration() {
     warning: 'هذه معاينة فقط؛ لا تُدمج الأسماء المتشابهة تلقائيًا ولا تُنقل أي بيانات.'
   };
 }
+
+
+/*
+ * Additive, idempotent migration of legacy master rows only.
+ * It writes to Facilities / FacilityLocations / DoctorPlaces and never edits legacy sheets or Reports.
+ * Run only after reviewing previewFacilityMigration() and making a spreadsheet backup.
+ */
+function migrateLegacyFacilitiesV1() {
+  ownerOnly_();
+  const ui = SpreadsheetApp.getUi();
+  const answer = ui.alert(
+    'ترحيل المنشآت — إضافة فقط',
+    'سيتم إنشاء سجلات منشآت وعلاقات جديدة من بيانات الأطباء وأماكن عملهم والصيدليات. لن تُعدّل التقارير أو الجداول القديمة، ولن تُدمج الأسماء المتشابهة. تأكد من أخذ نسخة احتياطية ومراجعة المعاينة. هل تريد المتابعة؟',
+    ui.ButtonSet.YES_NO
+  );
+  if (answer !== ui.Button.YES) return { cancelled: true };
+  initializeFacilitySchema();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const read = name => { const sh = sheet_(name); return sh ? dbAll_(name) : []; };
+    const validPoint = row => row.lat !== '' && row.lat != null && row.lng !== '' && row.lng != null &&
+      isFinite(+row.lat) && isFinite(+row.lng) && +row.lat >= -90 && +row.lat <= 90 && +row.lng >= -180 && +row.lng <= 180;
+    const now = new Date().toISOString();
+    let facilitiesAdded = 0, locationsAdded = 0, relationsAdded = 0, skippedRelations = 0;
+    const facilities = read('Facilities'), locations = read('FacilityLocations'), relations = read('DoctorPlaces');
+    const existingFacility = (entity, id) => facilities.find(f => f.legacyEntity === entity && String(f.legacyId) === String(id));
+    const addFacility = (entity, legacy, type, name, address, active) => {
+      const oldId = String(legacy.id || '').trim();
+      if (!oldId) return null;
+      const old = existingFacility(entity, oldId);
+      if (old) return old;
+      const prefix = entity === 'DoctorWorkplaces' ? 'FAC-DW-' : 'FAC-PH-';
+      const row = {
+        id: prefix + oldId, name: String(name || '').trim(), type: type, region: '', address: String(address || '').trim(),
+        status: String(active) === 'false' ? 'معطل' : 'نشط', legacyEntity: entity, legacyId: oldId,
+        createdAt: now, createdBy: 'MIGRATION_V1', updatedAt: now, updatedBy: 'MIGRATION_V1'
+      };
+      dbAppend_('Facilities', row); facilities.push(row); facilitiesAdded++; return row;
+    };
+    const addLocation = (entity, legacy, facility, reviewed) => {
+      if (!validPoint(legacy)) return;
+      const id = (entity === 'DoctorWorkplaces' ? 'LOC-DW-' : 'LOC-PH-') + String(legacy.id);
+      if (locations.some(l => l.id === id)) return;
+      const confirmed = legacy.refBy === 'ADMIN_MAP' && legacy.refState === 'مؤكد' &&
+        (entity !== 'DoctorWorkplaces' || String(legacy.reviewed) === 'true');
+      const row = {
+        id: id, facilityId: facility.id, lat: +legacy.lat, lng: +legacy.lng,
+        radius: legacy.radius === '' || legacy.radius == null ? '' : +legacy.radius,
+        source: legacy.refBy || 'LEGACY', state: confirmed ? 'مؤكد' : 'مراجعة مطلوبة',
+        proposedBy: '', proposedAt: '', approvedBy: '', approvedAt: '', version: 1,
+        active: String(legacy.active) === 'false' ? false : true,
+        note: 'منقول دون تعديل من ' + entity + ' / ' + legacy.id
+      };
+      dbAppend_('FacilityLocations', row); locations.push(row); locationsAdded++;
+    };
+    const workplaces = read('DoctorWorkplaces');
+    workplaces.forEach(w => {
+      const facility = addFacility('DoctorWorkplaces', w, 'منشأة طبية', w.workplace, '', w.active);
+      if (!facility) return;
+      addLocation('DoctorWorkplaces', w, facility, w.reviewed);
+      if (!w.doctorId) { skippedRelations++; return; }
+      const id = 'DPL-' + String(w.id);
+      if (!relations.some(r => r.id === id || String(r.legacyWorkplaceId) === String(w.id))) {
+        const row = {
+          id: id, doctorId: w.doctorId, facilityId: facility.id, workDays: '', notes: '',
+          active: String(w.active) === 'false' ? false : true, legacyWorkplaceId: w.id,
+          createdAt: now, createdBy: 'MIGRATION_V1', updatedAt: now, updatedBy: 'MIGRATION_V1'
+        };
+        dbAppend_('DoctorPlaces', row); relations.push(row); relationsAdded++;
+      }
+    });
+    const pharmacies = read('Pharmacies');
+    pharmacies.forEach(p => {
+      const facility = addFacility('Pharmacies', p, 'صيدلية', p.name, p.location, p.active);
+      if (facility) addLocation('Pharmacies', p, facility, p.reviewed);
+    });
+    clearCache_();
+    return {
+      cancelled: false, facilitiesAdded: facilitiesAdded, locationsAdded: locationsAdded,
+      doctorPlacesAdded: relationsAdded, skippedRelations: skippedRelations,
+      message: 'اكتملت الإضافة إلى الجداول الجديدة فقط. لم تُعدّل التقارير أو الجداول القديمة.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
 function offData_() {
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
   const hol = {}, lv = {};
