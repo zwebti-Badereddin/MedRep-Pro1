@@ -947,10 +947,10 @@ function migrateLegacyFacilitiesV1() {
     ui.ButtonSet.YES_NO
   );
   if (answer !== ui.Button.YES) return { cancelled: true };
-  initializeFacilitySchema();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
+    initializeFacilitySchema();
     const read = name => { const sh = sheet_(name); return sh ? dbAll_(name) : []; };
     const validPoint = row => row.lat !== '' && row.lat != null && row.lng !== '' && row.lng != null &&
       isFinite(+row.lat) && isFinite(+row.lng) && +row.lat >= -90 && +row.lat <= 90 && +row.lng >= -180 && +row.lng <= 180;
@@ -960,7 +960,7 @@ function migrateLegacyFacilitiesV1() {
     const existingFacility = (entity, id) => facilities.find(f => f.legacyEntity === entity && String(f.legacyId) === String(id));
     const addFacility = (entity, legacy, type, name, address, active) => {
       const oldId = String(legacy.id || '').trim();
-      if (!oldId) return null;
+      if (!oldId || String(name || '').trim().length < 2) return null;
       const old = existingFacility(entity, oldId);
       if (old) return old;
       const prefix = entity === 'DoctorWorkplaces' ? 'FAC-DW-' : 'FAC-PH-';
