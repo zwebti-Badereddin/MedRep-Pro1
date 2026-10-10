@@ -456,8 +456,9 @@ function workplaceAct_(s, p) {
   let note = '';
   if (p.op === 'review') {
     if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || +w.lat < -90 || +w.lat > 90 ||
-        w.lng === '' || w.lng == null || !isFinite(+w.lng) || +w.lng < -180 || +w.lng > 180) {
-      throw new Error('لا يمكن اعتماد المكان قبل مراجعة الخريطة وتسجيل إحداثياته الصحيحة.');
+        w.lng === '' || w.lng == null || !isFinite(+w.lng) || +w.lng < -180 || +w.lng > 180 ||
+        w.refBy !== 'ADMIN_MAP') {
+      throw new Error('افتح الخريطة وتحقق من المكان، ثم سجّل إحداثياته من الخريطة قبل الاعتماد.');
     }
     w.reviewed = 'true';
   } else if (p.op === 'setLoc') {
@@ -472,8 +473,11 @@ function workplaceAct_(s, p) {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
     if (name.length < 2) throw new Error('اسم مكان العمل قصير جدًا');
     if (rows.some(x => x.id !== w.id && x.doctorId === w.doctorId && normName_(x.workplace) === normName_(name))) throw new Error('هذا المكان مسجل للطبيب نفسه.');
+    const nameChanged = normName_(name) !== normName_(w.workplace);
     w.workplace = name; w.sector = String((p.row || {}).sector || w.sector || '').trim().slice(0, 30);
-    w.reviewed = 'true';
+    if (nameChanged) {
+      w.reviewed = 'false'; w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = '';
+    }
   } else if (p.op === 'approveLoc') {
     if (w.lat === '' || w.lat == null || isNaN(+w.lat) || w.lng === '' || w.lng == null || isNaN(+w.lng)) throw new Error('لا توجد إحداثيات مرجعية لهذا المكان بعد.');
     if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
