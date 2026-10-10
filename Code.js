@@ -1391,12 +1391,24 @@ function setup() {
   const sp = PropertiesService.getScriptProperties();
   if (!sp.getProperty('SALT')) sp.setProperty('SALT', Utilities.getUuid());
   const ss = SpreadsheetApp.getActive();
-  Object.keys(T).forEach(n => {
-    const sh = ss.getSheetByName(n) || ss.insertSheet(n);
-    if (sh.getLastRow() === 0) { sh.appendRow(T[n]); sh.setFrozenRows(1); }
-    sh.getRange(1, 1, 1, T[n].length).setValues([T[n]]); // keep headers in sync after schema additions
+  const names = Object.keys(T);
+  // Preflight every existing table before writing anything. Never overwrite a non-empty header row.
+  const plan = names.map(n => {
+    const sh = ss.getSheetByName(n);
+    if (!sh || sh.getLastRow() === 0) return { name: n, sheet: sh, initialize: true, create: !sh };
+    const expected = T[n], width = Math.max(sh.getLastColumn(), expected.length);
+    const actual = sh.getRange(1, 1, 1, width).getValues()[0];
+    if (width !== expected.length || expected.some((h, i) => actual[i] !== h)) {
+      throw new Error('توقف الإعداد دون تعديل البيانات: عناوين جدول ' + n + ' لا تطابق المخطط الحالي. يلزم ترحيل مخطط منفصل بعد أخذ نسخة احتياطية.');
+    }
+    return { name: n, sheet: sh, initialize: false, create: false };
   });
-  ['Reports', 'Audit', 'Monthly', 'Leaves', 'Holidays'].forEach(n => ss.getSheetByName(n).getRange(1, 1, ss.getSheetByName(n).getMaxRows(), T[n].length).setNumberFormat('@')); // keep dates/JSON as plain text
+  plan.forEach(item => {
+    let sh = item.sheet;
+    if (item.create) sh = ss.insertSheet(item.name);
+    if (item.initialize) { sh.appendRow(T[item.name]); sh.setFrozenRows(1); }
+  });
+  ['Reports', 'Audit', 'Monthly', 'Leaves', 'Holidays', 'Facilities', 'FacilityLocations', 'DoctorPlaces'].forEach(n => ss.getSheetByName(n).getRange(1, 1, ss.getSheetByName(n).getMaxRows(), T[n].length).setNumberFormat('@')); // preserve JSON, IDs and ISO timestamps as text
   if (!dbAll_('Settings').length) {
     Object.entries({ companyName: 'فارما كير للدعاية الطبية', shortName: 'PC', brandColor: '#0b6b6f', reportTitle: 'تقرير الزيارات اليومية للمندوب الطبي', reportPrefix: 'MR', timezone: 'Africa/Tripoli', phone: '', address: '' })
       .forEach(([k, v]) => dbAppend_('Settings', { key: k, value: v }));
