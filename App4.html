@@ -2,32 +2,36 @@
 (window.__parts=window.__parts||[]).push("App4");
 /* ===== Rep screens: my reports, my performance ===== */
 const SC={"مسودة":"s0","جاهز للمراجعة":"s1","مرسل":"s2","معتمد":"s3","معاد للمندوب":"s4"};
+let repScreenSeq=0;
 function repTop(t){return `<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:12px">${t}</h2></div>`}
 function repNav(a){return `<div class="tabs">${[["t","اليوم"],["h","تقاريري"],["p","أدائي"]].map(x=>`<button class="btn rn${x[0]===a?" on":""}" data-n="${x[0]}">${x[1]}</button>`).join("")}</div>`}
 function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else screenPerf()});
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
 async function screenHistory(){
+ const seq=++repScreenSeq;
  $("#app").innerHTML=repTop("تقاريري")+repNav("h")+'<div class="wrap"><div id="hl" class="empty">جارٍ التحميل…</div></div>';bindNav();
- try{const a=await srv("myReports"),h=$("#hl");if(!h)return;h.className="";
+ try{const a=await srv("myReports"),h=$("#hl");if(seq!==repScreenSeq||!h)return;h.className="";
   h.innerHTML=a.length?a.map(r=>`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.date)}</b><span class="st ${SC[r.status]||"s0"}">${esc(r.status)}</span></div>
    <div style="color:var(--mut);font-size:13px">${esc(r.no||"")} · ${r.visits} زيارة${r.reopens?" · عُدّل بعد الإرسال":""}</div>
    ${r.reviewNote?`<div class="rnote2">ملاحظة الإدارة: ${esc(r.reviewNote)}</div>`:""}
    <div class="acts"><button class="mini" data-a="v" data-id="${esc(r.id)}">عرض</button>${r.status==="معاد للمندوب"||r.status==="مسودة"?`<button class="mini" data-a="e" data-d="${esc(r.date)}">متابعة الكتابة</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير بعد.</div>';
-  document.querySelectorAll("#hl button.mini").forEach(b=>b.onclick=()=>b.dataset.a==="v"?viewMine(b.dataset.id):loadDay(b.dataset.d))}catch(e){toast(e.message)}}
+  document.querySelectorAll("#hl button.mini").forEach(b=>b.onclick=()=>b.dataset.a==="v"?viewMine(b.dataset.id):loadDay(b.dataset.d))}catch(e){if(seq===repScreenSeq)toast(e.message)}}
 async function viewMine(id){
- try{const r=await srv("getReport",{id}),x=r.snapshot||{company:{},no:r.no,rep:rep.name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
+ const seq=repScreenSeq;
+ try{const r=await srv("getReport",{id});if(seq!==repScreenSeq)return;const x=r.snapshot||{company:{},no:r.no,rep:rep.name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
   $("#stage").innerHTML=render({company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});
   ["#pvsend","#pvok","#pvret","#pv1","#pvs"].forEach(i=>{$(i).style.display="none"});$("#pv").classList.add("on");fit()}catch(e){toast(e.message)}}
 async function screenPerf(ym){
+ const seq=++repScreenSeq;
  const n=new Date(),op=[];for(let i=0;i<6;i++){const d=new Date(n.getFullYear(),n.getMonth()-i,1);op.push(d.getFullYear()+"-"+pad(d.getMonth()+1))}
  ym=ym||op[0];
  $("#app").innerHTML=repTop("أدائي")+repNav("p")+`<div class="wrap"><label>الشهر</label><select id="pm">${op.map(o=>`<option value="${o}" ${o===ym?"selected":""}>${MN[+o.slice(5)-1]} ${o.slice(0,4)}</option>`).join("")}</select><div id="pb2" style="margin-top:14px"><div class="empty">جارٍ الحساب…</div></div></div>`;
  bindNav();$("#pm").onchange=()=>screenPerf($("#pm").value);
- try{const r=await srv("myPerformance",{ym}),pb=$("#pb2");if(!pb)return;
+ try{const r=await srv("myPerformance",{ym}),pb=$("#pb2");if(seq!==repScreenSeq||!pb)return;
   pb.innerHTML=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>الدرجة النهائية</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>
   <div style="color:var(--mut);font-size:14px">الالتزام: ${r.onTime} من ${r.expected} في الوقت (${r.compliance}%) · الزيارات: ${r.visits}</div></div>
   <div style="overflow-x:auto"><table class="kt"><tr><th>المؤشر</th><th>الهدف</th><th>الفعلي</th><th>%</th><th>الوزن</th><th>الدرجة</th></tr>${r.kpis.map(k=>`<tr><td>${esc(k.name)}</td><td>${k.target}</td><td>${k.actual}</td><td>${k.achievement}</td><td>${k.weight}</td><td>${k.weighted}</td></tr>`).join("")}</table></div>
-  <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){const pb=$("#pb2");if(pb)pb.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+  <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){const pb=$("#pb2");if(seq===repScreenSeq&&pb)pb.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
 
 /* ===== Admin settings: company / KPI / products ===== */
 let SS="co",LG,settingsViewSeq=0;
