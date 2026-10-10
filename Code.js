@@ -664,7 +664,7 @@ function performance_(s, p) {
       const cc = comp[rep.id], frac = allDays.length ? availOf(rep.id) / allDays.length : 1, target = k.key === 'compliance' ? cc.expected : (SCALED.indexOf(k.key) >= 0 ? Math.round((+k.target || 0) * frac) : (+k.target || 0)), actual = k.key === 'compliance' ? cc.onTime : (actuals[k.key] || 0), ach = target ? Math.min(100, Math.round(actual / target * 100)) : (SCALED.indexOf(k.key) >= 0 && frac === 0 ? 100 : 0);
       return { key: k.key, name: k.name, target, actual, achievement: ach, weight: +k.weight, weighted: +(ach * k.weight / totalW).toFixed(1) };
     });
-    return { repId: rep.id, name: rep.name, compliance: comp[rep.id], off: { total: allDays.length, avail: availOf(rep.id) }, gps: { total: docs.length + phs.length, ver: docs.concat(phs).filter(v => v.gps && v.gps.status === 'تم التحقق').length, out: docs.concat(phs).filter(v => v.gps && v.gps.status === 'خارج النطاق').length, pending: docs.concat(phs).filter(v => !v.gps || ['غير حاسم', 'غير متاح', 'مرجع غير مؤكد'].indexOf(v.gps.status) >= 0).length }, score: Math.round(rows.reduce((a, r) => a + r.weighted, 0)), kpis: rows };
+    return { repId: rep.id, name: rep.name, compliance: comp[rep.id], off: { total: allDays.length, avail: availOf(rep.id) }, gps: { total: docs.length + phs.length, ver: docs.concat(phs).filter(v => v.gps && v.gps.status === 'تم التحقق').length, out: docs.concat(phs).filter(v => v.gps && v.gps.status === 'خارج النطاق').length, pending: docs.concat(phs).filter(v => !v.gps || ['تم التحقق', 'خارج النطاق'].indexOf(v.gps.status) < 0).length }, score: Math.round(rows.reduce((a, r) => a + r.weighted, 0)), kpis: rows };
   }).sort((a, b) => b.score - a.score).map((r, i) => Object.assign(r, { rank: i + 1 }));
 }
 
