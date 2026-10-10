@@ -8,7 +8,7 @@ function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
 function _srv(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
 const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[],phs:r.pharmacies||[],status:r.status,no:r.no,date:r.date});
 function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)===i);
- CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
+ CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||"https://drive.google.com/uc?export=view&id=1Ka0h277zrkHkFueb03JQTV3lI0AP12sj"};
  CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.phs=b.pharmacies;CFG.specialties=u(b.doctors.map(d=>d.specialty));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
  CFG.workplaces=u(b.doctors.map(d=>d.workplace));if(!CFG.workplaces.length)CFG.workplaces=["—"];
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
