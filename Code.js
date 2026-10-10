@@ -547,11 +547,13 @@ function masterAct_(s, p) {
     (sh === 'Doctors' ? ['specialty', 'workplace', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
   } else if (p.op === 'setLoc') {
+    if (sh === 'Doctors') throw new Error('مرجع الزيارة هو مكان عمل الطبيب، وليس سجل الطبيب نفسه. استخدم «أماكن عمل الأطباء».');
     const lat = Number(p.lat), lng = Number(p.lng);
     if (p.lat === '' || p.lng === '' || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new Error('حدد إحداثيات صحيحة من الخريطة.');
     r.lat = lat; r.lng = lng; r.refState = 'مؤقت'; r.refBy = 'ADMIN_MAP';
     note = 'admin map coordinates: ' + lat + ',' + lng;
   } else if (p.op === 'approveLoc') {
+    if (sh === 'Doctors') throw new Error('لا يمكن اعتماد موقع جغرافي لسجل الطبيب؛ اعتمد موقع مكان عمله من قسم «أماكن عمل الأطباء».');
     if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     r.refState = 'مؤكد'; note = 'reverified visits: ' + reverify_(sh, r);
   } else if (p.op === 'clearLoc') { r.lat = ''; r.lng = ''; r.refState = ''; r.refBy = ''; }
