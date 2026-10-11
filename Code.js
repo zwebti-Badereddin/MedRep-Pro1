@@ -58,6 +58,7 @@ const ROUTES = {
   masterList:    { role: 'admin', fn: masterList_ },
   masterAct:     { role: 'admin', fn: masterAct_ },
   workplacesList:{ role: 'admin', fn: workplacesList_ },
+  gpsReference:  { role: 'admin', fn: gpsReference_ },
   workplaceAct:  { role: 'admin', fn: workplaceAct_ },
   addDoctorWorkplace: { role: 'rep', fn: (s, p) => addDoctorWorkplace_(s, p) },
   reopenReport:  { role: 'rep',   fn: reopenReport_ },
@@ -613,6 +614,48 @@ function addDoctorWorkplace_(s, p) {
   audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace);
   return { id: row.id, doctorId: row.doctorId, doctorName: row.doctorName, workplace: row.workplace, sector: row.sector, reviewed: String(row.reviewed) === 'true', refState: row.refState || '' };
 }
+function gpsReference_(s, p) {
+  // Admin-only lookup for the comparison window. It returns only an approved current reference.
+  const kind = String(p.kind || '');
+  let geo = null;
+  if (kind === 'doctor') {
+    ensureDoctorWorkplaces_();
+    const doctorId = String(p.doctorId || '');
+    const workplaceId = String(p.workplaceId || '');
+    const doctorName = normName_(p.doctorName || p.name || '');
+    const placeName = normName_(p.place || '');
+    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w =>
+      String(w.id) === workplaceId && (!doctorId || String(w.doctorId) === doctorId)) : null;
+    if (!workplace && doctorId && placeName) {
+      workplace = dbAll_('DoctorWorkplaces').find(w =>
+        String(w.doctorId) === doctorId && normName_(w.workplace) === placeName);
+    }
+    if (!workplace && doctorName && placeName) {
+      const doctors = dbAll_('Doctors').filter(d => normName_(d.name) === doctorName);
+      if (doctors.length === 1) workplace = dbAll_('DoctorWorkplaces').find(w =>
+        String(w.doctorId) === String(doctors[0].id) && normName_(w.workplace) === placeName);
+    }
+    if (workplace) geo = facilityGeoEntity_('DoctorWorkplaces', workplace.id);
+  } else if (kind === 'pharmacy') {
+    const pharmacyId = String(p.pharmacyId || '');
+    const name = normName_(p.name || '');
+    let pharmacy = pharmacyId ? dbAll_('Pharmacies').find(x => String(x.id) === pharmacyId) : null;
+    if (!pharmacy && name) {
+      const matches = dbAll_('Pharmacies').filter(x => normName_(x.name) === name);
+      if (matches.length === 1) pharmacy = matches[0];
+    }
+    if (pharmacy) geo = facilityGeoEntity_('Pharmacies', pharmacy.id);
+  } else {
+    throw new Error('نوع الزيارة غير صالح');
+  }
+  if (!geo || String(geo.active) === 'false' || geo.refBy !== 'ADMIN_MAP' ||
+      geo.refState !== 'مؤكد' || !isFinite(+geo.lat) || !isFinite(+geo.lng) ||
+      geo.lat === '' || geo.lng === '') return null;
+  return { id: String(geo.id || ''), name: String(geo.name || ''),
+    lat: +geo.lat, lng: +geo.lng, radius: +geo.radius || 150,
+    source: geo.refBy, state: geo.refState };
+}
+
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
   const counts = {};
