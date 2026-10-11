@@ -96,13 +96,14 @@ function snapshot(){const di=dateInfo(S.date);return JSON.parse(JSON.stringify({
 function fit(){const st=$("#stage"),w=document.querySelector(".pvscroll").clientWidth-20,pw=st.firstElementChild.offsetWidth,k=Math.min(1,w/pw);
  st.style.transform=`scale(${k})`;st.style.width=pw+"px";st.style.height=(st.firstElementChild.offsetHeight*k)+"px";st.style.marginInline=k<1?"0":"auto";st.style.transformOrigin="top right"}
 async function preview(){
+ const staleGpsButton=$("#pvgeo");if(staleGpsButton)staleGpsButton.remove();
  if(!S.docs.length&&!S.phs.length){toast("أضف زيارة واحدة على الأقل");return}
  try{if(!locked())await saveNow()}catch(e){toast(e.message);return}
  $("#pvsend").style.display=locked()?"none":"";$("#pvok").style.display=$("#pvret").style.display=$("#pv1").style.display="none";$("#pvs").style.display="";
  $("#stage").innerHTML=render(snapshot());$("#pv").classList.add("on");fit();
 }
 addEventListener("resize",()=>{if($("#pv").classList.contains("on"))fit()});
-$("#pvx").onclick=()=>$("#pv").classList.remove("on");
+$("#pvx").onclick=()=>{$("#pv").classList.remove("on");const b=$("#pvgeo");if(b)b.remove();};
 $("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";print();fit()};
 $("#pvs").onclick=()=>{const d=snapshot(),txt=`${d.company.title}\n${d.company.name}\n${d.no} — ${d.rep}\n${d.day} ${d.date}\nالزيارات: ${d.docs.length+d.phs.length} (${d.docs.length} أطباء، ${d.phs.length} صيدليات)`;
  navigator.share?navigator.share({title:d.no,text:txt}).catch(()=>{}):(navigator.clipboard&&navigator.clipboard.writeText(txt),toast("تم نسخ الملخص"))};
