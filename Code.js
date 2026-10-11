@@ -87,6 +87,7 @@ const ROUTES = {
   getReport:     { role: 'any',   fn: getReport_ },
   listReports:   { role: 'any',   fn: listReports_ },
   reviewReport:  { role: 'admin', fn: reviewReport_ },
+  gpsReviewSummary:{ role: 'admin', fn: gpsReviewSummary_ },
   list:          { role: 'admin', fn: (s, p) => dbAll_(entity_(p.entity)) },
   save:          { role: 'admin', fn: saveEntity_ },
   saveKpi:       { role: 'admin', fn: saveKpi_ },
@@ -578,6 +579,15 @@ function reportVisitGpsCheck_(v, kind, st) {
 }
 function gpsPointValidServer_(lat, lng) {
   return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
+}
+function gpsReviewSummary_(s, p) {
+  const r = dbAll_('Reports').find(x => String(x.id) === String(p.id));
+  if (!r) throw new Error('التقرير غير موجود.');
+  const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
+  const visits = doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
+    .concat(pharmacies.map(v => Object.assign({kind:'صيدلية',name:v.name||'',place:v.loc||''}, reportVisitGpsCheck_(v, 'pharmacy', st))));
+  return { reportId:r.id, status:r.status, matched:visits.filter(v=>v.status==='تم التحقق').length,
+    exceptions:visits.filter(v=>v.status!=='تم التحقق').length, visits:visits };
 }
 function reviewReport_(s, p) {
   const r = dbAll_('Reports').find(x => x.id === p.id);
