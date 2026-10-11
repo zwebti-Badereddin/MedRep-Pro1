@@ -39,16 +39,37 @@ function doGet(e) {
 }
 
 // Single entry point called by google.script.run.api(token, action, payload)
+// Temporary performance instrumentation: logs action, elapsed time and outcome only.
+// Never log tokens, payloads, user identifiers, or error messages.
 function api(token, action, p) {
+  const startedAt = Date.now();
+  let outcome = 'error';
+  const measuredAction = /^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(String(action || '')) ? String(action) : 'unknown';
   p = p || {};
   try {
-    if (action === 'login') return ok(login_(p));
+    if (action === 'login') {
+      const result = ok(login_(p));
+      outcome = 'ok';
+      return result;
+    }
     const s = session_(token);
     const route = ROUTES[action];
     if (!route) throw new Error('عملية غير معروفة');
     if (route.role !== 'any' && route.role !== s.role) throw new Error('غير مصرح');
-    return ok(route.fn(s, p));
-  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    const result = ok(route.fn(s, p));
+    outcome = 'ok';
+    return result;
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  } finally {
+    try {
+      console.log('[MedRepPerf] ' + JSON.stringify({
+        action: measuredAction,
+        elapsedMs: Date.now() - startedAt,
+        outcome: outcome
+      }));
+    } catch (ignored) {}
+  }
 }
 const ok = d => ({ ok: true, data: d });
 
