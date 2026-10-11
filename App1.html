@@ -134,8 +134,8 @@ function installGpsCompareButton(report){
 }
 function collectGpsCompareVisits(report){
  const doctors=(report&&report.doctors)||[],pharmacies=(report&&report.pharmacies)||[];
- return doctors.map((v,i)=>({kind:"زيارة طبيب",name:v.name||"طبيب غير محدد",place:v.place||"",gps:v.gps||{},seq:i+1}))
-  .concat(pharmacies.map((v,i)=>({kind:"زيارة صيدلية",name:v.name||"صيدلية غير محددة",place:v.loc||"",gps:v.gps||{},seq:i+1})));
+ return doctors.map((v,i)=>({kind:"زيارة طبيب",type:"doctor",name:v.name||"طبيب غير محدد",doctorName:v.name||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",place:v.place||"",gps:v.gps||{},seq:i+1}))
+  .concat(pharmacies.map((v,i)=>({kind:"زيارة صيدلية",type:"pharmacy",name:v.name||"صيدلية غير محددة",pharmacyId:v.pharmacyId||"",place:v.loc||"",gps:v.gps||{},seq:i+1})));
 }
 let visitCompareMapInstance=null,visitGpsDrawSeq=0;
 function clearVisitGpsMap(){
@@ -171,9 +171,16 @@ function openGpsComparison(){
 }
 function drawGpsComparisonVisit(v){
  const drawSeq=++visitGpsDrawSeq;clearVisitGpsMap();
- const g=v.gps||{},rawRef=g.reference||(g.recheck&&g.recheck.reference)||null;
+ const g=v.gps||{};
+ let rawRef=g.reference||(g.recheck&&g.recheck.reference)||v.currentReference||null;
+ const validRef=x=>!!x&&x.source==="ADMIN_MAP"&&x.state==="مؤكد"&&gpsPointValid(x.lat,x.lng);
  const repOk=gpsPointValid(g.lat,g.lng);
- const refOk=!!rawRef&&rawRef.source==="ADMIN_MAP"&&rawRef.state==="مؤكد"&&gpsPointValid(rawRef.lat,rawRef.lng);
+ if(!validRef(rawRef)&&!v._refRequested){
+  v._refRequested=true;
+  const request={kind:v.type,name:v.name,doctorName:v.doctorName||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",place:v.place||"",pharmacyId:v.pharmacyId||""};
+  srv("gpsReference",request).then(ref=>{v.currentReference=ref||null;drawGpsComparisonVisit(v)}).catch(()=>{v.currentReference=null;});
+ }
+ const refOk=validRef(rawRef);
  const status=g.status||"غير متاح";
  const dist=repOk&&refOk?"المسافة بين الموقعين: "+Math.round(gpsDistanceMeters(+g.lat,+g.lng,+rawRef.lat,+rawRef.lng))+" متر":"لا يمكن حساب المسافة دون إحداثيات صالحة للموقعين";
  const accuracy=g.acc!==""&&g.acc!=null&&isFinite(+g.acc)?"دقة GPS المعلنة: ±"+Math.round(+g.acc)+" متر":"دقة GPS: غير متاحة";
