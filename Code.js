@@ -281,6 +281,13 @@ function session_(token) {
   if (!raw) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
   const s = JSON.parse(raw); s.token = token;
   if (s.role === 'rep' && CacheService.getScriptCache().get('off_' + s.uid)) throw new Error('تم تعطيل هذا الحساب.');
+  if (s.role === 'admin' && /^ADM-/.test(String(s.uid))) {
+    const account = sheet_('Admins') ? dbAll_('Admins').find(a => String(a.id) === String(s.uid)) : null;
+    if (!account || String(account.active) === 'false') {
+      CacheService.getScriptCache().remove('s_' + token);
+      throw new Error('تم تعطيل حساب الإدارة أو لم يعد موجودًا. سجّل الدخول بحساب نشط.');
+    }
+  }
   return s;
 }
 
@@ -641,7 +648,7 @@ function workplaceAct_(s, p) {
       throw new Error('أدخل إحداثيات صحيحة من الخريطة.');
     }
     w.lat = lat; w.lng = lng; w.refState = 'مؤقت'; w.refBy = 'ADMIN_MAP';
-    note = 'admin map coordinates: ' + lat + ',' + lng;
+    note = 'admin map location proposed';
   } else if (p.op === 'toggle') w.active = String(w.active) === 'false';
   else if (p.op === 'edit') {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
