@@ -33,12 +33,10 @@ function drawWorkplaces(){
   const gps=!has?"لا إحداثيات":w.refState==="مؤكد"?"الموقع مؤكد ✓":w.refState==="متعارض"?"الموقع متعارض":"الموقع قيد التأكيد";
   return '<div class="row" data-id="'+esc(w.id)+'" style="display:block;'+(off(w)?"opacity:.65":"")+'"><b>'+esc(w.workplace)+'</b> '+(pending(w)?'<span class="st s1">بانتظار الاعتماد</span>':'')+
   '<div style="color:var(--mut);font-size:13px">الطبيب: '+esc(w.doctorName)+' · '+esc(w.sector||"—")+' · '+w.uses+' زيارة · '+gps+'</div>'+
-  '<div style="font-size:12px;color:var(--mut);margin-top:5px">حدد الموقع من الخريطة التفاعلية؛ لا تحتاج إلى نسخ الإحداثيات أو إدخالها يدويًا.</div>'+
+  '<div style="font-size:12px;color:var(--mut);margin-top:5px">يُحفظ الموقع كمرجع مشترك للمنشأة، ويُستخدم تلقائيًا للتحقق من زيارات جميع الأطباء العاملين فيها.</div>'+
   '<div class="acts"><button class="mini" data-a="map">تحديد الموقع على الخريطة</button>'+
   (has?'<a class="mini" href="https://www.openstreetmap.org/?mlat='+encodeURIComponent(w.lat)+'&mlon='+encodeURIComponent(w.lng)+'#map=18/'+encodeURIComponent(w.lat)+'/'+encodeURIComponent(w.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a>':'')+
-  (pending(w)?'<button class="mini" data-a="review">اعتماد المكان</button>':'')+
   '<button class="mini" data-a="edit">تعديل</button>'+
-  (has&&String(w.reviewed)==="true"?'<button class="mini" data-a="approveLoc">اعتماد GPS</button>':'')+
   (has?'<button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
   '<button class="mini" data-a="toggle">'+(off(w)?"تفعيل":"تعطيل")+'</button></div></div>';
  }).join(""):'<div class="empty">لا توجد أماكن عمل مطابقة.</div>';
@@ -65,11 +63,11 @@ function loadWorkplaceMapLib(){
 function openWorkplaceMap(w){
  workplaceMapMarker=null;
  workplaceMapPoint=(w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng))?{lat:+w.lat,lng:+w.lng}:null;
- $("#modal").innerHTML='<h3>تحديد موقع مكان العمل</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName||w.name||"") +'</b><br>المكان: <b>'+esc(w.workplace||w.location||w.nearFacility||"")+'</b></div>'+
+ $("#modal").innerHTML='<h3>تحديد موقع المنشأة الطبية</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName||w.name||"") +'</b><br>المكان: <b>'+esc(w.workplace||w.location||w.nearFacility||"")+'</b></div>'+
  '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc((w.workplace ? w.workplace : (w.location ? w.location : w.name))+" "+(w.doctorName ? w.doctorName : ""))+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
  '<div id="wpSearchStatus" style="font-size:12px;color:var(--mut);min-height:20px"></div><div id="wpMap" style="height:350px;min-height:300px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
  '<div id="wpCoords" style="font-size:13px;color:var(--mut);margin:8px 0">انقر على الخريطة لتحديد الموقع الدقيق.</div>'+
- '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ الإحداثيات</button></div>'+
+ '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ موقع المنشأة</button></div>'+
  '<div style="font-size:11px;color:var(--mut);margin-top:8px">الخريطة والبحث الجغرافي من OpenStreetMap/Nominatim. تحقق بصريًا من موقع المنشأة قبل الحفظ.</div>';
  $("#ov").classList.add("on");
  $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null};
