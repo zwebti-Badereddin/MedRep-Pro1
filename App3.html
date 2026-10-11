@@ -35,7 +35,7 @@ function form(k,idx){
  $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
  $("#ov").classList.add("on");if(idx==null)startGeo();
   {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
-   const fillDoctor=r=>{if(r.isNew){$("#f_workplace").innerHTML='<option value="__new__">＋ اقتراح مكان عمل جديد</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent="سيُرسل المكان الجديد إلى الإدارة للمراجعة.";return}
+   const fillDoctor=r=>{if(r.isNew){const list=(CFG.facilities||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح منشأة جديدة</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
     const list=(CFG.facilities||r.workplaces||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح منشأة جديدة</option>';
     let selected=(cur.workplaceId&&list.find(w=>w.id===cur.workplaceId))||list.find(w=>norm(w.workplace)===norm(cur.place));
@@ -50,7 +50,7 @@ function form(k,idx){
   const typed=g("f_name");if(!typed){$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
    const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
    if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
-    try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:$("#f_workplace").value==="__new__"?g("f_newplace"):($("#f_workplace").selectedOptions[0]?.dataset.place||""),sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
+    try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:"",sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
      if(!recs.some(x=>x.id===rec.id))recs.push(rec)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
    let placeId="",placeName="";
    if(k==="d"){
