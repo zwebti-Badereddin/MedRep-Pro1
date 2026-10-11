@@ -1037,8 +1037,7 @@ function reduceGpsVisits_(visits, reportDate, cutoff, reducedAt) {
   });
   return { changed: changed, count: count };
 }
-function reduceExpiredGpsData() {
-  ownerOnly_();
+function reduceExpiredGpsData_() {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -1083,12 +1082,67 @@ function reduceExpiredGpsData() {
     lock.releaseLock();
   }
 }
+const GPS_RETENTION_HANDLER = 'gpsRetentionTriggerHandler';
+const GPS_RETENTION_STATUS_KEY = 'GPS_RETENTION_LAST_RUN';
+
+function gpsRetentionStatus_(status) {
+  PropertiesService.getScriptProperties().setProperty(GPS_RETENTION_STATUS_KEY, JSON.stringify(status));
+}
+function gpsRetentionTriggerHandler(e) {
+  const triggerUid = e && e.triggerUid != null ? String(e.triggerUid) : '';
+  const trigger = triggerUid && ScriptApp.getProjectTriggers().find(t =>
+    t.getHandlerFunction() === GPS_RETENTION_HANDLER && String(t.getUniqueId()) === triggerUid
+  );
+  if (!trigger) throw new Error('تشغيل مرفوض: هذا المعالج مخصص للمشغّل المثبّت فقط.');
+  const startedAt = new Date().toISOString();
+  try {
+    const result = reduceExpiredGpsData_();
+    gpsRetentionStatus_({ ok: true, startedAt: startedAt, finishedAt: new Date().toISOString(), triggerUid: triggerUid, result: result });
+    return result;
+  } catch (err) {
+    gpsRetentionStatus_({ ok: false, startedAt: startedAt, failedAt: new Date().toISOString(), triggerUid: triggerUid, error: String(err && err.message || err) });
+    throw err;
+  }
+}
+// Manual owner-only test/run. The scheduled handler uses the trigger identity check above.
+function reduceExpiredGpsData() {
+  ownerOnly_();
+  const startedAt = new Date().toISOString();
+  try {
+    const result = reduceExpiredGpsData_();
+    gpsRetentionStatus_({ ok: true, manual: true, startedAt: startedAt, finishedAt: new Date().toISOString(), result: result });
+    return result;
+  } catch (err) {
+    gpsRetentionStatus_({ ok: false, manual: true, startedAt: startedAt, failedAt: new Date().toISOString(), error: String(err && err.message || err) });
+    throw err;
+  }
+}
 function installGpsRetentionTrigger() {
   ownerOnly_();
-  const handler = 'reduceExpiredGpsData';
-  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === handler);
-  if (!triggers.length) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(3).create();
-  return { installed: true, existing: triggers.length > 0, handler: handler, retentionDays: GPS_RETENTION_DAYS };
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === GPS_RETENTION_HANDLER);
+  let trigger = triggers[0] || null, created = false;
+  if (!trigger) {
+    trigger = ScriptApp.newTrigger(GPS_RETENTION_HANDLER).timeBased().everyDays(1).atHour(3).create();
+    created = true;
+  }
+  triggers.slice(1).forEach(t => ScriptApp.deleteTrigger(t));
+  PropertiesService.getScriptProperties().setProperty('GPS_RETENTION_TRIGGER_ID', trigger.getUniqueId());
+  return { installed: true, created: created, duplicatesRemoved: Math.max(0, triggers.length - 1), handler: GPS_RETENTION_HANDLER, triggerId: trigger.getUniqueId(), retentionDays: GPS_RETENTION_DAYS };
+}
+function verifyGpsRetentionTrigger() {
+  ownerOnly_();
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === GPS_RETENTION_HANDLER);
+  const raw = PropertiesService.getScriptProperties().getProperty(GPS_RETENTION_STATUS_KEY);
+  let lastRun = null;
+  try { lastRun = raw ? JSON.parse(raw) : null; } catch (e) { lastRun = { ok: false, error: 'تعذر قراءة حالة التشغيل المحفوظة' }; }
+  return {
+    installed: triggers.length === 1,
+    triggerCount: triggers.length,
+    triggerIds: triggers.map(t => t.getUniqueId()),
+    savedTriggerId: PropertiesService.getScriptProperties().getProperty('GPS_RETENTION_TRIGGER_ID') || '',
+    retentionDays: GPS_RETENTION_DAYS,
+    lastRun: lastRun
+  };
 }
 
 /* ---------- email notification (never blocks submission) ---------- */
