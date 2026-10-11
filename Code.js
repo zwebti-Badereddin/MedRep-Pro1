@@ -398,7 +398,7 @@ function persistReport_(s, p, lockHeld) {
     if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
     if (v.workplaceId) {
       const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
-      if (!doctor || !place || String(place.doctorId) !== String(doctor.id) ||
+      if (!doctor || !place || String(place.active) === 'false' || String(place.doctorId) !== String(doctor.id) ||
           (v.place && normName_(place.workplace) !== normName_(v.place))) {
         throw new Error('مكان العمل المحدد لا يتبع للطبيب المختار. أعد اختيار مكان العمل.');
       }
@@ -407,7 +407,7 @@ function persistReport_(s, p, lockHeld) {
   phs.forEach(v => {
     if (!v.pharmacyId) return;
     const pharmacy = masterPharmacies.find(p => String(p.id) === String(v.pharmacyId));
-    if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية لا يطابق اسم الزيارة. أعد اختيار الصيدلية.');
+    if (!pharmacy || String(pharmacy.active) === 'false' || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية غير صالح أو أن الصيدلية معطّلة. أعد اختيار الصيدلية.');
   });
   if (docs.concat(phs).some(v => v._v)) {
     ensureDoctorWorkplaces_();
@@ -647,9 +647,18 @@ function facilityGeoEntity_(entity, legacyId) {
     id: facility.id, name: facility.name, lat: loc.lat, lng: loc.lng, radius: loc.radius,
     refBy: loc.source === 'ADMIN_MAP' ? 'ADMIN_MAP' : loc.source, refState: loc.state,
     reviewed: loc.state === 'مؤكد' && !!loc.approvedBy && !!loc.approvedAt ? 'true' : 'false',
-    active: String(loc.active) !== 'false' && facility.status !== 'معطل',
+    active: String(loc.active) !== 'false' && facility.status !== 'معطل' && (!legacyWorkplace || String(legacyWorkplace.active) !== 'false'),
     doctorId: legacyWorkplace && legacyWorkplace.doctorId, doctorName: legacyWorkplace && legacyWorkplace.doctorName
   };
+}
+function invalidateFacilityLocations_(entity, legacyId) {
+  const facility = facilityForLegacy_(entity, legacyId);
+  if (!facility || !sheet_('FacilityLocations')) return 0;
+  let n = 0;
+  dbAll_('FacilityLocations').filter(l => String(l.facilityId) === String(facility.id) && String(l.active) !== 'false').forEach(l => {
+    l.active = false; l.state = 'مراجعة مطلوبة'; dbUpsert_('FacilityLocations', 'id', l); n++;
+  });
+  return n;
 }
 function proposeFacilityLocation_(s, entity, legacyId, lat, lng, radius) {
   const facility = facilityForLegacy_(entity, legacyId);
@@ -704,6 +713,7 @@ function workplaceAct_(s, p) {
     w.workplace = name; w.sector = String((p.row || {}).sector || w.sector || '').trim().slice(0, 30);
     if (nameChanged) {
       w.reviewed = 'false'; w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = '';
+      invalidateFacilityLocations_('DoctorWorkplaces', w.id);
     }
   } else if (p.op === 'approveLoc') {
     assertIndependentLocationApproval_(s, w.id);
@@ -711,7 +721,7 @@ function workplaceAct_(s, p) {
     if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
     approveFacilityLocation_(s, 'DoctorWorkplaces', w.id);
     w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
-  } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; }
+  } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; invalidateFacilityLocations_('DoctorWorkplaces', w.id); }
   else throw new Error('عملية غير معروفة');
   dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_(); audit_(s, 'workplace_' + p.op, w.id, note); return true;
 }
@@ -768,6 +778,7 @@ function masterAct_(s, p) {
     if (rows.some(x => x.id !== r.id && normName_(x.name) === normName_(nm))) throw new Error('الاسم موجود مسبقًا. استخدم «دمج».');
     if (nm !== r.name) {
       note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm;
+      if (sh === 'Pharmacies') invalidateFacilityLocations_('Pharmacies', r.id);
       if (sh === 'Doctors') { ensureDoctorWorkplaces_(); dbAll_('DoctorWorkplaces').filter(w => w.doctorId === r.id).forEach(w => { w.doctorName = nm; dbUpsert_('DoctorWorkplaces', 'id', w); }); }
     }
     (sh === 'Doctors' ? ['specialty', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
@@ -785,7 +796,7 @@ function masterAct_(s, p) {
     if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     approveFacilityLocation_(s, 'Pharmacies', r.id);
     r.refState = 'مؤكد'; note = 'reverified visits: ' + reverify_(sh, r);
-  } else if (p.op === 'clearLoc') { r.lat = ''; r.lng = ''; r.refState = ''; r.refBy = ''; }
+  } else if (p.op === 'clearLoc') { r.lat = ''; r.lng = ''; r.refState = ''; r.refBy = ''; invalidateFacilityLocations_('Pharmacies', r.id); }
   else throw new Error('عملية غير معروفة');
   dbUpsert_(sh, 'id', r); clearCache_(); audit_(s, 'master_' + p.op, r.id, note);
   return true;
