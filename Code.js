@@ -272,7 +272,7 @@ function assertIndependentLocationApproval_(s, entityId) {
   const rows = dbAll_('Audit');
   const proposals = rows.filter(a => String(a.ref) === String(entityId) && ['workplace_setLoc', 'master_setLoc'].indexOf(String(a.action)) >= 0);
   const latest = proposals.length ? proposals[proposals.length - 1] : null;
-  if (!latest) throw new Error('لا يوجد سجل يثبت من اقترح الموقع. أعد تحديده من الخريطة ثم اطلب اعتماده من مدير آخر.');
+  if (!latest || !/^ADM-/.test(String(latest.userId || ''))) throw new Error('هذا الموقع لا يحمل اقتراحًا موثقًا بحساب مدير مستقل. أعد تحديده من الخريطة بعد إنشاء حسابات الإدارة الفردية.');
   if (String(latest.userId) === String(s.uid)) throw new Error('لا يمكن للمدير اعتماد الموقع الذي اقترحه بنفسه. اطلب من مدير آخر اعتماده.');
 }
 
@@ -812,6 +812,8 @@ function saveSettings_(s, p) {
     if (SETTING_KEYS.indexOf(k) < 0) throw new Error('إعداد غير مسموح: ' + k);
     let x = String(v[k] === null || v[k] === undefined ? '' : v[k]).trim();
     if (k === 'brandColor' && !/^#[0-9a-fA-F]{6}$/.test(x)) throw new Error('لون غير صالح');
+    if (k === 'gpsRadius' && (!/^\\d+(?:\\.\\d+)?$/.test(x) || +x < 20 || +x > 5000)) throw new Error('نطاق الموقع يجب أن يكون بين 20 و5000 متر.');
+    if (k === 'gpsRefAcc' && (!/^\\d+(?:\\.\\d+)?$/.test(x) || +x < 1 || +x > 500)) throw new Error('أقصى دقة GPS يجب أن تكون بين 1 و500 متر.');
     x = x.slice(0, 200);
     dbUpsert_('Settings', 'key', { key: k, value: x });
   });
