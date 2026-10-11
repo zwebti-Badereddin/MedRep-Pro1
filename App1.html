@@ -114,7 +114,7 @@ function tabR(){
   try{const a=await srv("listReports",{from:$("#fa").value,to:$("#fb").value,repId:$("#fr").value,status:$("#fs").value,no:isNo?q:"",q:isNo?"":q});
    if(nav!==adminNavSeq||!$("#rl"))return;$("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span><div class="acts">${r.status==="مرسل"?`<button class="mini" type="button" data-a="gps" data-id="${esc(r.id)}">مطابقة الموقع</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';
    document.querySelectorAll("#rl .row").forEach(e=>e.onclick=()=>openRep(e.dataset.id));
-   document.querySelectorAll('#rl button[data-a="gps"]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const id=b.dataset.id;await openRep(id);if(CUR&&CUR.id===id)openGpsComparison()})}catch(e){toast(e.message)}};
+   document.querySelectorAll('#rl button[data-a="gps"]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const id=b.dataset.id;CUR=null;await openRep(id);if(CUR&&CUR.id===id)openGpsComparison()})}catch(e){toast(e.message)}};
  $("#fgo").click();
 }
 const coOf=c=>({name:c.companyName||c.name||CFG.company.name,short:c.shortName||c.short||CFG.company.short,color:c.brandColor||c.color||CFG.company.color,title:c.reportTitle||c.title||CFG.company.title,phone:c.phone!==undefined?c.phone:CFG.company.phone,address:c.address!==undefined?c.address:CFG.company.address,logo:CFG.company.logo});
