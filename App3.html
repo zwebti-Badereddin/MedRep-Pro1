@@ -122,7 +122,7 @@ $("#pvsend").onclick=async()=>{
  }catch(e){toast(e.message)}
  finally{sendingReport=false;if(btn.isConnected){btn.disabled=false;btn.textContent=label}}
 };
-$("#ov").onclick=e=>{if(e.target.id==="ov"){stopGeo();$("#ov").classList.remove("on")}};
+$("#ov").onclick=e=>{if(e.target.id==="ov"){stopGeo();if(typeof closeVisitGpsComparison==="function")closeVisitGpsComparison();else $("#ov").classList.remove("on")}};
 addEventListener("error",e=>toast("خطأ: "+e.message));addEventListener("unhandledrejection",e=>toast("خطأ: "+((e.reason&&e.reason.message)||e.reason)));
 login();window.__ok=true;
 
