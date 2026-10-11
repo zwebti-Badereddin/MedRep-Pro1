@@ -42,7 +42,7 @@ function form(k,idx){
     if(selected){$("#f_workplace").value=selected.id;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.reviewed?"مكان عمل مسجل":"تنبيه: هذا المكان بانتظار اعتماد الإدارة."}
     else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل مكان؛ راجعه قبل الحفظ.":"اختر مكانًا مسجلًا أو اقترح مكانًا جديدًا."}
     const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true};
-   $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"سيُرسل المكان الجديد إلى الإدارة للمراجعة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: هذا المكان بانتظار اعتماد الإدارة.":"مكان عمل مسجل")};
+   if(k==="d") $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"سيُرسل المكان الجديد إلى الإدارة للمراجعة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: هذا المكان بانتظار اعتماد الإدارة.":"مكان عمل مسجل")};
    setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on")};
  $("#sv").onclick=async()=>{
