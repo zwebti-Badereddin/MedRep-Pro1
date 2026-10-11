@@ -310,9 +310,10 @@ function clearCache_() { _ST = null; CacheService.getScriptCache().removeAll(['s
 function bootstrap_(s) {
   const lk = lookups_();
   return {
-    settings: (function () { const x = settings_(); if (s.role !== 'admin') delete x.reportEmail; return x; })(), statuses: STATUS,
+    settings: (function () { const x = settings_(); if (s.role !== 'admin') { delete x.reportEmail; delete x.gpsRadius; delete x.gpsRefAcc; } return x; })(), statuses: STATUS,
     reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
-    doctors: lk.doctors, pharmacies: lk.pharmacies, products: lk.products,
+    doctors: s.role === 'admin' ? lk.doctors : lk.doctors.map(d => Object.assign({}, d, { workplaces: (d.workplaces || []).map(w => { const o = Object.assign({}, w); delete o.refState; return o; }) })),
+    pharmacies: lk.pharmacies, products: lk.products,
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null
   };
 }
@@ -362,10 +363,10 @@ function myReport_(s, p) {
   const date = p.date || today_();
   let r = dbAll_('Reports').find(x => x.repId === s.uid && x.date === date);
   if (!r) r = { id: null, no: null, repId: s.uid, date, status: 'مسودة', notes: '', doctors: [], pharmacies: [] };
-  return parseReport_(r);
+  return repView_(parseReport_(r)); // route is rep-only
 }
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
-function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: JSON.parse(r.doctors), phs: JSON.parse(r.pharmacies) }; }
+function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
 function persistReport_(s, p, lockHeld) {
   // Serialize report lookup + ID/number allocation + write to prevent concurrent saves overwriting each other.
   const lock = LockService.getScriptLock();
@@ -500,13 +501,32 @@ function submitReport_(s, p) {
   notify_(snap);
   return result;
 }
+/* ---------- what a representative may see of GPS ----------
+ * A rep gets back only his own raw capture fields (needed so the next save is recognised as unchanged).
+ * The verdict, distance, reference coordinates and re-check history are management-only. */
+function repGps_(g) { g = g || {}; const o = {}; ['lat', 'lng', 'acc', 'ts'].forEach(k => { if (g[k] !== undefined && g[k] !== null) o[k] = g[k]; }); return o; }
+function repVisits_(list) { return (list || []).map(v => Object.assign({}, v, { gps: repGps_(v && v.gps) })); }
+function repView_(out) {
+  const o = Object.assign({}, out);
+  if (Array.isArray(o.doctors)) o.doctors = repVisits_(o.doctors);
+  if (Array.isArray(o.pharmacies)) o.pharmacies = repVisits_(o.pharmacies);
+  ['snapshot', 'snapshot1'].forEach(k => { if (o[k]) { const sn = Object.assign({}, o[k]); sn.doctors = repVisits_(sn.doctors); sn.pharmacies = repVisits_(sn.pharmacies); o[k] = sn; } });
+  return o;
+}
+// Search text for listReports_: a rep must not be able to probe hidden verdict fields through the search box.
+function searchText_(r, role) {
+  if (role !== 'rep') return (r.doctors + r.pharmacies).toLowerCase();
+  let d = [], p = [];
+  try { d = JSON.parse(r.doctors || '[]'); p = JSON.parse(r.pharmacies || '[]'); } catch (e) {}
+  return JSON.stringify(repVisits_(d).concat(repVisits_(p))).toLowerCase();
+}
 function getReport_(s, p) {
   const r = dbAll_('Reports').find(x => x.id === p.id);
   if (!r || (s.role === 'rep' && r.repId !== s.uid)) throw new Error('التقرير غير موجود');
   const out = parseReport_(r);
   if (r.snapshot) out.snapshot = JSON.parse(r.snapshot);
   if (r.snapshot1) out.snapshot1 = JSON.parse(r.snapshot1); // submitted reports render from the snapshot
-  return out;
+  return s.role === 'rep' ? repView_(out) : out;
 }
 // Filters: repId, from, to, no, status, q (doctor / pharmacy / product text search)
 function listReports_(s, p) {
@@ -516,7 +536,7 @@ function listReports_(s, p) {
     (s.role === 'admin' || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
     (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to) &&
-    (!q || (r.doctors + r.pharmacies).toLowerCase().indexOf(q) >= 0)
+    (!q || searchText_(r, s.role).indexOf(q) >= 0)
   ).map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0,
     visits: JSON.parse(r.doctors || '[]').length + JSON.parse(r.pharmacies || '[]').length })).reverse();
 }
@@ -872,8 +892,8 @@ function saveSettings_(s, p) {
     if (SETTING_KEYS.indexOf(k) < 0) throw new Error('إعداد غير مسموح: ' + k);
     let x = String(v[k] === null || v[k] === undefined ? '' : v[k]).trim();
     if (k === 'brandColor' && !/^#[0-9a-fA-F]{6}$/.test(x)) throw new Error('لون غير صالح');
-    if (k === 'gpsRadius' && (!/^\\d+(?:\\.\\d+)?$/.test(x) || +x < 20 || +x > 5000)) throw new Error('نطاق الموقع يجب أن يكون بين 20 و5000 متر.');
-    if (k === 'gpsRefAcc' && (!/^\\d+(?:\\.\\d+)?$/.test(x) || +x < 1 || +x > 500)) throw new Error('أقصى دقة GPS يجب أن تكون بين 1 و500 متر.');
+    if (k === 'gpsRadius' && (!/^\d+(?:\.\d+)?$/.test(x) || +x < 20 || +x > 5000)) throw new Error('نطاق الموقع يجب أن يكون بين 20 و5000 متر.');
+    if (k === 'gpsRefAcc' && (!/^\d+(?:\.\d+)?$/.test(x) || +x < 1 || +x > 500)) throw new Error('أقصى دقة GPS يجب أن تكون بين 1 و500 متر.');
     x = x.slice(0, 200);
     dbUpsert_('Settings', 'key', { key: k, value: x });
   });
@@ -993,7 +1013,7 @@ function gpsCapturedAt_(gps, reportDate) {
     if (isFinite(n) && String(raw).trim() !== '') ms = n < 1000000000000 ? n * 1000 : n;
     else ms = Date.parse(String(raw));
   }
-  if (!isFinite(ms) && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(reportDate || ''))) {
+  if (!isFinite(ms) && /^\d{4}-\d{2}-\d{2}$/.test(String(reportDate || ''))) {
     ms = Date.parse(String(reportDate) + 'T12:00:00Z');
   }
   return ms;
