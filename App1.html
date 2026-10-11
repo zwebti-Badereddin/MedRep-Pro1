@@ -137,12 +137,12 @@ function collectGpsCompareVisits(report){
  return doctors.map((v,i)=>({kind:"زيارة طبيب",name:v.name||"طبيب غير محدد",place:v.place||"",gps:v.gps||{},seq:i+1}))
   .concat(pharmacies.map((v,i)=>({kind:"زيارة صيدلية",name:v.name||"صيدلية غير محددة",place:v.loc||"",gps:v.gps||{},seq:i+1})));
 }
-let visitCompareMapInstance=null;
+let visitCompareMapInstance=null,visitGpsDrawSeq=0;
 function clearVisitGpsMap(){
  if(visitCompareMapInstance){try{visitCompareMapInstance.remove()}catch(e){}visitCompareMapInstance=null}
 }
 function closeVisitGpsComparison(){
- clearVisitGpsMap();const ov=$("#ov");if(ov)ov.classList.remove("on");
+ visitGpsDrawSeq++;clearVisitGpsMap();const ov=$("#ov");if(ov)ov.classList.remove("on");
 }
 function gpsPointValid(lat,lng){
  return lat!==""&&lat!=null&&lng!==""&&lng!=null&&isFinite(+lat)&&isFinite(+lng)&&+lat>=-90&&+lat<=90&&+lng>=-180&&+lng<=180;
@@ -164,7 +164,7 @@ function openGpsComparison(){
  drawGpsComparisonVisit(visits[0]);
 }
 function drawGpsComparisonVisit(v){
- clearVisitGpsMap();
+ const drawSeq=++visitGpsDrawSeq;clearVisitGpsMap();
  const g=v.gps||{},rawRef=g.reference||(g.recheck&&g.recheck.reference)||null;
  const repOk=gpsPointValid(g.lat,g.lng);
  const refOk=!!rawRef&&rawRef.source==="ADMIN_MAP"&&rawRef.state==="مؤكد"&&gpsPointValid(rawRef.lat,rawRef.lng);
@@ -179,7 +179,7 @@ function drawGpsComparisonVisit(v){
  mapEl.style.display="block";msg.style.display="block";msg.textContent="جارٍ تحميل الخريطة…";
  if(typeof loadWorkplaceMapLib!=="function"){msg.textContent="تعذر تحميل أداة الخريطة.";return}
  loadWorkplaceMapLib().then(()=>{
-  if(!$("#visitGpsMap"))return;
+  if(drawSeq!==visitGpsDrawSeq||!$("#visitGpsMap"))return;
   const pts=[];if(repOk)pts.push([+g.lat,+g.lng]);if(refOk)pts.push([+rawRef.lat,+rawRef.lng]);
   visitCompareMapInstance=L.map("visitGpsMap",{scrollWheelZoom:true}).setView(pts[0],17);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(visitCompareMapInstance);
@@ -191,7 +191,7 @@ function drawGpsComparisonVisit(v){
   if(pts.length>1)visitCompareMapInstance.fitBounds(L.latLngBounds(pts).pad(.25));else visitCompareMapInstance.setView(pts[0],17);
   setTimeout(()=>{if(visitCompareMapInstance)visitCompareMapInstance.invalidateSize()},120);
   msg.textContent=refOk&&repOk?"تظهر النقطتان للمقارنة البصرية. النتيجة أداة مراجعة فقط.":repOk?"الموقع المرجعي المعتمد غير متاح لهذه الزيارة؛ تظهر نقطة المندوب فقط.":"إحداثيات المندوب غير متاحة؛ تظهر نقطة المنشأة المعتمدة فقط.";
- }).catch(e=>{msg.textContent=e.message||"تعذر تحميل الخريطة. تحقق من الاتصال بالإنترنت."});
+ }).catch(e=>{if(drawSeq===visitGpsDrawSeq&&$("#visitGpsMapMsg"))msg.textContent=e.message||"تعذر تحميل الخريطة. تحقق من الاتصال بالإنترنت."});
 }
 
 async function review(ok,note){
