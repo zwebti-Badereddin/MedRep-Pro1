@@ -229,7 +229,14 @@ async function review(ok,note){
    note=reason.trim();
   }
  }
- try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){toast(e.message)}
+ try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){
+  if(ok&&String(e.message||e).includes("سبب الاعتماد الاستثنائي")){
+   const reason=prompt("يتطلب اعتماد التقرير استثنائيًا سببًا مسجلًا من المدير:");
+   if(reason==null)return;
+   if(reason.trim().length<5){toast("سبب الاعتماد الاستثنائي يجب ألا يقل عن 5 أحرف.");return}
+   try{await srv("reviewReport",{id:CUR.id,approve:true,note:reason.trim()});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast("تم اعتماد التقرير استثنائيًا وتسجيل السبب");const g=$("#fgo");if(g)g.click()}catch(err){toast(err.message)}
+  }else toast(e.message)
+ }
 }
 function perfChart(r){
  const rows=(r.kpis||[]).map(k=>({name:k.name,actual:+k.actual||0,target:+k.target||0,pct:Math.max(0,Math.min(100,+k.achievement||0))}));
