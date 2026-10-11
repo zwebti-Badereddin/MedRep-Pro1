@@ -103,7 +103,7 @@ async function preview(){
 }
 addEventListener("resize",()=>{if($("#pv").classList.contains("on"))fit()});
 $("#pvx").onclick=()=>$("#pv").classList.remove("on");
-$("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";const isAdmin=typeof rep!=="undefined"&&rep&&rep.role==="admin"&&typeof CUR!=="undefined"&&CUR&&typeof CUR.draw==="function"&&CUR.x0;let restore;if(isAdmin){const x=CUR.first?CUR.snapshot1:CUR.x0;st.innerHTML=CUR.draw(x,true);restore=()=>{st.innerHTML=CUR.draw(x,false)}}else{st.innerHTML=render(snapshot(),true);restore=()=>{st.innerHTML=render(snapshot(),false)}}print();restore();fit()};
+$("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";print();fit()};
 $("#pvs").onclick=()=>{const d=snapshot(),txt=`${d.company.title}\n${d.company.name}\n${d.no} — ${d.rep}\n${d.day} ${d.date}\nالزيارات: ${d.docs.length+d.phs.length} (${d.docs.length} أطباء، ${d.phs.length} صيدليات)`;
  navigator.share?navigator.share({title:d.no,text:txt}).catch(()=>{}):(navigator.clipboard&&navigator.clipboard.writeText(txt),toast("تم نسخ الملخص"))};
 let sendingReport=false;
