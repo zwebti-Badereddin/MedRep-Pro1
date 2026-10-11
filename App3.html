@@ -62,10 +62,6 @@ function form(k,idx){
     }else{
      const option=$("#f_workplace").selectedOptions[0];placeId=chosen;placeName=option?.dataset.place||"";
      if(!placeId||!placeName){$("#ferr").textContent="اختر مكان العمل الذي تمت زيارته.";$("#sv").disabled=false;return}
-     if(String(chosen).indexOf("FAC-ADM-")===0){
-      try{const wp=await srv("linkDoctorFacility",{doctorId:rec.id,facilityId:chosen});placeId=wp.id;placeName=wp.workplace;$("#f_place_status").textContent="تم ربط الطبيب بالمنشأة المسجلة."}
-      catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}
-     }
     }
    }
    const v=k==="d"?{name:rec.name,doctorId:rec.id,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,workplaceId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}

@@ -60,10 +60,6 @@ const ROUTES = {
   workplacesList:{ role: 'admin', fn: workplacesList_ },
   gpsReference:  { role: 'admin', fn: gpsReference_ },
   workplaceAct:  { role: 'admin', fn: workplaceAct_ },
-  facilitiesAdminList: { role: 'admin', fn: facilitiesAdminList_ },
-  facilityAdminAct: { role: 'admin', fn: facilityAdminAct_ },
-  facilityImport: { role: 'admin', fn: facilityImport_ },
-  linkDoctorFacility: { role: 'rep', fn: linkDoctorFacility_ },
   addDoctorWorkplace: { role: 'rep', fn: (s, p) => addDoctorWorkplace_(s, p) },
   reopenReport:  { role: 'rep',   fn: reopenReport_ },
   prevInfo:      { role: 'rep',   fn: prevInfo_ },
@@ -307,12 +303,6 @@ function lookups_() {
   const byFacilityName = new Map();
   allWorkplaces.forEach(w => { const key = normName_(w.workplace), prior = byFacilityName.get(key); if (!prior || (w.reviewed && !prior.reviewed)) byFacilityName.set(key, w); });
   const workplaces = Array.from(byFacilityName.values());
-  // Independent admin-entered facilities are also selectable by reps, without tying a facility to one doctor.
-  if (sheet_('Facilities')) dbAll_('Facilities').filter(f=>String(f.status)!=='معطل').forEach(f=>{
-    if (workplaces.some(w=>normName_(w.workplace)===normName_(f.name))) return;
-    const loc=sheet_('FacilityLocations')?dbAll_('FacilityLocations').filter(l=>String(l.facilityId)===String(f.id)&&String(l.active)!=='false').sort((a,b)=>(+b.version||0)-(+a.version||0))[0]:null;
-    workplaces.push({id:f.id,facilityId:f.id,workplace:f.name,sector:f.type||'',active:true,reviewed:!!(loc&&loc.state==='مؤكد'&&loc.approvedBy&&loc.approvedAt),refState:loc?loc.state:'غير مسجل',address:f.address||'',region:f.region||''});
-  });
   // GPS coordinates and internal review metadata remain server-side.
   const v = {
     facilities: workplaces,
@@ -916,113 +906,6 @@ function approveFacilityLocation_(s, entity, legacyId) {
   loc.state = 'مؤكد'; loc.approvedBy = s.uid; loc.approvedAt = new Date().toISOString();
   dbUpsert_('FacilityLocations', 'id', loc);
   return loc;
-}
-
-
-/* ---------- independent shared medical facilities: admin CRUD + safe bulk import ---------- */
-function facilitySchemaReady_() {
-  ['Facilities','FacilityLocations','DoctorPlaces'].forEach(n => {
-    if (!sheet_(n)) throw new Error('جداول المنشآت غير مهيأة. شغّل initializeFacilitySchema من حساب مالك المشروع أولًا.');
-  });
-}
-function facilitiesAdminList_(s,p) {
-  facilitySchemaReady_();
-  const locations=dbAll_('FacilityLocations');
-  return dbAll_('Facilities').map(f=>{
-    const loc=locations.filter(x=>String(x.facilityId)===String(f.id)&&String(x.active)!=='false').sort((a,b)=>(+b.version||0)-(+a.version||0))[0];
-    const linked=dbAll_('DoctorPlaces').filter(x=>String(x.facilityId)===String(f.id)&&String(x.active)!=='false').length;
-    return Object.assign({},f,{lat:loc?loc.lat:'',lng:loc?loc.lng:'',radius:loc?loc.radius:'',gpsState:loc?loc.state:'غير مسجل',gpsSource:loc?loc.source:'',linkedDoctors:linked});
-  });
-}
-function facilityAdminAct_(s,p) {
-  facilitySchemaReady_();
-  const rows=dbAll_('Facilities'), now=new Date().toISOString();
-  if(p.op==='create') {
-    const row=p.row||{}, name=String(row.name||'').trim().slice(0,120);
-    if(name.length<2) throw new Error('أدخل اسم المنشأة.');
-    const type=String(row.type||'خاص').trim().slice(0,40), region=String(row.region||'').trim().slice(0,100), address=String(row.address||'').trim().slice(0,180);
-    const latRaw=row.lat, lngRaw=row.lng, hasCoords=latRaw!==''&&latRaw!=null&&lngRaw!==''&&lngRaw!=null;
-    let lat='',lng='';
-    if(hasCoords){lat=Number(latRaw);lng=Number(lngRaw);if(!isFinite(lat)||!isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180)throw new Error('الإحداثيات غير صحيحة.');}
-    const id='FAC-ADM-'+Utilities.getUuid().replace(/-/g,'').slice(0,12).toUpperCase();
-    const f={id:id,name:name,type:type,region:region,address:address,status:'نشط',legacyEntity:'ADMIN_FACILITY',legacyId:id,createdAt:now,createdBy:s.uid,updatedAt:now,updatedBy:s.uid};
-    dbAppend_('Facilities',f);
-    if(hasCoords) dbAppend_('FacilityLocations',{id:'LOC-'+id+'-V1',facilityId:id,lat:lat,lng:lng,radius:150,source:'ADMIN_IMPORT',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,approvedBy:'',approvedAt:'',version:1,active:true,note:'إحداثيات أولية؛ يلزم التحقق من الخريطة قبل الاعتماد'});
-    audit_(s,'facility_create',id,name);clearCache_();return f;
-  }
-  const f=rows.find(x=>String(x.id)===String(p.id));if(!f)throw new Error('المنشأة غير موجودة.');
-  if(p.op==='toggle') {
-    f.status=String(f.status)==='معطل'?'نشط':'معطل';f.updatedAt=now;f.updatedBy=s.uid;dbUpsert_('Facilities','id',f);
-    audit_(s,f.status==='معطل'?'facility_disable':'facility_enable',f.id,f.name);clearCache_();return {id:f.id,status:f.status};
-  }
-  if(p.op==='edit') {
-    const row=p.row||{}, name=String(row.name||'').trim().slice(0,120);
-    if(name.length<2)throw new Error('اسم المنشأة قصير جدًا.');
-    const type=String(row.type||'').trim().slice(0,40),region=String(row.region||'').trim().slice(0,100),address=String(row.address||'').trim().slice(0,180);
-    if(rows.some(x=>String(x.id)!==String(f.id)&&normName_(x.name)===normName_(name)))throw new Error('يوجد سجل آخر بالاسم نفسه؛ راجع التكرار قبل التعديل.');
-    const locs=dbAll_('FacilityLocations').filter(x=>String(x.facilityId)===String(f.id)&&String(x.active)!=='false').sort((a,b)=>(+b.version||0)-(+a.version||0));
-    let changedCoords=false,lat='',lng='';
-    const hasLat=String(row.lat==null?'':row.lat).trim()!=='',hasLng=String(row.lng==null?'':row.lng).trim()!=='';
-    if(hasLat||hasLng){
-      if(!hasLat||!hasLng)throw new Error('أدخل خط العرض والطول معًا أو اتركهما فارغين.');
-      lat=Number(row.lat);lng=Number(row.lng);
-      if(!isFinite(lat)||!isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180)throw new Error('الإحداثيات غير صحيحة.');
-      changedCoords=!locs.length||Number(locs[0].lat)!==lat||Number(locs[0].lng)!==lng;
-    }
-    f.name=name;f.type=type;f.region=region;f.address=address;f.updatedAt=now;f.updatedBy=s.uid;dbUpsert_('Facilities','id',f);
-    if(changedCoords){
-      locs.forEach(x=>{x.active=false;dbUpsert_('FacilityLocations','id',x)});
-      const version=dbAll_('FacilityLocations').filter(x=>String(x.facilityId)===String(f.id)).reduce((m,x)=>Math.max(m,+x.version||0),0)+1;
-      dbAppend_('FacilityLocations',{id:'LOC-'+f.id+'-V'+version,facilityId:f.id,lat:lat,lng:lng,radius:150,source:'ADMIN_EDIT',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,approvedBy:'',approvedAt:'',version:version,active:true,note:'تعديل إحداثيات؛ يلزم إعادة التحقق والاعتماد'});
-    }
-    audit_(s,'facility_edit',f.id,'name='+name+'; coordinatesChanged='+changedCoords);clearCache_();return {id:f.id,coordinatesChanged:changedCoords};
-  }
-  if(p.op==='approveLoc'){
-    const loc=dbAll_('FacilityLocations').filter(x=>String(x.facilityId)===String(f.id)&&String(x.active)!=='false').sort((a,b)=>(+b.version||0)-(+a.version||0))[0];
-    if(!loc||loc.lat===''||loc.lng===''||!isFinite(+loc.lat)||!isFinite(+loc.lng))throw new Error('لا توجد إحداثيات صالحة لاعتمادها.');
-    loc.state='مؤكد';loc.source='ADMIN_MAP';loc.approvedBy=s.uid;loc.approvedAt=now;dbUpsert_('FacilityLocations','id',loc);
-    audit_(s,'facility_gps_approve',f.id,'version='+loc.version);clearCache_();return {id:f.id,gpsState:loc.state};
-  }
-  throw new Error('عملية المنشأة غير معروفة.');
-}
-function facilityImport_(s,p) {
-  facilitySchemaReady_();
-  const input=Array.isArray(p.rows)?p.rows:[];if(!input.length)throw new Error('لا توجد صفوف للاستيراد.');
-  if(input.length>300)throw new Error('الحد الأقصى للاستيراد في الدفعة الواحدة 300 منشأة.');
-  const facilities=dbAll_('Facilities'), locations=dbAll_('FacilityLocations'), seenNames=new Set(facilities.map(f=>normName_(f.name))), seenCoords=new Map();
-  locations.filter(l=>String(l.active)!=='false'&&l.lat!==''&&l.lng!=='').forEach(l=>seenCoords.set(Number(l.lat).toFixed(5)+','+Number(l.lng).toFixed(5),l.facilityId));
-  const now=new Date().toISOString(), added=[], skipped=[], warnings=[];
-  input.forEach((raw,i)=>{
-    const name=String(raw.name||'').trim().slice(0,120),type=String(raw.type||'خاص').trim().slice(0,40),region=String(raw.region||'').trim().slice(0,100),address=String(raw.address||'').trim().slice(0,180);
-    if(name.length<2){skipped.push({row:i+1,name:name||'(بلا اسم)',reason:'اسم ناقص'});return;}
-    if(raw.lat===''||raw.lng===''||raw.lat==null||raw.lng==null||!isFinite(Number(raw.lat))||!isFinite(Number(raw.lng))||Number(raw.lat)<-90||Number(raw.lat)>90||Number(raw.lng)<-180||Number(raw.lng)>180){skipped.push({row:i+1,name:name,reason:'إحداثيات ناقصة أو غير صحيحة'});return;}
-    const key=normName_(name);if(seenNames.has(key)){skipped.push({row:i+1,name:name,reason:'اسم مطابق لسجل موجود؛ لم يتم الدمج'});return;}
-    const lat=Number(raw.lat),lng=Number(raw.lng),ck=lat.toFixed(5)+','+lng.toFixed(5),sameCoords=seenCoords.has(ck);
-    const id='FAC-ADM-'+Utilities.getUuid().replace(/-/g,'').slice(0,12).toUpperCase();
-    const f={id:id,name:name,type:type,region:region,address:address,status:sameCoords?'مراجعة تكرار':'نشط',legacyEntity:'ADMIN_FACILITY',legacyId:id,createdAt:now,createdBy:s.uid,updatedAt:now,updatedBy:s.uid};
-    dbAppend_('Facilities',f);
-    const version=locations.filter(l=>String(l.facilityId)===id).reduce((m,l)=>Math.max(m,+l.version||0),0)+1;
-    dbAppend_('FacilityLocations',{id:'LOC-'+id+'-V'+version,facilityId:id,lat:lat,lng:lng,radius:150,source:'ADMIN_IMPORT',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,approvedBy:'',approvedAt:'',version:version,active:true,note:sameCoords?'إحداثيات تطابق منشأة أخرى؛ يلزم التحقق قبل الاعتماد':'إحداثيات واردة من قائمة أولية؛ يلزم التحقق قبل الاعتماد'});
-    added.push({name:name,id:id,duplicateCoordinates:sameCoords,matchingFacilityId:sameCoords?seenCoords.get(ck):''});
-    if(sameCoords)warnings.push(name+' — إحداثيات مطابقة لسجل آخر؛ وُسمت «مراجعة تكرار».');
-    seenNames.add(key);seenCoords.set(ck,id);
-  });
-  audit_(s,'facility_bulk_import','batch',JSON.stringify({added:added.length,skipped:skipped.length,warnings:warnings.length}));
-  clearCache_();return {added:added,skipped:skipped,warnings:warnings};
-}
-function linkDoctorFacility_(s,p) {
-  ensureDoctorWorkplaces_();facilitySchemaReady_();
-  const doctor=dbAll_('Doctors').find(d=>String(d.id)===String(p.doctorId)&&String(d.active)!=='false');
-  const facility=dbAll_('Facilities').find(f=>String(f.id)===String(p.facilityId)&&String(f.status)!=='معطل');
-  if(!doctor||!facility)throw new Error('الطبيب أو المنشأة غير متاح.');
-  let w=dbAll_('DoctorWorkplaces').find(x=>String(x.doctorId)===String(doctor.id)&&normName_(x.workplace)===normName_(facility.name));
-  if(!w){const rows=dbAll_('DoctorWorkplaces');w={id:nextWorkplaceId_(rows),doctorId:doctor.id,doctorName:doctor.name,workplace:facility.name,sector:facility.type||doctor.sector||'',active:true,addedBy:s.uid,reviewed:'false',refState:'',refBy:''};dbAppend_('DoctorWorkplaces',w);}
-  const relations=dbAll_('DoctorPlaces');let rel=relations.find(x=>String(x.legacyWorkplaceId)===String(w.id));
-  if(!rel){rel={id:'DP-'+Utilities.getUuid().replace(/-/g,'').slice(0,12).toUpperCase(),doctorId:doctor.id,facilityId:facility.id,workDays:'',notes:'',active:true,legacyWorkplaceId:w.id,createdAt:new Date().toISOString(),createdBy:s.uid,updatedAt:new Date().toISOString(),updatedBy:s.uid};dbAppend_('DoctorPlaces',rel);}
-  else{rel.facilityId=facility.id;rel.active=true;rel.updatedAt=new Date().toISOString();rel.updatedBy=s.uid;dbUpsert_('DoctorPlaces','id',rel);}
-  clearCache_();audit_(s,'link_doctor_facility',facility.id,doctor.id+' / '+w.id);
-  const geo=facilityGeoEntity_('DoctorWorkplaces',w.id);
-  return {id:w.id,doctorId:doctor.id,doctorName:doctor.name,workplace:facility.name,sector:w.sector,reviewed:!!(geo&&String(geo.reviewed)==='true'),refState:geo?geo.refState:'مراجعة مطلوبة'};
 }
 
 function workplaceAct_(s, p) {
