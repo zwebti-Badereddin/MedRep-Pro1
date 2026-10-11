@@ -704,6 +704,9 @@ function addDoctorWorkplace_(s, p) {
   if (p.lat === '' || p.lat == null || p.lng === '' || p.lng == null || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     throw new Error('أدخل خط العرض وخط الطول الصحيحين للمنشأة الجديدة.');
   }
+  if (!sheet_('Facilities') || !sheet_('FacilityLocations') || !sheet_('DoctorPlaces')) {
+    throw new Error('جداول المنشآت غير مهيأة. لم تُحفظ الإضافة. شغّل تهيئة مخطط المنشآت من حساب مالك المشروع أولًا.');
+  }
   const row = addDoctorWorkplaceRow_(s, doctor, name, p.sector, false);
   const proposal = proposeSharedDoctorFacility_(s, row, lat, lng);
   if (proposal.alreadyApproved) { row.reviewed = 'true'; dbUpsert_('DoctorWorkplaces', 'id', row); }
