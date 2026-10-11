@@ -29,7 +29,7 @@ function drawFacilities(){
   const sameCoords={};FACILITY_SEED.forEach(r=>{const k=Number(r.lat).toFixed(5)+","+Number(r.lng).toFixed(5);sameCoords[k]=(sameCoords[k]||0)+1});
   const candidates=FACILITY_SEED.filter(r=>sameCoords[Number(r.lat).toFixed(5)+","+Number(r.lng).toFixed(5)]>1).length;
   if(!confirm("سيتم فحص "+FACILITY_SEED.length+" سجلًا. توجد "+candidates+" سجلات ضمن إحداثيات متطابقة؛ ستُوسم للمراجعة ولن يُعتمد GPS تلقائيًا. الأسماء الموجودة مسبقًا ستُتجاوز دون دمج. متابعة؟"))return;
-  try{const out=await srv("facilityImport",{rows:FACILITY_SEED});toast("أُضيفت "+out.added.length+" منشأة، وتُجاوز "+out.skipped.length+" سجلًا. راجع التكرارات قبل اعتماد المواقع.");if(out.warnings.length)alert("مراجعة الإحداثيات المتطابقة:\n"+out.warnings.slice(0,15).join("\n")+(out.warnings.length>15?"\n…":""));await loadM()}catch(e){toast(e.message)}
+  try{const rows=FACILITY_SEED.map(r=>({name:r[0],type:r[1],lat:r[2],lng:r[3],address:r[4],region:"طرابلس"}));const out=await srv("facilityImport",{rows:rows});toast("أُضيفت "+out.added.length+" منشأة، وتُجاوز "+out.skipped.length+" سجلًا.");if(out.skipped.length)alert("السجلات التي لم تُستورد:\n"+out.skipped.slice(0,20).map(x=>x.name+" — "+x.reason).join("\n")+(out.skipped.length>20?"\n…":""));if(out.warnings.length)alert("مراجعة الإحداثيات المتطابقة:\n"+out.warnings.slice(0,15).join("\n")+(out.warnings.length>15?"\n…":""));await loadM()}catch(e){toast(e.message)}
  };
  document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=async()=>{
   const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),op=b.dataset.a;
