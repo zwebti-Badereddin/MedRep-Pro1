@@ -49,6 +49,7 @@ function dateInfo(ds){const d=ds?new Date(ds+"T12:00:00"):new Date(),p=n=>String
 
 let REPS=[],STAT=[],CUR=null,PREV=null,TD=null,RO=false;
 function login(adm){
+ const staleGpsButton=$("#pvgeo");if(staleGpsButton)staleGpsButton.remove();if(typeof clearVisitGpsMap==="function")clearVisitGpsMap();
  $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 5 أرقام"}</div>
  ${adm?'<input id="admin_user" autocomplete="username" style="font-size:16px" aria-label="اسم المستخدم" placeholder="اسم المستخدم"><input id="code" type="password" autocomplete="current-password" style="letter-spacing:0;font-size:18px;margin-top:8px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
  <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
@@ -121,8 +122,78 @@ async function openRep(id){
  try{const r=await srv("getReport",{id});if(nav!==adminNavSeq)return;CUR=r;const x=r.snapshot||{company:{},no:r.no,rep:(REPS.find(y=>y.id===r.repId)||{}).name,date:r.date,notes:r.notes,doctors:r.doctors,pharmacies:r.pharmacies};
   const draw=x=>render({adm:true,company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});CUR.draw=draw;CUR.x0=x;CUR.first=false;$("#stage").innerHTML=draw(x);$("#pv1").style.display=r.snapshot1?"":"none";$("#pv1").textContent="النسخة الأولى";
   $("#pvsend").style.display=$("#pvs").style.display="none";$("#pvok").style.display=$("#pvret").style.display=r.status==="مرسل"?"":"none";
-  $("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
+  installGpsCompareButton(r);$("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
 }
+
+function installGpsCompareButton(report){
+ const old=$("#pvgeo");if(old)old.remove();
+ const visits=(report.doctors||[]).length+(report.pharmacies||[]).length;if(!visits)return;
+ const bar=document.querySelector(".pvbar");if(!bar)return;
+ const b=document.createElement("button");b.id="pvgeo";b.className="btn";b.type="button";b.textContent="مقارنة موقع الزيارة";
+ b.onclick=openGpsComparison;bar.insertBefore(b,$("#pvok"));
+}
+function collectGpsCompareVisits(report){
+ const doctors=(report&&report.doctors)||[],pharmacies=(report&&report.pharmacies)||[];
+ return doctors.map((v,i)=>({kind:"زيارة طبيب",name:v.name||"طبيب غير محدد",place:v.place||"",gps:v.gps||{},seq:i+1}))
+  .concat(pharmacies.map((v,i)=>({kind:"زيارة صيدلية",name:v.name||"صيدلية غير محددة",place:v.loc||"",gps:v.gps||{},seq:i+1})));
+}
+let visitCompareMapInstance=null;
+function clearVisitGpsMap(){
+ if(visitCompareMapInstance){try{visitCompareMapInstance.remove()}catch(e){}visitCompareMapInstance=null}
+}
+function closeVisitGpsComparison(){
+ clearVisitGpsMap();const ov=$("#ov");if(ov)ov.classList.remove("on");
+}
+function gpsPointValid(lat,lng){
+ return lat!==""&&lat!=null&&lng!==""&&lng!=null&&isFinite(+lat)&&isFinite(+lng)&&+lat>=-90&&+lat<=90&&+lng>=-180&&+lng<=180;
+}
+function openGpsComparison(){
+ const visits=collectGpsCompareVisits(CUR);
+ if(!visits.length){toast("لا توجد زيارات في هذا التقرير.");return}
+ clearVisitGpsMap();
+ $("#modal").innerHTML='<h3>مقارنة موقع الزيارة</h3>'+
+  '<div class="empty" style="margin:8px 0;color:var(--mut)">هذه المعلومات للتحقق والمراجعة فقط، وليست دليلًا على التقصير أو الإهمال.</div>'+
+  '<label for="vgVisit">اختر الزيارة</label><select id="vgVisit">'+visits.map((v,i)=>'<option value="'+i+'">'+esc(v.kind+" "+v.seq+" — "+v.name+(v.place?" · "+v.place:""))+'</option>').join("")+'</select>'+
+  '<div id="vgSummary" style="font-size:13px;line-height:1.8;margin:8px 0"></div>'+
+  '<div id="visitGpsMap" style="display:none;height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
+  '<div id="visitGpsMapMsg" class="empty" style="margin-top:8px">جارٍ تجهيز بيانات الموقع…</div>'+
+  '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px"><button class="btn" id="vgClose" type="button">إغلاق</button><span style="font-size:11px;color:var(--mut);align-self:center">الأحمر: موقع المندوب · الأزرق: موقع المنشأة المعتمد</span></div>';
+ $("#ov").classList.add("on");
+ $("#vgClose").onclick=closeVisitGpsComparison;
+ $("#vgVisit").onchange=()=>drawGpsComparisonVisit(visits[+$("#vgVisit").value]);
+ drawGpsComparisonVisit(visits[0]);
+}
+function drawGpsComparisonVisit(v){
+ clearVisitGpsMap();
+ const g=v.gps||{},rawRef=g.reference||(g.recheck&&g.recheck.reference)||null;
+ const repOk=gpsPointValid(g.lat,g.lng);
+ const refOk=!!rawRef&&rawRef.source==="ADMIN_MAP"&&rawRef.state==="مؤكد"&&gpsPointValid(rawRef.lat,rawRef.lng);
+ const status=g.status||"غير متاح";
+ const dist=g.dist!==""&&g.dist!=null&&isFinite(+g.dist)?"المسافة المسجلة: "+Math.round(+g.dist)+" متر":"لم تُسجّل مسافة مقارنة";
+ const accuracy=g.acc!==""&&g.acc!=null&&isFinite(+g.acc)?"دقة GPS المعلنة: ±"+Math.round(+g.acc)+" متر":"دقة GPS: غير متاحة";
+ let when="وقت التقاط الموقع: غير متاح";
+ if(g.ts){let ms=typeof g.ts==="number"?g.ts:Number(g.ts);if(isFinite(ms)){if(ms<1000000000000)ms*=1000}else ms=Date.parse(String(g.ts));if(isFinite(ms))when="وقت التقاط الموقع: "+new Date(ms).toLocaleString("ar-LY")}
+ $("#vgSummary").innerHTML='<b>'+esc(v.kind+" — "+v.name)+'</b><br>حالة التحقق: <b>'+esc(status)+'</b><br>'+esc(dist)+'<br>'+esc(accuracy)+'<br>'+esc(when);
+ const mapEl=$("#visitGpsMap"),msg=$("#visitGpsMapMsg");
+ if(!repOk&&!refOk){mapEl.style.display="none";msg.style.display="block";msg.textContent=(!g.lat&&!g.lng)?"لا تتوفر إحداثيات محفوظة للمندوب في هذه الزيارة. قد يكون الموقع غير مسجل أو انتهت مدة الاحتفاظ بالإحداثيات.":"لا تتوفر إحداثيات صالحة لعرض المقارنة.";return}
+ mapEl.style.display="block";msg.style.display="block";msg.textContent="جارٍ تحميل الخريطة…";
+ if(typeof loadWorkplaceMapLib!=="function"){msg.textContent="تعذر تحميل أداة الخريطة.";return}
+ loadWorkplaceMapLib().then(()=>{
+  if(!$("#visitGpsMap"))return;
+  const pts=[];if(repOk)pts.push([+g.lat,+g.lng]);if(refOk)pts.push([+rawRef.lat,+rawRef.lng]);
+  visitCompareMapInstance=L.map("visitGpsMap",{scrollWheelZoom:true}).setView(pts[0],17);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(visitCompareMapInstance);
+  if(refOk){
+   L.circle([+rawRef.lat,+rawRef.lng],{radius:Math.max(20,+rawRef.radius||150),color:"#2563eb",fillColor:"#2563eb",fillOpacity:.08,weight:2}).addTo(visitCompareMapInstance);
+   L.circleMarker([+rawRef.lat,+rawRef.lng],{radius:9,color:"#1d4ed8",fillColor:"#3b82f6",fillOpacity:1}).addTo(visitCompareMapInstance).bindPopup("موقع المنشأة المعتمد");
+  }
+  if(repOk)L.circleMarker([+g.lat,+g.lng],{radius:9,color:"#b91c1c",fillColor:"#ef4444",fillOpacity:1}).addTo(visitCompareMapInstance).bindPopup("موقع المندوب المسجل وقت الزيارة");
+  if(pts.length>1)visitCompareMapInstance.fitBounds(L.latLngBounds(pts).pad(.25));else visitCompareMapInstance.setView(pts[0],17);
+  setTimeout(()=>{if(visitCompareMapInstance)visitCompareMapInstance.invalidateSize()},120);
+  msg.textContent=refOk&&repOk?"تظهر النقطتان للمقارنة البصرية. النتيجة أداة مراجعة فقط.":repOk?"الموقع المرجعي المعتمد غير متاح لهذه الزيارة؛ تظهر نقطة المندوب فقط.":"إحداثيات المندوب غير متاحة؛ تظهر نقطة المنشأة المعتمدة فقط.";
+ }).catch(e=>{msg.textContent=e.message||"تعذر تحميل الخريطة. تحقق من الاتصال بالإنترنت."});
+}
+
 async function review(ok,note){
  if(!ok&&!note){$("#ferr").textContent="اكتب ملاحظة للمندوب.";return}
  try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){toast(e.message)}
