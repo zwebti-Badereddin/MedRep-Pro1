@@ -50,15 +50,15 @@ function dateInfo(ds){const d=ds?new Date(ds+"T12:00:00"):new Date(),p=n=>String
 let REPS=[],STAT=[],CUR=null,PREV=null,TD=null,RO=false;
 function login(adm){
  $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 5 أرقام"}</div>
- ${adm?'<input id="code" type="password" style="letter-spacing:0;font-size:18px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
+ ${adm?'<input id="admin_user" autocomplete="username" style="font-size:16px" aria-label="اسم المستخدم" placeholder="اسم المستخدم"><input id="code" type="password" autocomplete="current-password" style="letter-spacing:0;font-size:18px;margin-top:8px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
  <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
  <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a></div></div>`;
  $("#sw").onclick=e=>{e.preventDefault();login(!adm)};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
-  try{const r=await srv("login",adm?{role:"admin",password:$("#code").value}:{code:$("#code").value.trim()});TOKEN=r.token;rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
+  try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value}:{code:$("#code").value.trim()});TOKEN=r.token;rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
    if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;home();consent()}}
   catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
- $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};$("#code").focus();
+ $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();
 }
 /* ===== Admin ===== */
 const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
