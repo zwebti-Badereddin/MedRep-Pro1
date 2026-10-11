@@ -570,6 +570,7 @@ function reportVisitGpsCheck_(v, kind, st) {
     if (p && String(p.active) !== 'false') ent = facilityGeoEntity_('Pharmacies', p.id) || p;
   }
   if (!ent || String(ent.active) === 'false' || ent.refBy !== 'ADMIN_MAP' || ent.refState !== 'مؤكد' ||
+      (kind === 'doctor' && String(ent.reviewed) !== 'true') ||
       !gpsPointValidServer_(ent.lat, ent.lng)) return { status:'مرجع غير مؤكد', distance:null, reference:ent ? String(ent.name || ent.workplace || '') : null };
   const radius = Math.max(20, +ent.radius || +st.gpsRadius || 150), maxAcc = Math.max(1, +st.gpsRefAcc || 50);
   const distance = dist_(+ent.lat, +ent.lng, +g.lat, +g.lng);
