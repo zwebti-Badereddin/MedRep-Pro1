@@ -7,6 +7,7 @@
 const T = {
   Settings: ['key', 'value'],
   Reps: ['id', 'name', 'codeHash', 'phone', 'active', 'email'],
+  Admins: ['id', 'username', 'name', 'passwordHash', 'active', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Doctors: ['id', 'name', 'specialty', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   Facilities: ['id', 'name', 'type', 'region', 'address', 'status', 'legacyEntity', 'legacyId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
@@ -177,7 +178,20 @@ function login_(p) {
   if (+cache.get(key) >= 5) throw new Error('محاولات كثيرة. حاول بعد 10 دقائق.');
   let user = null;
   if (isAdmin) {
-    if (hash_(p.password || '') === PropertiesService.getScriptProperties().getProperty('ADMIN_HASH')) user = { id: 'ADMIN', name: 'الإدارة', role: 'admin' };
+    const username = String(p.username || '').trim().toLowerCase();
+    const adminSheet = sheet_('Admins');
+    let accounts = [];
+    if (adminSheet) {
+      const expected = T.Admins, actual = adminSheet.getRange(1, 1, 1, Math.max(adminSheet.getLastColumn(), expected.length)).getValues()[0];
+      if (expected.some((h, i) => actual[i] !== h)) throw new Error('مخطط جدول حسابات الإدارة غير صحيح. راجع العناوين قبل تسجيل الدخول.');
+      accounts = dbAll_('Admins');
+    }
+    if (accounts.length) {
+      const a = accounts.find(x => String(x.username || '').trim().toLowerCase() === username && String(x.active) !== 'false');
+      if (a && hash_(p.password || '') === String(a.passwordHash || '')) user = { id: a.id, name: a.name, username: a.username, role: 'admin' };
+    } else if (hash_(p.password || '') === PropertiesService.getScriptProperties().getProperty('ADMIN_HASH')) {
+      user = { id: 'ADMIN', name: 'الإدارة (حساب قديم)', username: '', role: 'admin' };
+    }
   } else {
     const code = String(p.code || '').trim();
     const r = /^\d{5}$/.test(code)
@@ -197,6 +211,71 @@ function login_(p) {
   // one round trip: session + lookups + today's report (login audit is written by a follow-up call)
   return { token, user, boot: bootstrap_(s), report: user.role === 'rep' ? myReport_(s, {}) : null, prev: user.role === 'rep' ? prevInfo_(s) : null };
 }
+/* ---------- individual administrator accounts ---------- */
+function ensureAdminSchema_() {
+  const ss = SpreadsheetApp.getActive(); let sh = ss.getSheetByName('Admins');
+  if (!sh) sh = ss.insertSheet('Admins');
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, T.Admins.length).setValues([T.Admins]); sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), T.Admins.length).setNumberFormat('@'); return sh;
+  }
+  const actual = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), T.Admins.length)).getValues()[0];
+  if (actual.length !== T.Admins.length || T.Admins.some((h, i) => actual[i] !== h)) throw new Error('عناوين جدول Admins غير مطابقة. لم تُعدّل أي بيانات.');
+  return sh;
+}
+function createAdminAccount() {
+  ownerOnly_(); ensureAdminSchema_();
+  const sp = PropertiesService.getScriptProperties(); if (!sp.getProperty('SALT')) sp.setProperty('SALT', Utilities.getUuid());
+  const ui = SpreadsheetApp.getUi();
+  const up = ui.prompt('إنشاء حساب مدير مستقل', 'اسم المستخدم (3–40 حرفًا: أحرف إنجليزية أو أرقام أو . _ -):', ui.ButtonSet.OK_CANCEL);
+  if (up.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
+  const username = String(up.getResponseText() || '').trim().toLowerCase();
+  if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new Error('اسم المستخدم غير صالح.');
+  const rows = dbAll_('Admins');
+  if (rows.some(a => String(a.username).toLowerCase() === username)) throw new Error('اسم المستخدم مسجّل مسبقًا.');
+  const np = ui.prompt('اسم المدير', 'أدخل الاسم الظاهر في سجل التدقيق:', ui.ButtonSet.OK_CANCEL);
+  if (np.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
+  const name = String(np.getResponseText() || '').trim().slice(0, 80);
+  if (name.length < 2) throw new Error('اسم المدير قصير جدًا.');
+  const pp = ui.prompt('كلمة المرور', 'أدخل كلمة مرور لا تقل عن 12 حرفًا:', ui.ButtonSet.OK_CANCEL);
+  if (pp.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
+  const password = pp.getResponseText();
+  if (password.length < 12) throw new Error('كلمة المرور يجب ألا تقل عن 12 حرفًا.');
+  const cp = ui.prompt('تأكيد كلمة المرور', 'أعد إدخال كلمة المرور:', ui.ButtonSet.OK_CANCEL);
+  if (cp.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
+  if (password !== cp.getResponseText()) throw new Error('كلمتا المرور غير متطابقتين.');
+  const id = 'ADM-' + ('0000' + (rows.reduce((m, a) => Math.max(m, +(String(a.id).match(/(\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-4);
+  const now = new Date().toISOString();
+  dbAppend_('Admins', { id: id, username: username, name: name, passwordHash: hash_(password), active: true, createdAt: now, createdBy: 'OWNER', updatedAt: now, updatedBy: 'OWNER' });
+  audit_({ uid: 'OWNER', role: 'owner' }, 'create_admin_account', id, username); clearCache_();
+  ui.alert('تم إنشاء حساب المدير ' + username + ' بمعرّف ' + id + '. استخدم اسم المستخدم وكلمة المرور عند دخول الإدارة.');
+  return { id: id, username: username };
+}
+function setAdminAccountActive() {
+  ownerOnly_(); ensureAdminSchema_();
+  const ui = SpreadsheetApp.getUi(), rows = dbAll_('Admins');
+  const up = ui.prompt('تفعيل / تعطيل حساب مدير', 'أدخل اسم المستخدم:', ui.ButtonSet.OK_CANCEL);
+  if (up.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
+  const username = String(up.getResponseText() || '').trim().toLowerCase(), account = rows.find(a => String(a.username).toLowerCase() === username);
+  if (!account) throw new Error('حساب المدير غير موجود.');
+  const activeCount = rows.filter(a => String(a.active) !== 'false').length, nextActive = String(account.active) === 'false';
+  if (!nextActive && activeCount <= 1) throw new Error('لا يمكن تعطيل آخر حساب مدير نشط.');
+  const action = ui.alert('تأكيد تغيير حالة الحساب', (nextActive ? 'تفعيل' : 'تعطيل') + ' حساب ' + username + '؟', ui.ButtonSet.YES_NO);
+  if (action !== ui.Button.YES) return { cancelled: true };
+  account.active = nextActive; account.updatedAt = new Date().toISOString(); account.updatedBy = 'OWNER';
+  dbUpsert_('Admins', 'id', account);
+  audit_({ uid: 'OWNER', role: 'owner' }, nextActive ? 'enable_admin_account' : 'disable_admin_account', account.id, username);
+  ui.alert('تم ' + (nextActive ? 'تفعيل' : 'تعطيل') + ' الحساب.');
+  return { id: account.id, active: nextActive };
+}
+function assertIndependentLocationApproval_(s, entityId) {
+  const rows = dbAll_('Audit');
+  const proposals = rows.filter(a => String(a.ref) === String(entityId) && ['workplace_setLoc', 'master_setLoc'].indexOf(String(a.action)) >= 0);
+  const latest = proposals.length ? proposals[proposals.length - 1] : null;
+  if (!latest) throw new Error('لا يوجد سجل يثبت من اقترح الموقع. أعد تحديده من الخريطة ثم اطلب اعتماده من مدير آخر.');
+  if (String(latest.userId) === String(s.uid)) throw new Error('لا يمكن للمدير اعتماد الموقع الذي اقترحه بنفسه. اطلب من مدير آخر اعتماده.');
+}
+
 function session_(token) {
   const raw = token && CacheService.getScriptCache().get('s_' + token);
   if (!raw) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
@@ -574,6 +653,7 @@ function workplaceAct_(s, p) {
       w.reviewed = 'false'; w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = '';
     }
   } else if (p.op === 'approveLoc') {
+    assertIndependentLocationApproval_(s, w.id);
     if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || w.lat < -90 || w.lat > 90 || w.lng === '' || w.lng == null || !isFinite(+w.lng) || w.lng < -180 || w.lng > 180 || w.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
     w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
@@ -645,6 +725,7 @@ function masterAct_(s, p) {
     r.lat = lat; r.lng = lng; r.refState = 'مؤقت'; r.refBy = 'ADMIN_MAP';
     note = 'admin map coordinates: ' + lat + ',' + lng;
   } else if (p.op === 'approveLoc') {
+    assertIndependentLocationApproval_(s, r.id);
     if (sh === 'Doctors') throw new Error('لا يمكن اعتماد موقع جغرافي لسجل الطبيب؛ اعتمد موقع مكان عمله من قسم «أماكن عمل الأطباء».');
     if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     r.refState = 'مؤكد'; note = 'reverified visits: ' + reverify_(sh, r);
