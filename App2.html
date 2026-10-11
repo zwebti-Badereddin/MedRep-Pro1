@@ -141,8 +141,8 @@ function tabS(){
  const st=CFG.st||{};
  $("#av").innerHTML=`<label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="s_e" type="email" multiple value="${esc(st.reportEmail||"")}">
  <label>ساعة إغلاق التقرير (التقرير يُسلَّم قبلها في اليوم التالي)</label><input id="s_h" type="number" min="0" max="23" value="${esc(st.closeHour||10)}">
- <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="s_w" value="${esc(st.workDays||"0,1,2,3,4")}"><label>نطاق التحقق من الموقع (بالمتر)</label><input id="s_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"><button class="btn pri full" id="s_go" style="margin-top:14px">حفظ الإعدادات</button>`;
- $("#s_go").onclick=async()=>{try{const v={reportEmail:$("#s_e").value.trim(),closeHour:$("#s_h").value,workDays:$("#s_w").value.replace(/\s/g,""),gpsRadius:$("#s_g").value};await srv("saveSettings",{values:v});Object.assign(CFG.st,v);toast("تم حفظ الإعدادات")}catch(e){toast(e.message)}};
+ <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="s_w" value="${esc(st.workDays||"0,1,2,3,4")}"><label>نطاق التحقق من الموقع (بالمتر)</label><input id="s_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"><label>أقصى دقة GPS مقبولة (متر)</label><input id="s_ga" type="number" min="1" max="500" value="${esc(st.gpsRefAcc||50)}"><small>القراءة ذات دقة أضعف من هذا الحد تظهر «غير حاسم» ولا تُحتسب متحققة.</small><button class="btn pri full" id="s_go" style="margin-top:14px">حفظ الإعدادات</button>`;
+ $("#s_go").onclick=async()=>{try{const v={reportEmail:$("#s_e").value.trim(),closeHour:$("#s_h").value,workDays:$("#s_w").value.replace(/\s/g,""),gpsRadius:$("#s_g").value,gpsRefAcc:$("#s_ga").value};if(+v.gpsRadius<20||+v.gpsRefAcc<1||+v.gpsRefAcc>500)throw new Error("تحقق من نطاق الموقع ودقة GPS (1–500 متر).");await srv("saveSettings",{values:v});Object.assign(CFG.st,v);toast("تم حفظ الإعدادات")}catch(e){toast(e.message)}};
 }
 $("#pv1").onclick=()=>{CUR.first=!CUR.first;$("#stage").innerHTML=CUR.draw(CUR.first?CUR.snapshot1:CUR.x0);fit();$("#pv1").textContent=CUR.first?"النسخة الحالية":"النسخة الأولى"};
 $("#pvok").onclick=()=>review(true,"");
