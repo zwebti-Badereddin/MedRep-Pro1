@@ -37,12 +37,12 @@ function form(k,idx){
   {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
    const fillDoctor=r=>{if(r.isNew){$("#f_workplace").innerHTML='<option value="__new__">＋ اقتراح مكان عمل جديد</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent="سيُرسل المكان الجديد إلى الإدارة للمراجعة.";return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
-    const list=(r.workplaces||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح مكان عمل جديد</option>';
+    const list=(CFG.facilities||r.workplaces||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح منشأة جديدة</option>';
     let selected=(cur.workplaceId&&list.find(w=>w.id===cur.workplaceId))||list.find(w=>norm(w.workplace)===norm(cur.place));
     if(selected){$("#f_workplace").value=selected.id;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.reviewed?"مكان عمل مسجل":"تنبيه: هذا المكان بانتظار اعتماد الإدارة."}
     else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل مكان؛ راجعه قبل الحفظ.":"اختر مكانًا مسجلًا أو اقترح مكانًا جديدًا."}
     const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true};
-   if(k==="d") $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"سيُرسل المكان الجديد إلى الإدارة للمراجعة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: هذا المكان بانتظار اعتماد الإدارة.":"مكان عمل مسجل")};
+   if(k==="d") $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"سيُرسل اسم المنشأة الجديدة إلى الإدارة للمراجعة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"منشأة مسجلة")};
    setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on")};
  $("#sv").onclick=async()=>{
@@ -57,8 +57,7 @@ function form(k,idx){
     const chosen=$("#f_workplace").value;
     if(chosen==="__new__"){
      placeName=g("f_newplace");if(placeName.length<2){$("#ferr").textContent="اختر مكان عمل مسجلًا أو أدخل اسم المكان الجديد.";$("#sv").disabled=false;return}
-     if(rec.workplaceId){placeId=rec.workplaceId;rec.workplaces=rec.workplaces||[];rec.workplaces.push({id:placeId,workplace:placeName,reviewed:false})}
-     else{try{const wp=await srv("addDoctorWorkplace",{doctorId:rec.id,workplace:placeName,sector:r("sector")});placeId=wp.id;placeName=wp.workplace;rec.workplaces=rec.workplaces||[];if(!rec.workplaces.some(w=>w.id===wp.id))rec.workplaces.push(wp)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
+     try{const wp=await srv("addDoctorWorkplace",{doctorId:rec.id,workplace:placeName,sector:r("sector")});placeId=wp.id;placeName=wp.workplace;CFG.facilities=CFG.facilities||[];if(!CFG.facilities.some(w=>w.id===wp.id))CFG.facilities.push(wp)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
     }else{
      const option=$("#f_workplace").selectedOptions[0];placeId=chosen;placeName=option?.dataset.place||"";
      if(!placeId||!placeName){$("#ferr").textContent="اختر مكان العمل الذي تمت زيارته.";$("#sv").disabled=false;return}
