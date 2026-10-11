@@ -778,6 +778,8 @@ function workplaceAct_(s, p) {
     const shared = ensureSharedDoctorFacility_(s, w, lat, lng);
     const linked = dbAll_('DoctorWorkplaces').filter(x => normName_(x.workplace) === normName_(w.workplace));
     linked.forEach(x => { x.lat=''; x.lng=''; x.refState='مؤكد'; x.refBy='ADMIN_MAP'; x.reviewed='true'; dbUpsert_('DoctorWorkplaces','id',x); });
+    // Keep coordinates only in FacilityLocations, never duplicated in per-doctor legacy rows.
+    w.lat=''; w.lng=''; w.refState='مؤكد'; w.refBy='ADMIN_MAP'; w.reviewed='true';
     note = 'shared facility location confirmed; facility=' + shared.facilityId + '; linkedWorkplaces=' + shared.linkedWorkplaces + '; version=' + shared.version;
     const reverificationCount = linked.reduce((n, row) => n + reverifyWorkplace_(row), 0);
     note += '; reverified visits: ' + reverificationCount;
