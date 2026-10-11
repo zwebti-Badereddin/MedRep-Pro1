@@ -934,15 +934,28 @@ function workplaceAct_(s, p) {
     note = 'shared facility location confirmed; facility=' + shared.facilityId + '; linkedWorkplaces=' + shared.linkedWorkplaces + '; version=' + shared.version;
     const reverificationCount = linked.reduce((n, row) => n + reverifyWorkplace_(row), 0);
     note += '; reverified visits: ' + reverificationCount;
-  } else if (p.op === 'toggle') w.active = String(w.active) === 'false';
+  } else if (p.op === 'toggle') {
+    const nextActive = String(w.active) === 'false';
+    const sameFacility = rows.filter(x => normName_(x.workplace) === normName_(w.workplace));
+    sameFacility.forEach(x => { x.active = nextActive; dbUpsert_('DoctorWorkplaces', 'id', x); });
+    const facility = facilityForLegacy_('DoctorWorkplaces', w.id);
+    if (facility) { facility.status = nextActive ? 'نشط' : 'معطل'; facility.updatedAt = new Date().toISOString(); facility.updatedBy = s.uid; dbUpsert_('Facilities', 'id', facility); }
+  }
   else if (p.op === 'edit') {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
     if (name.length < 2) throw new Error('اسم مكان العمل قصير جدًا');
-    if (rows.some(x => x.id !== w.id && x.doctorId === w.doctorId && normName_(x.workplace) === normName_(name))) throw new Error('هذا المكان مسجل للطبيب نفسه.');
-    const nameChanged = normName_(name) !== normName_(w.workplace);
-    w.workplace = name; w.sector = String((p.row || {}).sector || w.sector || '').trim().slice(0, 30);
+    if (rows.some(x => normName_(x.workplace) === normName_(name) && normName_(x.workplace) !== normName_(w.workplace))) throw new Error('اسم المنشأة مستخدم بالفعل. اختر المنشأة الموجودة بدل إنشاء سجل مكرر.');
+    const oldName = w.workplace, nameChanged = normName_(name) !== normName_(oldName);
+    const sameFacility = rows.filter(x => normName_(x.workplace) === normName_(oldName));
+    const facility = facilityForLegacy_('DoctorWorkplaces', w.id);
+    sameFacility.forEach(x => {
+      x.workplace = name;
+      if (x.id === w.id) x.sector = String((p.row || {}).sector || x.sector || '').trim().slice(0, 30);
+      if (nameChanged) { x.reviewed = 'false'; x.lat = ''; x.lng = ''; x.refState = ''; x.refBy = ''; }
+      dbUpsert_('DoctorWorkplaces', 'id', x);
+    });
     if (nameChanged) {
-      w.reviewed = 'false'; w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = '';
+      if (facility) { facility.name = name; facility.updatedAt = new Date().toISOString(); facility.updatedBy = s.uid; dbUpsert_('Facilities', 'id', facility); }
       invalidateFacilityLocations_('DoctorWorkplaces', w.id);
     }
   } else if (p.op === 'approveLoc') {
