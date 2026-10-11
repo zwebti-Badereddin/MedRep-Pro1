@@ -706,6 +706,7 @@ function addDoctorWorkplace_(s, p) {
   }
   const row = addDoctorWorkplaceRow_(s, doctor, name, p.sector, false);
   const proposal = proposeSharedDoctorFacility_(s, row, lat, lng);
+  if (proposal.alreadyApproved) { row.reviewed = 'true'; dbUpsert_('DoctorWorkplaces', 'id', row); }
   clearCache_();
   audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace + ' · facility=' + proposal.facilityId + ' · lat=' + lat + ' · lng=' + lng);
   const geo = facilityGeoEntity_('DoctorWorkplaces', row.id);
