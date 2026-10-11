@@ -717,7 +717,7 @@ function saveCompanyLogo_(s, p) {
   audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
   return next;
 }
-const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius'];
+const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc'];
 function saveSettings_(s, p) {
   const v = p.values || {};
   Object.keys(v).forEach(k => {
@@ -824,6 +824,101 @@ function geo_(v, ent, sheet, s, st) {
   // Freeze the exact approved reference and thresholds used for this visit.
   g.reference = geoReferenceSnapshot_(ent, rad, refAcc);
   g.status = geoVerdict_(g.dist, g.acc, rad, refAcc);
+}
+
+/* ---------- GPS retention: remove precise visit coordinates after 90 days ---------- */
+/*
+ * The report itself and its historical snapshots remain intact. Only the raw device
+ * coordinates/accuracy/timestamp are removed after 90 days; the stored verdict,
+ * distance and facility-reference snapshot remain for auditability.
+ * Run installGpsRetentionTrigger() once as the spreadsheet owner.
+ */
+const GPS_RETENTION_DAYS = 90;
+function gpsCapturedAt_(gps, reportDate) {
+  const raw = gps && gps.ts;
+  let ms = NaN;
+  if (typeof raw === 'number' && isFinite(raw)) ms = raw < 1000000000000 ? raw * 1000 : raw;
+  else if (raw !== '' && raw != null) {
+    const n = Number(raw);
+    if (isFinite(n) && String(raw).trim() !== '') ms = n < 1000000000000 ? n * 1000 : n;
+    else ms = Date.parse(String(raw));
+  }
+  if (!isFinite(ms) && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(reportDate || ''))) {
+    ms = Date.parse(String(reportDate) + 'T12:00:00Z');
+  }
+  return ms;
+}
+function reduceGpsVisits_(visits, reportDate, cutoff, reducedAt) {
+  let changed = false, count = 0;
+  if (!Array.isArray(visits)) return { changed: false, count: 0 };
+  visits.forEach(v => {
+    const g = v && v.gps;
+    if (!g || g.rawLocationReducedAt || (!Object.prototype.hasOwnProperty.call(g, 'lat') && !Object.prototype.hasOwnProperty.call(g, 'lng'))) return;
+    const captured = gpsCapturedAt_(g, reportDate);
+    if (!isFinite(captured) || captured >= cutoff) return;
+    delete g.lat;
+    delete g.lng;
+    delete g.acc;
+    delete g.ts;
+    g.rawLocationReducedAt = reducedAt;
+    g.rawLocationRetentionDays = GPS_RETENTION_DAYS;
+    changed = true;
+    count++;
+  });
+  return { changed: changed, count: count };
+}
+function reduceExpiredGpsData() {
+  ownerOnly_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = sheet_('Reports');
+    if (!sh || sh.getLastRow() < 2) return { reportsUpdated: 0, visitsReduced: 0 };
+    const values = sh.getDataRange().getValues(), ix = key => T.Reports.indexOf(key);
+    const cutoff = Date.now() - GPS_RETENTION_DAYS * 86400000, reducedAt = new Date().toISOString();
+    let reportsUpdated = 0, visitsReduced = 0;
+    const parseJson = raw => { try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } };
+    for (let i = 1; i < values.length; i++) {
+      if (!values[i][ix('id')]) continue;
+      const date = String(values[i][ix('date')] || '');
+      let rowChanged = false;
+      ['doctors', 'pharmacies'].forEach(key => {
+        const arr = parseJson(values[i][ix(key)]);
+        if (!Array.isArray(arr)) return;
+        const result = reduceGpsVisits_(arr, date, cutoff, reducedAt);
+        if (result.changed) {
+          sh.getRange(i + 1, ix(key) + 1).setValue(JSON.stringify(arr));
+          rowChanged = true;
+          visitsReduced += result.count;
+        }
+      });
+      ['snapshot', 'snapshot1'].forEach(key => {
+        const snap = parseJson(values[i][ix(key)]);
+        if (!snap || typeof snap !== 'object') return;
+        let changed = false;
+        ['doctors', 'pharmacies'].forEach(field => {
+          const result = reduceGpsVisits_(snap[field], snap.date || date, cutoff, reducedAt);
+          if (result.changed) { changed = true; visitsReduced += result.count; }
+        });
+        if (changed) {
+          sh.getRange(i + 1, ix(key) + 1).setValue(JSON.stringify(snap));
+          rowChanged = true;
+        }
+      });
+      if (rowChanged) reportsUpdated++;
+    }
+    if (reportsUpdated) audit_({ uid: 'SYSTEM', role: 'system' }, 'gps_retention_reduce', String(reportsUpdated), 'visits=' + visitsReduced + '; retentionDays=' + GPS_RETENTION_DAYS);
+    return { reportsUpdated: reportsUpdated, visitsReduced: visitsReduced, retentionDays: GPS_RETENTION_DAYS };
+  } finally {
+    lock.releaseLock();
+  }
+}
+function installGpsRetentionTrigger() {
+  ownerOnly_();
+  const handler = 'reduceExpiredGpsData';
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === handler);
+  if (!triggers.length) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(3).create();
+  return { installed: true, existing: triggers.length > 0, handler: handler, retentionDays: GPS_RETENTION_DAYS };
 }
 
 /* ---------- email notification (never blocks submission) ---------- */
