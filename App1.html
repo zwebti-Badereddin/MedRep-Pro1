@@ -178,7 +178,15 @@ function drawGpsComparisonVisit(v){
  if(!validRef(rawRef)&&!v._refRequested){
   v._refRequested=true;
   const request={kind:v.type,name:v.name,doctorName:v.doctorName||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",place:v.place||"",pharmacyId:v.pharmacyId||""};
-  srv("gpsReference",request).then(ref=>{v.currentReference=ref||null;drawGpsComparisonVisit(v)}).catch(()=>{v.currentReference=null;});
+  srv("gpsReference",request).then(ref=>{
+   v.currentReference=ref||null;
+   v.currentReferenceError=ref?"": "لم يُرجع الخادم موقعًا معتمدًا لهذه الزيارة. تحقق من ربط الطبيب بمكان العمل ومن اعتماد موقع المنشأة في الإدارة.";
+   drawGpsComparisonVisit(v);
+  }).catch(err=>{
+   v.currentReference=null;
+   v.currentReferenceError="تعذر استرجاع مرجع المنشأة من الخادم: "+((err&&err.message)||"خطأ غير معروف");
+   drawGpsComparisonVisit(v);
+  });
  }
  const refOk=validRef(rawRef);
  const status=g.status||"غير متاح";
@@ -186,7 +194,8 @@ function drawGpsComparisonVisit(v){
  const accuracy=g.acc!==""&&g.acc!=null&&isFinite(+g.acc)?"دقة GPS المعلنة: ±"+Math.round(+g.acc)+" متر":"دقة GPS: غير متاحة";
  let when="وقت التقاط الموقع: غير متاح";
  if(g.ts){let ms=typeof g.ts==="number"?g.ts:Number(g.ts);if(isFinite(ms)){if(ms<1000000000000)ms*=1000}else ms=Date.parse(String(g.ts));if(isFinite(ms))when="وقت التقاط الموقع: "+new Date(ms).toLocaleString("ar-LY")}
- $("#vgSummary").innerHTML=`<b>${esc(v.kind+" — "+v.name)}</b><br>حالة التحقق: <b>${esc(status)}</b><br>${esc(dist)}<br>${esc(accuracy)}<br>${esc(when)}`;
+ const referenceMessage=refOk?"تم استرجاع موقع المنشأة المعتمد.":(v.currentReferenceError|| (v._refRequested?"جارٍ استرجاع مرجع المنشأة…":""));
+ $("#vgSummary").innerHTML=`<b>${esc(v.kind+" — "+v.name)}</b><br>حالة التحقق: <b>${esc(status)}</b><br>${esc(dist)}<br>${esc(accuracy)}<br>${esc(when)}${referenceMessage?"<br><span>"+esc(referenceMessage)+"</span>":""}`;
  const mapEl=$("#visitGpsMap"),msg=$("#visitGpsMapMsg");
  if(!repOk&&!refOk){mapEl.style.display="none";msg.style.display="block";msg.textContent=(!g.lat&&!g.lng)?"لا تتوفر إحداثيات محفوظة للمندوب في هذه الزيارة. قد يكون الموقع غير مسجل أو انتهت مدة الاحتفاظ بالإحداثيات.":"لا تتوفر إحداثيات صالحة لعرض المقارنة.";return}
  mapEl.style.display="block";msg.style.display="block";msg.textContent="جارٍ تحميل الخريطة…";
