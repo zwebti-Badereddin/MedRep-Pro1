@@ -555,7 +555,7 @@ function parseReport_(r) {
 /* ---------- rep adds a missing doctor/pharmacy (immediate, deduplicated by normalized name) ---------- */
 function normName_(t) {
   return String(t || '').toLowerCase().replace(/[\u064B-\u0652\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
-    .replace(/^\s*(د\s*\.?|dr\.?)\s*/i, '').replace(/\s+/g, ' ').trim();
+    .replace(/^\s*(?:د\s*\.?\s+|د\s*\.|dr\.\s+)/i, '').replace(/\s+/g, ' ').trim();
 }
 function addMaster_(s, sheet, p) {
   if (sheet === 'Doctors') ensureDoctorWorkplaces_();
