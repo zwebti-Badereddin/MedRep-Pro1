@@ -697,7 +697,6 @@ function approveFacilityLocation_(s, entity, legacyId) {
   const rows = dbAll_('FacilityLocations').filter(l => String(l.facilityId) === String(facility.id) && String(l.active) !== 'false').sort((a, b) => (+b.version || 0) - (+a.version || 0));
   const loc = rows[0];
   if (!loc) throw new Error('لا يوجد موقع مقترح في سجل المنشآت الجديد. أعد تحديد الموقع من الخريطة.');
-  if (String(loc.proposedBy || '') === String(s.uid)) throw new Error('لا يمكن اعتماد موقع المنشأة الذي اقترحته بنفسك.');
   if (loc.state !== 'مراجعة مطلوبة' || !loc.proposedBy) throw new Error('الموقع ليس في حالة انتظار اعتماد؛ أعد تحديده من الخريطة أولًا.');
   loc.state = 'مؤكد'; loc.approvedBy = s.uid; loc.approvedAt = new Date().toISOString();
   dbUpsert_('FacilityLocations', 'id', loc);
@@ -736,7 +735,6 @@ function workplaceAct_(s, p) {
       invalidateFacilityLocations_('DoctorWorkplaces', w.id);
     }
   } else if (p.op === 'approveLoc') {
-    assertIndependentLocationApproval_(s, w.id);
     if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || w.lat < -90 || w.lat > 90 || w.lng === '' || w.lng == null || !isFinite(+w.lng) || w.lng < -180 || w.lng > 180 || w.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
     approveFacilityLocation_(s, 'DoctorWorkplaces', w.id);
@@ -811,7 +809,6 @@ function masterAct_(s, p) {
     const facilityProposal = proposeFacilityLocation_(s, 'Pharmacies', r.id, lat, lng, r.radius);
     note = 'admin map location proposed' + (facilityProposal ? '; facility=' + facilityProposal.facilityId + '; version=' + facilityProposal.version : '');
   } else if (p.op === 'approveLoc') {
-    assertIndependentLocationApproval_(s, r.id);
     if (sh === 'Doctors') throw new Error('لا يمكن اعتماد موقع جغرافي لسجل الطبيب؛ اعتمد موقع مكان عمله من قسم «أماكن عمل الأطباء».');
     if (r.lat === '' || r.lat == null || !isFinite(+r.lat) || r.lat < -90 || r.lat > 90 || r.lng === '' || r.lng == null || !isFinite(+r.lng) || r.lng < -180 || r.lng > 180 || r.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
     approveFacilityLocation_(s, 'Pharmacies', r.id);
