@@ -297,10 +297,15 @@ function lookups_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('lk'); if (hit) return JSON.parse(hit);
   ensureDoctorWorkplaces_();
   const act = r => String(r.active) !== 'false';
-  const workplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, active: w.active, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
+  const allWorkplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, active: w.active, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
+  // Facility choices are shared across all doctors. Keep one stable entry per normalized facility name.
+  const byFacilityName = new Map();
+  allWorkplaces.forEach(w => { const key = normName_(w.workplace), prior = byFacilityName.get(key); if (!prior || (w.reviewed && !prior.reviewed)) byFacilityName.set(key, w); });
+  const workplaces = Array.from(byFacilityName.values());
   // GPS coordinates and internal review metadata remain server-side.
   const v = {
-    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces.filter(w => w.doctorId === r.id) })),
+    facilities: workplaces,
+    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces })),
     pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
     products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status }))
   };
@@ -314,7 +319,7 @@ function bootstrap_(s) {
     settings: (function () { const x = settings_(); if (s.role !== 'admin') { delete x.reportEmail; delete x.gpsRadius; delete x.gpsRefAcc; } return x; })(), statuses: STATUS,
     reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
     doctors: s.role === 'admin' ? lk.doctors : lk.doctors.map(d => Object.assign({}, d, { workplaces: (d.workplaces || []).map(w => { const o = Object.assign({}, w); delete o.refState; return o; }) })),
-    pharmacies: lk.pharmacies, products: lk.products,
+    facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products,
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null
   };
 }
@@ -400,9 +405,8 @@ function persistReport_(s, p, lockHeld) {
     if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
     if (v.workplaceId) {
       const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
-      if (!doctor || !place || String(place.active) === 'false' || String(place.doctorId) !== String(doctor.id) ||
-          (v.place && normName_(place.workplace) !== normName_(v.place))) {
-        throw new Error('مكان العمل المحدد لا يتبع للطبيب المختار. أعد اختيار مكان العمل.');
+      if (!place || String(place.active) === 'false' || (v.place && normName_(place.workplace) !== normName_(v.place))) {
+        throw new Error('مكان المنشأة غير صالح أو معطّل. أعد اختيار المنشأة.');
       }
     }
   });
@@ -419,13 +423,19 @@ function persistReport_(s, p, lockHeld) {
       const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
       let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
       // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
-      if (v.workplaceId && !place) { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
-      if (place && (!doctorMatches || place.doctorId !== doctor.id)) { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
-      if (!place && !v.workplaceId && doctorMatches) place = W.find(x => x.doctorId === doctor.id && normName_(x.workplace) === normName_(v.place));
-      if (place && doctorMatches && place.doctorId === doctor.id) v.workplaceId = place.id;
-      else { geo_(v, null, 'DoctorWorkplaces', s, st); return; }
+      if (v.workplaceId && (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place))) {
+        geo_(v, null, 'DoctorWorkplaces', s, st); return;
+      }
+      if (!place && !v.workplaceId) {
+        const matches = W.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place));
+        if (matches.length) place = matches.find(x => facilityForLegacy_('DoctorWorkplaces', x.id)) || matches[0];
+      }
+      if (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place)) {
+        geo_(v, null, 'DoctorWorkplaces', s, st); return;
+      }
+      v.workplaceId = place.id;
       const facilityGeo = facilityGeoEntity_('DoctorWorkplaces', place.id);
-       geo_(v, facilityGeo || place, 'DoctorWorkplaces', s, st);
+      geo_(v, facilityGeo || place, 'DoctorWorkplaces', s, st);
     }});
     phs.forEach(v => { if (v._v) {
       const pharmacyMatches = v.pharmacyId ? P.filter(x => String(x.id) === String(v.pharmacyId)) : P.filter(x => normName_(x.name) === normName_(v.name)); const pharmacy = pharmacyMatches.length === 1 ? pharmacyMatches[0] : null;
@@ -454,8 +464,9 @@ function persistReport_(s, p, lockHeld) {
       } else {
         candidates = workplaceRows.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
       }
-      const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id) && String(rel.doctorId) === String(doctor.id)));
-      if (mapped.length === 1 && facilityRows.some(f => String(f.id) === String(mapped[0].facilityId))) v.facilityId = mapped[0].facilityId;
+      const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id)));
+      const mappedIds = Array.from(new Set(mapped.map(rel => String(rel.facilityId)).filter(id => facilityRows.some(f => String(f.id) === id))));
+      if (mappedIds.length === 1) v.facilityId = mappedIds[0];
     });
     const pharmacyFacilities = facilityRows.filter(f => f.legacyEntity === 'Pharmacies');
     phs.forEach(v => {
@@ -598,8 +609,8 @@ function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w)
 function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
   const name = String(workplace || '').trim().slice(0, 100);
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
-  const rows = dbAll_('DoctorWorkplaces'), old = rows.find(w => w.doctorId === doctor.id && normName_(w.workplace) === normName_(name));
-  if (old) { if (String(old.active) === 'false') throw new Error('مكان العمل معطّل؛ اطلب من الإدارة تفعيله.'); return old; }
+  const rows = dbAll_('DoctorWorkplaces'), old = rows.find(w => normName_(w.workplace) === normName_(name));
+  if (old) { if (String(old.active) === 'false') throw new Error('المنشأة معطّلة؛ اطلب من الإدارة تفعيلها.'); return old; }
   const row = { id: nextWorkplaceId_(rows), doctorId: doctor.id, doctorName: doctor.name, workplace: name, sector: String(sector || doctor.sector || '').trim().slice(0, 30), active: true, addedBy: s.uid, reviewed: reviewed ? 'true' : 'false' };
   dbAppend_('DoctorWorkplaces', row); return row;
 }
@@ -624,16 +635,10 @@ function gpsReference_(s, p) {
     const workplaceId = String(p.workplaceId || '');
     const doctorName = normName_(p.doctorName || p.name || '');
     const placeName = normName_(p.place || '');
-    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w =>
-      String(w.id) === workplaceId && (!doctorId || String(w.doctorId) === doctorId)) : null;
-    if (!workplace && doctorId && placeName) {
-      workplace = dbAll_('DoctorWorkplaces').find(w =>
-        String(w.doctorId) === doctorId && normName_(w.workplace) === placeName);
-    }
-    if (!workplace && doctorName && placeName) {
-      const doctors = dbAll_('Doctors').filter(d => normName_(d.name) === doctorName);
-      if (doctors.length === 1) workplace = dbAll_('DoctorWorkplaces').find(w =>
-        String(w.doctorId) === String(doctors[0].id) && normName_(w.workplace) === placeName);
+    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId && String(w.active) !== 'false' && (!placeName || normName_(w.workplace) === placeName)) : null;
+    if (!workplace && placeName) {
+      const matches = dbAll_('DoctorWorkplaces').filter(w => String(w.active) !== 'false' && normName_(w.workplace) === placeName);
+      if (matches.length) workplace = matches.find(w => facilityForLegacy_('DoctorWorkplaces', w.id)) || matches[0];
     }
     if (workplace) geo = facilityGeoEntity_('DoctorWorkplaces', workplace.id);
   } else if (kind === 'pharmacy') {
