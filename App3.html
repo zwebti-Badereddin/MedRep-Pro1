@@ -57,7 +57,7 @@ function form(k,idx){
     const chosen=$("#f_workplace").value;
     if(chosen==="__new__"){
      placeName=g("f_newplace");if(placeName.length<2){$("#ferr").textContent="اختر مكان عمل مسجلًا أو أدخل اسم المكان الجديد.";$("#sv").disabled=false;return}
-     try{const wp=await srv("addDoctorWorkplace",{doctorId:rec.id,workplace:placeName,sector:r("sector")});placeId=wp.id;placeName=wp.workplace;CFG.facilities=CFG.facilities||[];if(!CFG.facilities.some(w=>w.id===wp.id))CFG.facilities.push(wp)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
+     try{const wp=await srv("addDoctorWorkplace",{doctorId:rec.id,workplace:placeName,sector:r("sector")});placeId=wp.id;placeName=wp.workplace;CFG.facilities=CFG.facilities||[];if(!CFG.facilities.some(w=>w.id===wp.id))CFG.facilities.push(wp)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}
     }else{
      const option=$("#f_workplace").selectedOptions[0];placeId=chosen;placeName=option?.dataset.place||"";
      if(!placeId||!placeName){$("#ferr").textContent="اختر مكان العمل الذي تمت زيارته.";$("#sv").disabled=false;return}
