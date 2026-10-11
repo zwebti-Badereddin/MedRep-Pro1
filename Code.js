@@ -552,10 +552,44 @@ function listReports_(s, p) {
   ).map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0,
     visits: JSON.parse(r.doctors || '[]').length + JSON.parse(r.pharmacies || '[]').length })).reverse();
 }
+function reportVisitGpsCheck_(v, kind, st) {
+  const g = v && v.gps || {};
+  if (!gpsPointValidServer_(g.lat, g.lng)) return { status:'غير متاح', distance:null, reference:null };
+  let ent = null;
+  if (kind === 'doctor') {
+    const rows = dbAll_('DoctorWorkplaces');
+    let w = v.workplaceId ? rows.find(x => String(x.id) === String(v.workplaceId)) : null;
+    if (!w) {
+      const matches = rows.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place || ''));
+      if (matches.length) w = matches[0];
+    }
+    if (w && String(w.active) !== 'false') ent = facilityGeoEntity_('DoctorWorkplaces', w.id) || w;
+  } else {
+    const rows = dbAll_('Pharmacies');
+    const p = v.pharmacyId ? rows.find(x => String(x.id) === String(v.pharmacyId)) : rows.filter(x => normName_(x.name) === normName_(v.name)).length === 1 ? rows.find(x => normName_(x.name) === normName_(v.name)) : null;
+    if (p && String(p.active) !== 'false') ent = facilityGeoEntity_('Pharmacies', p.id) || p;
+  }
+  if (!ent || String(ent.active) === 'false' || ent.refBy !== 'ADMIN_MAP' || ent.refState !== 'مؤكد' ||
+      !gpsPointValidServer_(ent.lat, ent.lng)) return { status:'مرجع غير مؤكد', distance:null, reference:ent ? String(ent.name || ent.workplace || '') : null };
+  const radius = Math.max(20, +ent.radius || +st.gpsRadius || 150), maxAcc = Math.max(1, +st.gpsRefAcc || 50);
+  const distance = dist_(+ent.lat, +ent.lng, +g.lat, +g.lng);
+  return { status:geoVerdict_(distance, g.acc, radius, maxAcc), distance:distance, reference:String(ent.name || ent.workplace || '') };
+}
+function gpsPointValidServer_(lat, lng) {
+  return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
+}
 function reviewReport_(s, p) {
   const r = dbAll_('Reports').find(x => x.id === p.id);
   if (!r || r.status !== 'مرسل') throw new Error('يمكن مراجعة التقارير المرسلة فقط.');
-  r.status = p.approve ? 'معتمد' : 'معاد للمندوب'; r.reviewNote = p.note || '';
+  const note = String(p.note || '').trim().slice(0, 1000);
+  if (p.approve) {
+    const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
+    const checks = doctors.map(v => reportVisitGpsCheck_(v, 'doctor', st)).concat(pharmacies.map(v => reportVisitGpsCheck_(v, 'pharmacy', st)));
+    const exceptions = checks.filter(x => x.status !== 'تم التحقق');
+    if (exceptions.length && note.length < 5) throw new Error('توجد زيارة لم يثبت تطابق موقعها. اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل)، أو أعد التقرير للمندوب.');
+    if (exceptions.length) audit_(s, 'gps_exception_approval', r.no, JSON.stringify(exceptions.map(x => ({status:x.status,distance:x.distance,reference:x.reference}))) + ' · ' + note);
+  }
+  r.status = p.approve ? 'معتمد' : 'معاد للمندوب'; r.reviewNote = note;
   dbUpsert_('Reports', 'id', r); audit_(s, p.approve ? 'approve_report' : 'return_report', r.no, r.reviewNote);
   return { status: r.status };
 }
@@ -614,16 +648,70 @@ function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
   const row = { id: nextWorkplaceId_(rows), doctorId: doctor.id, doctorName: doctor.name, workplace: name, sector: String(sector || doctor.sector || '').trim().slice(0, 30), active: true, addedBy: s.uid, reviewed: reviewed ? 'true' : 'false' };
   dbAppend_('DoctorWorkplaces', row); return row;
 }
+function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
+  if (!sheet_('Facilities') || !sheet_('FacilityLocations') || !sheet_('DoctorPlaces')) {
+    throw new Error('جداول المنشآت غير مهيأة. شغّل تهيئة مخطط المنشآت من حساب مالك المشروع أولًا.');
+  }
+  const name = String(workplace.workplace || '').trim(), key = normName_(name), now = new Date().toISOString();
+  let facility = dbAll_('Facilities').find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key);
+  if (!facility) {
+    const id = 'FAC-SH-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
+    facility = { id:id, name:name, type:'منشأة طبية', region:'', address:'',
+      status:'نشط', legacyEntity:'SHARED_DOCTOR_FACILITY', legacyId:id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
+    dbAppend_('Facilities', facility);
+  }
+  const allW = dbAll_('DoctorWorkplaces').filter(w => normName_(w.workplace) === key);
+  const relations = dbAll_('DoctorPlaces');
+  allW.forEach(w => {
+    let rel = relations.find(x => String(x.legacyWorkplaceId) === String(w.id));
+    if (!rel) {
+      rel = { id:'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase(), doctorId:w.doctorId,
+        facilityId:facility.id, workDays:'', notes:'', active:String(w.active) !== 'false', legacyWorkplaceId:w.id,
+        createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
+      dbAppend_('DoctorPlaces', rel); relations.push(rel);
+    } else {
+      rel.facilityId=facility.id; rel.active=String(w.active) !== 'false'; rel.updatedAt=now; rel.updatedBy=s.uid;
+      dbUpsert_('DoctorPlaces','id',rel);
+    }
+  });
+  const locs = dbAll_('FacilityLocations').filter(l => String(l.facilityId) === String(facility.id));
+  const approved = locs.some(l => String(l.active) !== 'false' && l.state === 'مؤكد' && l.approvedBy && l.approvedAt && l.source === 'ADMIN_MAP');
+  if (!approved) {
+    const active = locs.filter(l => String(l.active) !== 'false');
+    const version = locs.reduce((m,l)=>Math.max(m,+l.version||0),0)+1;
+    active.forEach(l=>{l.active=false;dbUpsert_('FacilityLocations','id',l)});
+    dbAppend_('FacilityLocations',{id:'LOC-'+facility.id+'-V'+version,facilityId:facility.id,lat:lat,lng:lng,
+      radius:'',source:'REP_PROPOSAL',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,
+      approvedBy:'',approvedAt:'',version:version,active:true,note:'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا'});
+  }
+  facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility);
+  return { facilityId:facility.id, alreadyApproved:approved };
+}
 function addDoctorWorkplace_(s, p) {
   ensureDoctorWorkplaces_();
   const doctor = dbAll_('Doctors').find(d => d.id === p.doctorId && String(d.active) !== 'false');
   if (!doctor) throw new Error('اختر طبيبًا مسجلًا أولًا.');
   const name = String(p.workplace || '').trim();
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
+  const existing = dbAll_('DoctorWorkplaces').find(w => String(w.active) !== 'false' && normName_(w.workplace) === normName_(name));
+  if (existing) {
+    const geo = facilityGeoEntity_('DoctorWorkplaces', existing.id);
+    return { id:existing.id, doctorId:existing.doctorId, doctorName:existing.doctorName, workplace:existing.workplace,
+      sector:existing.sector, reviewed:!!(geo && String(geo.reviewed)==='true') || String(existing.reviewed)==='true',
+      refState:geo ? geo.refState : (existing.refState || ''), existing:true };
+  }
+  const lat = Number(p.lat), lng = Number(p.lng);
+  if (p.lat === '' || p.lat == null || p.lng === '' || p.lng == null || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    throw new Error('أدخل خط العرض وخط الطول الصحيحين للمنشأة الجديدة.');
+  }
   const row = addDoctorWorkplaceRow_(s, doctor, name, p.sector, false);
+  const proposal = proposeSharedDoctorFacility_(s, row, lat, lng);
   clearCache_();
-  audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace);
-  return { id: row.id, doctorId: row.doctorId, doctorName: row.doctorName, workplace: row.workplace, sector: row.sector, reviewed: String(row.reviewed) === 'true', refState: row.refState || '' };
+  audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace + ' · facility=' + proposal.facilityId + ' · lat=' + lat + ' · lng=' + lng);
+  const geo = facilityGeoEntity_('DoctorWorkplaces', row.id);
+  return { id: row.id, doctorId: row.doctorId, doctorName: row.doctorName, workplace: row.workplace,
+    sector: row.sector, reviewed: !!(geo && String(geo.reviewed)==='true'), refState: geo ? geo.refState : 'مراجعة مطلوبة',
+    lat:lat, lng:lng, existing:false };
 }
 function gpsReference_(s, p) {
   // Admin-only lookup for the comparison window. It returns only an approved current reference.
