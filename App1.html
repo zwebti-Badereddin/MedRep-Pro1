@@ -156,13 +156,14 @@ function openGpsComparison(){
  const visits=collectGpsCompareVisits(CUR);
  if(!visits.length){toast("لا توجد زيارات في هذا التقرير.");return}
  clearVisitGpsMap();
- $("#modal").innerHTML='<h3>مقارنة موقع الزيارة</h3>'+
-  '<div class="empty" style="margin:8px 0;color:var(--mut)">هذه المعلومات للتحقق والمراجعة فقط، وليست دليلًا على التقصير أو الإهمال.</div>'+
-  '<label for="vgVisit">اختر الزيارة</label><select id="vgVisit">'+visits.map((v,i)=>'<option value="'+i+'">'+esc(v.kind+" "+v.seq+" — "+v.name+(v.place?" · "+v.place:""))+'</option>').join("")+'</select>'+
-  '<div id="vgSummary" style="font-size:13px;line-height:1.8;margin:8px 0"></div>'+
-  '<div id="visitGpsMap" style="display:none;height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
-  '<div id="visitGpsMapMsg" class="empty" style="margin-top:8px">جارٍ تجهيز بيانات الموقع…</div>'+
-  '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px"><button class="btn" id="vgClose" type="button">إغلاق</button><span style="font-size:11px;color:var(--mut);align-self:center">الأحمر: موقع المندوب · الأزرق: موقع المنشأة المعتمد</span></div>';
+ const options=visits.map((v,i)=>`<option value="${i}">${esc(v.kind+" "+v.seq+" — "+v.name+(v.place?" · "+v.place:""))}</option>`).join("");
+ $("#modal").innerHTML=`<h3>مقارنة موقع الزيارة</h3>
+  <div class="empty" style="margin:8px 0;color:var(--mut)">هذه المعلومات للتحقق والمراجعة فقط، وليست دليلًا على التقصير أو الإهمال.</div>
+  <label for="vgVisit">اختر الزيارة</label><select id="vgVisit">${options}</select>
+  <div id="vgSummary" style="font-size:13px;line-height:1.8;margin:8px 0"></div>
+  <div id="visitGpsMap" style="display:none;height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>
+  <div id="visitGpsMapMsg" class="empty" style="margin-top:8px">جارٍ تجهيز بيانات الموقع…</div>
+  <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px"><button class="btn" id="vgClose" type="button">إغلاق</button><span style="font-size:11px;color:var(--mut);align-self:center">الأحمر: موقع المندوب · الأزرق: موقع المنشأة المعتمد</span></div>`;
  $("#ov").classList.add("on");
  $("#vgClose").onclick=closeVisitGpsComparison;
  $("#vgVisit").onchange=()=>drawGpsComparisonVisit(visits[+$("#vgVisit").value]);
@@ -178,7 +179,7 @@ function drawGpsComparisonVisit(v){
  const accuracy=g.acc!==""&&g.acc!=null&&isFinite(+g.acc)?"دقة GPS المعلنة: ±"+Math.round(+g.acc)+" متر":"دقة GPS: غير متاحة";
  let when="وقت التقاط الموقع: غير متاح";
  if(g.ts){let ms=typeof g.ts==="number"?g.ts:Number(g.ts);if(isFinite(ms)){if(ms<1000000000000)ms*=1000}else ms=Date.parse(String(g.ts));if(isFinite(ms))when="وقت التقاط الموقع: "+new Date(ms).toLocaleString("ar-LY")}
- $("#vgSummary").innerHTML='<b>'+esc(v.kind+" — "+v.name)+'</b><br>حالة التحقق: <b>'+esc(status)+'</b><br>'+esc(dist)+'<br>'+esc(accuracy)+'<br>'+esc(when);
+ $("#vgSummary").innerHTML=`<b>${esc(v.kind+" — "+v.name)}</b><br>حالة التحقق: <b>${esc(status)}</b><br>${esc(dist)}<br>${esc(accuracy)}<br>${esc(when)}`;
  const mapEl=$("#visitGpsMap"),msg=$("#visitGpsMapMsg");
  if(!repOk&&!refOk){mapEl.style.display="none";msg.style.display="block";msg.textContent=(!g.lat&&!g.lng)?"لا تتوفر إحداثيات محفوظة للمندوب في هذه الزيارة. قد يكون الموقع غير مسجل أو انتهت مدة الاحتفاظ بالإحداثيات.":"لا تتوفر إحداثيات صالحة لعرض المقارنة.";return}
  mapEl.style.display="block";msg.style.display="block";msg.textContent="جارٍ تحميل الخريطة…";
@@ -187,7 +188,7 @@ function drawGpsComparisonVisit(v){
   if(drawSeq!==visitGpsDrawSeq||!$("#visitGpsMap"))return;
   const pts=[];if(repOk)pts.push([+g.lat,+g.lng]);if(refOk)pts.push([+rawRef.lat,+rawRef.lng]);
   visitCompareMapInstance=L.map("visitGpsMap",{scrollWheelZoom:true}).setView(pts[0],17);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(visitCompareMapInstance);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:`&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`}).addTo(visitCompareMapInstance);
   if(refOk){
    L.circle([+rawRef.lat,+rawRef.lng],{radius:Math.max(20,+rawRef.radius||150),color:"#2563eb",fillColor:"#2563eb",fillOpacity:.08,weight:2}).addTo(visitCompareMapInstance);
    L.circleMarker([+rawRef.lat,+rawRef.lng],{radius:9,color:"#1d4ed8",fillColor:"#3b82f6",fillOpacity:1}).addTo(visitCompareMapInstance).bindPopup("موقع المنشأة المعتمد");
