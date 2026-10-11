@@ -220,10 +220,12 @@ function drawGpsComparisonVisit(v){
 async function review(ok,note){
  if(!ok&&!note){$("#ferr").textContent="اكتب ملاحظة للمندوب.";return}
  if(ok){
-  const visits=(CUR&&CUR.doctors||[]).concat(CUR&&CUR.pharmacies||[]);
-  const exceptions=visits.filter(v=>!v.gps||v.gps.status!=="تم التحقق");
+  let summary;
+  try{summary=await srv("gpsReviewSummary",{id:CUR.id})}catch(e){toast("تعذر التحقق من المواقع الحالية: "+e.message);return}
+  const exceptions=(summary.visits||[]).filter(v=>v.status!=="تم التحقق");
   if(exceptions.length){
-   const reason=prompt("هناك "+exceptions.length+" زيارة لم يثبت تطابق موقعها. إذا قررت اعتماد التقرير استثنائيًا، اكتب سبب القرار (سيُسجّل في سجل الإدارة):");
+   const detail=exceptions.slice(0,5).map(v=>v.kind+" "+v.name+": "+v.status+(v.distance!=null?" ("+v.distance+" م)":"")).join("\n");
+   const reason=prompt("توجد "+exceptions.length+" زيارة لم يثبت تطابق موقعها.\n"+detail+"\n\nإذا قررت اعتماد التقرير استثنائيًا، اكتب السبب ليُسجّل في سجل الإدارة:");
    if(reason==null)return;
    if(reason.trim().length<5){toast("سبب الاعتماد الاستثنائي يجب ألا يقل عن 5 أحرف.");return}
    note=reason.trim();
