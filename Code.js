@@ -962,11 +962,13 @@ function facilityAdminAct_(s,p) {
     if(rows.some(x=>String(x.id)!==String(f.id)&&normName_(x.name)===normName_(name)))throw new Error('يوجد سجل آخر بالاسم نفسه؛ راجع التكرار قبل التعديل.');
     const locs=dbAll_('FacilityLocations').filter(x=>String(x.facilityId)===String(f.id)&&String(x.active)!=='false').sort((a,b)=>(+b.version||0)-(+a.version||0));
     let changedCoords=false,lat='',lng='';
-    if(row.lat!==undefined&&row.lng!==undefined&&row.lat!==''&&row.lng!==''){
+    const hasLat=String(row.lat==null?'':row.lat).trim()!=='',hasLng=String(row.lng==null?'':row.lng).trim()!=='';
+    if(hasLat||hasLng){
+      if(!hasLat||!hasLng)throw new Error('أدخل خط العرض والطول معًا أو اتركهما فارغين.');
       lat=Number(row.lat);lng=Number(row.lng);
       if(!isFinite(lat)||!isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180)throw new Error('الإحداثيات غير صحيحة.');
       changedCoords=!locs.length||Number(locs[0].lat)!==lat||Number(locs[0].lng)!==lng;
-    } else if(row.lat!==undefined||row.lng!==undefined) throw new Error('أدخل خط العرض والطول معًا أو اتركهما فارغين.');
+    }
     f.name=name;f.type=type;f.region=region;f.address=address;f.updatedAt=now;f.updatedBy=s.uid;dbUpsert_('Facilities','id',f);
     if(changedCoords){
       locs.forEach(x=>{x.active=false;dbUpsert_('FacilityLocations','id',x)});
