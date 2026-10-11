@@ -623,7 +623,11 @@ function workplacesList_(s, p) {
       counts[key] = (counts[key] || 0) + 1;
     });
   });
-  return dbAll_('DoctorWorkplaces').map(w => Object.assign({}, w, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 }));
+  return dbAll_('DoctorWorkplaces').map(w => {
+    const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
+    return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
+      refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
+  });
 }
 
 /* ---------- admin review of doctors/pharmacies ---------- */
@@ -775,7 +779,8 @@ function workplaceAct_(s, p) {
     const linked = dbAll_('DoctorWorkplaces').filter(x => normName_(x.workplace) === normName_(w.workplace));
     linked.forEach(x => { x.lat=''; x.lng=''; x.refState='مؤكد'; x.refBy='ADMIN_MAP'; x.reviewed='true'; dbUpsert_('DoctorWorkplaces','id',x); });
     note = 'shared facility location confirmed; facility=' + shared.facilityId + '; linkedWorkplaces=' + shared.linkedWorkplaces + '; version=' + shared.version;
-    note += '; reverified visits: ' + reverifyWorkplace_(w);
+    const reverificationCount = linked.reduce((n, row) => n + reverifyWorkplace_(row), 0);
+    note += '; reverified visits: ' + reverificationCount;
   } else if (p.op === 'toggle') w.active = String(w.active) === 'false';
   else if (p.op === 'edit') {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
