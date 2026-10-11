@@ -656,6 +656,56 @@ function facilityForLegacy_(entity, legacyId) {
   if (!sheet_('Facilities')) return null;
   return dbAll_('Facilities').find(f => f.legacyEntity === entity && String(f.legacyId) === String(legacyId)) || null;
 }
+function facilityForLegacy_(entity, legacyId) {
+  if (!sheet_('Facilities')) return null;
+  // Doctor workplaces resolve through the shared facility relation first.
+  if (entity === 'DoctorWorkplaces' && sheet_('DoctorPlaces')) {
+    const rel = dbAll_('DoctorPlaces').find(x => String(x.legacyWorkplaceId) === String(legacyId) && String(x.active) !== 'false');
+    if (rel) {
+      const shared = dbAll_('Facilities').find(f => String(f.id) === String(rel.facilityId));
+      if (shared) return shared;
+    }
+  }
+  return dbAll_('Facilities').find(f => f.legacyEntity === entity && String(f.legacyId) === String(legacyId)) || null;
+}
+function ensureSharedDoctorFacility_(s, workplace, lat, lng) {
+  if (!sheet_('Facilities') || !sheet_('FacilityLocations') || !sheet_('DoctorPlaces')) {
+    throw new Error('جداول المنشآت غير مهيأة. شغّل تهيئة مخطط المنشآت من حساب مالك المشروع أولًا.');
+  }
+  const allW = dbAll_('DoctorWorkplaces');
+  const same = allW.filter(w => normName_(w.workplace) === normName_(workplace.workplace));
+  const facilities = dbAll_('Facilities');
+  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === normName_(workplace.workplace));
+  const now = new Date().toISOString();
+  if (!facility) {
+    const id = 'FAC-SH-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
+    facility = { id:id, name:String(workplace.workplace).trim(), type:'منشأة طبية', region:'', address:'',
+      status:'نشط', legacyEntity:'SHARED_DOCTOR_FACILITY', legacyId:id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
+    dbAppend_('Facilities', facility);
+  }
+  const relations = dbAll_('DoctorPlaces');
+  same.forEach(w => {
+    let rel = relations.find(x => String(x.legacyWorkplaceId) === String(w.id));
+    if (!rel) {
+      rel = { id:'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase(), doctorId:w.doctorId,
+        facilityId:facility.id, workDays:'', notes:'', active:String(w.active) !== 'false', legacyWorkplaceId:w.id,
+        createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
+      dbAppend_('DoctorPlaces', rel); relations.push(rel);
+    } else {
+      rel.facilityId=facility.id; rel.active=String(w.active) !== 'false'; rel.updatedAt=now; rel.updatedBy=s.uid;
+      dbUpsert_('DoctorPlaces','id',rel);
+    }
+  });
+  const locations = dbAll_('FacilityLocations');
+  const active = locations.filter(l => String(l.facilityId) === String(facility.id) && String(l.active) !== 'false');
+  const version = locations.filter(l => String(l.facilityId) === String(facility.id)).reduce((m,l)=>Math.max(m,+l.version||0),0)+1;
+  active.forEach(l=>{l.active=false;dbUpsert_('FacilityLocations','id',l)});
+  dbAppend_('FacilityLocations',{id:'LOC-'+facility.id+'-V'+version,facilityId:facility.id,lat:lat,lng:lng,
+    radius:+workplace.radius||'',source:'ADMIN_MAP',state:'مؤكد',proposedBy:s.uid,proposedAt:now,
+    approvedBy:s.uid,approvedAt:now,version:version,active:true,note:'موقع منشأة مشترك محدد من خريطة الإدارة'});
+  facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility);
+  return {facilityId:facility.id, linkedWorkplaces:same.length, version:version};
+}
 function facilityGeoEntity_(entity, legacyId) {
   const facility = facilityForLegacy_(entity, legacyId);
   if (!facility || !sheet_('FacilityLocations')) return null;
@@ -720,9 +770,12 @@ function workplaceAct_(s, p) {
     if (p.lat === '' || p.lng === '' || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       throw new Error('أدخل إحداثيات صحيحة من الخريطة.');
     }
-    w.lat = lat; w.lng = lng; w.refState = 'مؤقت'; w.refBy = 'ADMIN_MAP';
-    const facilityProposal = proposeFacilityLocation_(s, 'DoctorWorkplaces', w.id, lat, lng, w.radius);
-    note = 'admin map location proposed' + (facilityProposal ? '; facility=' + facilityProposal.facilityId + '; version=' + facilityProposal.version : '');
+    // One authoritative reference per facility name; all doctors at this facility share it.
+    const shared = ensureSharedDoctorFacility_(s, w, lat, lng);
+    const linked = dbAll_('DoctorWorkplaces').filter(x => normName_(x.workplace) === normName_(w.workplace));
+    linked.forEach(x => { x.lat=''; x.lng=''; x.refState='مؤكد'; x.refBy='ADMIN_MAP'; x.reviewed='true'; dbUpsert_('DoctorWorkplaces','id',x); });
+    note = 'shared facility location confirmed; facility=' + shared.facilityId + '; linkedWorkplaces=' + shared.linkedWorkplaces + '; version=' + shared.version;
+    note += '; reverified visits: ' + reverifyWorkplace_(w);
   } else if (p.op === 'toggle') w.active = String(w.active) === 'false';
   else if (p.op === 'edit') {
     const name = String((p.row || {}).workplace || '').trim().slice(0, 100);
@@ -735,11 +788,17 @@ function workplaceAct_(s, p) {
       invalidateFacilityLocations_('DoctorWorkplaces', w.id);
     }
   } else if (p.op === 'approveLoc') {
-    if (w.lat === '' || w.lat == null || !isFinite(+w.lat) || w.lat < -90 || w.lat > 90 || w.lng === '' || w.lng == null || !isFinite(+w.lng) || w.lng < -180 || w.lng > 180 || w.refBy !== 'ADMIN_MAP') throw new Error('حدد الموقع من خريطة الإدارة أولًا؛ لا تُقبل إحداثيات الهاتف كمرجع.');
-    if (String(w.reviewed) !== 'true') throw new Error('اعتمد مكان العمل أولًا قبل اعتماد إحداثياته.');
-    approveFacilityLocation_(s, 'DoctorWorkplaces', w.id);
-    w.refState = 'مؤكد'; note = 'reverified visits: ' + reverifyWorkplace_(w);
-  } else if (p.op === 'clearLoc') { w.lat = ''; w.lng = ''; w.refState = ''; w.refBy = ''; invalidateFacilityLocations_('DoctorWorkplaces', w.id); }
+    // Approval is intentionally unnecessary: the manager's saved map pin is the reference.
+    const facility = facilityForLegacy_('DoctorWorkplaces', w.id);
+    const loc = facility && dbAll_('FacilityLocations').find(x => String(x.facilityId) === String(facility.id) && String(x.active) !== 'false');
+    if (!loc || loc.lat === '' || loc.lng === '') throw new Error('حدد موقع المنشأة من الخريطة أولًا.');
+    loc.state='مؤكد'; loc.approvedBy=s.uid; loc.approvedAt=new Date().toISOString(); dbUpsert_('FacilityLocations','id',loc);
+    w.refState='مؤكد'; w.refBy='ADMIN_MAP'; w.reviewed='true'; note='reverified visits: '+reverifyWorkplace_(w);
+  } else if (p.op === 'clearLoc') { 
+    const facility=facilityForLegacy_('DoctorWorkplaces',w.id);
+    if(facility) dbAll_('FacilityLocations').filter(x=>String(x.facilityId)===String(facility.id)&&String(x.active)!=='false').forEach(x=>{x.active=false;dbUpsert_('FacilityLocations','id',x)});
+    dbAll_('DoctorWorkplaces').filter(x=>normName_(x.workplace)===normName_(w.workplace)).forEach(x=>{x.lat='';x.lng='';x.refState='';x.refBy='';dbUpsert_('DoctorWorkplaces','id',x)});
+  }
   else throw new Error('عملية غير معروفة');
   dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_(); audit_(s, 'workplace_' + p.op, w.id, note); return true;
 }
