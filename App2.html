@@ -31,8 +31,10 @@ function drawWorkplaces(){
  $("#ml").innerHTML=a.length?a.map(w=>{
   const has=w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng);
   const gps=!has?"لا إحداثيات":w.refBy==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":w.refState==="مؤكد"?"الموقع مؤكد ✓":w.refState==="متعارض"?"الموقع متعارض":"الموقع قيد التأكيد";
+  const coords=has?"الإحداثيات: "+(+w.lat).toFixed(6)+", "+(+w.lng).toFixed(6):"لم تُسجل إحداثيات للمنشأة بعد.";
   return '<div class="row" data-id="'+esc(w.id)+'" style="display:block;'+(off(w)?"opacity:.65":"")+'"><b>'+esc(w.workplace)+'</b> '+(pending(w)?'<span class="st s1">بانتظار الاعتماد</span>':'')+
-  '<div style="color:var(--mut);font-size:13px">الطبيب: '+esc(w.doctorName)+' · '+esc(w.sector||"—")+' · '+w.uses+' زيارة · '+gps+'</div>'+
+  '<div style="color:var(--mut);font-size:13px">المنشأة: مستقلة عن الطبيب · '+esc(w.sector||"—")+' · '+w.uses+' زيارة · '+gps+'</div>'+
+  '<div style="font-size:12px;color:var(--mut);margin-top:4px">'+esc(coords)+'</div>'+
   '<div style="font-size:12px;color:var(--mut);margin-top:5px">يُحفظ الموقع كمرجع مشترك للمنشأة، ويُستخدم تلقائيًا للتحقق من زيارات جميع الأطباء العاملين فيها.</div>'+
   '<div class="acts"><button class="mini" data-a="map">'+(w.refBy==="REP_PROPOSAL"?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
   (has?'<a class="mini" href="https://www.openstreetmap.org/?mlat='+encodeURIComponent(w.lat)+'&mlon='+encodeURIComponent(w.lng)+'#map=18/'+encodeURIComponent(w.lat)+'/'+encodeURIComponent(w.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a>':'')+
