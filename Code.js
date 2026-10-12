@@ -787,18 +787,74 @@ function gpsReference_(s, p) {
 
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
+
+  // Read each required sheet once. The former per-workplace geo lookup re-read
+  // DoctorPlaces, Facilities, DoctorWorkplaces and FacilityLocations repeatedly.
   const counts = {};
   dbAll_('Reports').forEach(r => {
-    let visits; try { visits = JSON.parse(r.doctors || '[]'); } catch (e) { return; }
+    let visits;
+    try { visits = JSON.parse(r.doctors || '[]'); } catch (e) { return; }
     visits.forEach(v => {
       const key = v.workplaceId || (v.name + '|' + (v.place || ''));
       counts[key] = (counts[key] || 0) + 1;
     });
   });
-  return dbAll_('DoctorWorkplaces').map(w => {
-    const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
-    return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
-      refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
+
+  const workplaces = dbAll_('DoctorWorkplaces');
+  const facilities = sheet_('Facilities') ? dbAll_('Facilities') : [];
+  const relations = sheet_('DoctorPlaces') ? dbAll_('DoctorPlaces') : [];
+  const locations = sheet_('FacilityLocations') ? dbAll_('FacilityLocations') : [];
+  const facilityById = new Map(facilities.map(f => [String(f.id), f]));
+  const legacyFacilityByKey = new Map();
+  facilities.forEach(f => {
+    if (f.legacyEntity && f.legacyId) {
+      const key = String(f.legacyEntity) + '|' + String(f.legacyId);
+      if (!legacyFacilityByKey.has(key)) legacyFacilityByKey.set(key, f);
+    }
+  });
+  const relationByWorkplace = new Map();
+  relations.forEach(r => {
+    const key = String(r.legacyWorkplaceId || '');
+    if (key && String(r.active) !== 'false' && !relationByWorkplace.has(key)) relationByWorkplace.set(key, r);
+  });
+  const locationsByFacility = new Map();
+  locations.forEach(loc => {
+    if (String(loc.active) === 'false') return;
+    const key = String(loc.facilityId);
+    if (!locationsByFacility.has(key)) locationsByFacility.set(key, []);
+    locationsByFacility.get(key).push(loc);
+  });
+  locationsByFacility.forEach(rows => rows.sort((a, b) => (+b.version || 0) - (+a.version || 0)));
+  const workplaceById = new Map(workplaces.map(w => [String(w.id), w]));
+
+  return workplaces.map(w => {
+    let facility = null;
+    const rel = relationByWorkplace.get(String(w.id));
+    if (rel) facility = facilityById.get(String(rel.facilityId)) || null;
+    if (!facility) facility = legacyFacilityByKey.get('DoctorWorkplaces|' + String(w.id)) || null;
+
+    let geo = null;
+    if (facility) {
+      const locs = locationsByFacility.get(String(facility.id)) || [];
+      const loc = locs[0];
+      if (!loc) {
+        geo = {
+          lat: '', lng: '', radius: '', refBy: '', refState: 'مراجعة مطلوبة',
+          reviewed: 'false'
+        };
+      } else {
+        geo = {
+          lat: loc.lat, lng: loc.lng, radius: loc.radius,
+          refBy: loc.source === 'ADMIN_MAP' ? 'ADMIN_MAP' : loc.source,
+          refState: loc.state,
+          reviewed: loc.state === 'مؤكد' && !!loc.approvedBy && !!loc.approvedAt ? 'true' : 'false'
+        };
+      }
+    }
+
+    return Object.assign({}, w, geo || {}, {
+      uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0
+    });
   });
 }
 
