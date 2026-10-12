@@ -101,6 +101,7 @@ const ROUTES = {
   holidayDelete: { role: 'admin', fn: (s, p) => delRow_(s, 'Holidays', p.id, 'delete_holiday') },
   addDoctor:     { role: 'rep',   fn: (s, p) => addMaster_(s, 'Doctors', p) },
   addPharmacy:   { role: 'rep',   fn: (s, p) => addMaster_(s, 'Pharmacies', p) },
+  addSpecialty:  { role: 'rep',   fn: (s, p) => addSpecialty_(s, p) },
   loginAudit:    { role: 'any',   fn: (s) => { audit_(s, 'login', s.uid); return true; } },
   saveReport:    { role: 'rep',   fn: saveReport_ },
   submitReport:  { role: 'rep',   fn: submitReport_ },
@@ -329,7 +330,8 @@ function lookups_() {
     facilities: workplaces,
     doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces })),
     pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
-    products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status }))
+    products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status })),
+    specialties: specialtyList_()
   };
   try { cache.put('lk', JSON.stringify(v), 300); } catch (e) {}
   return v;
@@ -341,7 +343,7 @@ function bootstrap_(s) {
     settings: (function () { const x = settings_(); if (s.role !== 'admin') { delete x.reportEmail; delete x.gpsRadius; delete x.gpsRefAcc; } return x; })(), statuses: STATUS,
     reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
     doctors: s.role === 'admin' ? lk.doctors : lk.doctors.map(d => Object.assign({}, d, { workplaces: (d.workplaces || []).map(w => { const o = Object.assign({}, w); delete o.refState; return o; }) })),
-    facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products,
+    facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products, specialties: lk.specialties || [],
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null
   };
 }
@@ -632,6 +634,31 @@ function reviewReport_(s, p) {
 function parseReport_(r) {
   return Object.assign({}, r, { doctors: typeof r.doctors === 'string' ? JSON.parse(r.doctors || '[]') : r.doctors,
     pharmacies: typeof r.pharmacies === 'string' ? JSON.parse(r.pharmacies || '[]') : r.pharmacies });
+}
+
+/* ---------- rep-managed medical specialties (stored in Settings; no schema migration) ---------- */
+function specialtyList_() {
+  const out = [], add = value => {
+    const name = String(value || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+    if (name && !out.some(x => normName_(x) === normName_(name))) out.push(name);
+  };
+  const row = dbAll_('Settings').find(r => String(r.key) === 'specialties');
+  if (row && row.value) { try { const values = JSON.parse(row.value); if (Array.isArray(values)) values.forEach(add); } catch (e) {} }
+  dbAll_('Doctors').forEach(d => add(d.specialty));
+  return out;
+}
+function addSpecialty_(s, p) {
+  const name = String(p.name || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+  if (name.length < 2) throw new Error('اسم التخصص قصير جدًا.');
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const list = specialtyList_(), existing = list.find(x => normName_(x) === normName_(name));
+    if (existing) return { name: existing, existing: true, specialties: list };
+    list.push(name);
+    dbUpsert_('Settings', 'key', { key: 'specialties', value: JSON.stringify(list) });
+    clearCache_(); audit_(s, 'add_specialty', 'Settings', name);
+    return { name: name, existing: false, specialties: list };
+  } finally { lock.releaseLock(); }
 }
 
 /* ---------- rep adds a missing doctor/pharmacy (immediate, deduplicated by normalized name) ---------- */
