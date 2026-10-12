@@ -1199,7 +1199,7 @@ function saveCompanyLogo_(s, p) {
   audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
   return next;
 }
-const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc'];
+const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc', 'repPerformanceEnabled'];
 function saveSettings_(s, p) {
   const v = p.values || {};
   Object.keys(v).forEach(k => {
