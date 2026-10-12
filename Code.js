@@ -675,8 +675,12 @@ function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w)
 function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
   const name = String(workplace || '').trim().slice(0, 100);
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
-  const rows = dbAll_('DoctorWorkplaces'), old = rows.find(w => normName_(w.workplace) === normName_(name));
-  if (old) { if (String(old.active) === 'false') throw new Error('المنشأة معطّلة؛ اطلب من الإدارة تفعيلها.'); return old; }
+  const rows = dbAll_('DoctorWorkplaces');
+  const mine = rows.find(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(name));
+  if (mine) {
+    if (String(mine.active) === 'false') throw new Error('مكان العمل معطّل لهذا الطبيب؛ اطلب من الإدارة تفعيله.');
+    return mine;
+  }
   const row = { id: nextWorkplaceId_(rows), doctorId: doctor.id, doctorName: doctor.name, workplace: name, sector: String(sector || doctor.sector || '').trim().slice(0, 30), active: true, addedBy: s.uid, reviewed: reviewed ? 'true' : 'false' };
   dbAppend_('DoctorWorkplaces', row); return row;
 }
@@ -725,7 +729,7 @@ function addDoctorWorkplace_(s, p) {
   if (!doctor) throw new Error('اختر طبيبًا مسجلًا أولًا.');
   const name = String(p.workplace || '').trim();
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
-  const existing = dbAll_('DoctorWorkplaces').find(w => String(w.active) !== 'false' && normName_(w.workplace) === normName_(name));
+  const existing = dbAll_('DoctorWorkplaces').find(w => String(w.active) !== 'false' && String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(name));
   if (existing) {
     const geo = facilityGeoEntity_('DoctorWorkplaces', existing.id);
     return { id:existing.id, doctorId:existing.doctorId, doctorName:existing.doctorName, workplace:existing.workplace,
