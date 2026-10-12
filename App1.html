@@ -5,7 +5,35 @@
 let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],workplaces:[],products:[],samples:["—"]},TOKEN=null;
 let NB=0;const bz=()=>{const e=document.getElementById("busy");if(e)e.style.display=NB?"block":"none"};
 function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
-function _srv(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
+function _call(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
+/* ---- resilience layer: automatic retry when the server is busy + re-login when the session ends ---- */
+const devKey=x=>"mr_dev_"+(x?"a":"r");
+function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
+function setDev(x,t){try{if(t)localStorage.setItem(devKey(x),t)}catch(e){}}
+const NOREAUTH=["login","logout","loginAudit"];let REAUTH=null;
+function _callRetry(a,p,n){return _call(a,p).catch(e=>{if(n<3&&/النظام مشغول/.test(e.message))return new Promise(r=>setTimeout(r,1200*(n+1)+Math.random()*800)).then(()=>_callRetry(a,p,n+1));throw e})}
+function _srv(a,p){return _callRetry(a,p,0).catch(e=>{if(TOKEN&&NOREAUTH.indexOf(a)<0&&/انتهت الجلسة/.test(e.message))return reauth().then(()=>_callRetry(a,p,0));throw e})}
+function reauth(){
+ if(REAUTH)return REAUTH;
+ const adm=!!(rep&&rep.role==="admin"),uid=rep&&rep.id;
+ REAUTH=new Promise((res,rej)=>{
+  const d=document.createElement("div");d.id="reauth";d.dir="rtl";
+  d.style.cssText="position:fixed;left:0;top:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box";
+  const inp="width:100%;box-sizing:border-box;font-size:16px;padding:10px;border:1px solid #bbb;border-radius:8px;";
+  d.innerHTML='<div style="background:#fff;color:#111;max-width:360px;width:100%;border-radius:16px;padding:18px;box-sizing:border-box"><h3 style="margin:0 0 6px">انتهت الجلسة</h3><div style="font-size:13px;line-height:1.7;margin-bottom:10px">أعد تسجيل الدخول للمتابعة. ما كتبته على الشاشة محفوظ ولن يضيع.</div>'
+   +(adm?'<input id="ra_u" autocomplete="username" placeholder="اسم المستخدم" style="'+inp+'margin-bottom:8px"><input id="ra_c" type="password" autocomplete="current-password" placeholder="كلمة المرور" style="'+inp+'">':'<input id="ra_c" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="رمز الدخول" style="'+inp+'text-align:center;letter-spacing:6px;font-size:18px">')
+   +'<div id="ra_e" style="color:#b00020;font-size:13px;min-height:18px;margin-top:6px"></div><div style="display:flex;gap:8px;margin-top:8px"><button id="ra_go" type="button" style="flex:1;padding:12px;border:0;border-radius:10px;background:var(--brand,#0b6b6f);color:#fff;font-size:15px">دخول</button><button id="ra_x" type="button" style="padding:12px;border:1px solid #ccc;border-radius:10px;background:#fff;font-size:15px">خروج</button></div></div>';
+  document.body.appendChild(d);
+  const q=s=>d.querySelector(s),close=()=>{d.remove();REAUTH=null};
+  const go=async()=>{const b=q("#ra_go");b.disabled=true;q("#ra_e").textContent="";
+   try{const r=await _call("login",adm?{role:"admin",username:q("#ra_u").value.trim(),password:q("#ra_c").value,device:getDev(true)}:{code:q("#ra_c").value.trim(),device:getDev(false)});
+    if(uid&&r.user&&r.user.id!==uid)throw new Error("هذا الرمز لا يخص الحساب المفتوح حاليًا.");
+    TOKEN=r.token;setDev(adm,r.device);close();res()}
+   catch(e){q("#ra_e").textContent=e.message;b.disabled=false}};
+  q("#ra_go").onclick=go;q("#ra_c").onkeydown=e=>{if(e.key==="Enter")go()};
+  q("#ra_x").onclick=()=>{close();TOKEN=null;login();rej(new Error("تم تسجيل الخروج"))};
+  (q("#ra_u")||q("#ra_c")).focus()});
+ return REAUTH}
 const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[],phs:r.pharmacies||[],status:r.status,no:r.no,date:r.date});
 function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)===i);
  CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
@@ -56,7 +84,7 @@ function login(adm){
  <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a></div></div>`;
  $("#sw").onclick=e=>{e.preventDefault();login(!adm)};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
-  try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value}:{code:$("#code").value.trim()});TOKEN=r.token;rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
+  try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
    if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;home();consent()}}
   catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
  $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();

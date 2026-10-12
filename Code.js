@@ -24,8 +24,11 @@ const T = {
 };
 const PREFIX = { Reps: 'REP', Doctors: 'DOC', Pharmacies: 'PH', Products: 'PROD' };
 const STATUS = ['مسودة', 'جاهز للمراجعة', 'مرسل', 'معتمد', 'معاد للمندوب']; // editable via Settings.statuses later
-const SESSION_SEC = 6 * 3600;
-let _SALT, _ST = null; // per-execution memo
+const SESSION_SEC = 6 * 3600;                 // cache TTL, renewed while the user is active (see session_)
+const SESSION_TOUCH_MS = 15 * 60 * 1000;      // renew the session at most every 15 minutes
+const SESSION_MAX_MS = 16 * 3600 * 1000;      // absolute lifetime of one login (a long field day)
+const LOGIN_WINDOW_MS = 10 * 60 * 1000, REP_UNKNOWN_LIMIT = 30, ADMIN_USER_LIMIT = 5, TRUSTED_LIMIT = 10;
+let _SALT, _ST = null, _SS = null, _RM = null, _SHEETS = {}; // per-execution memo
 
 /* ---------- transport ---------- */
 // Used by Index.html: <?!= include('Style'); ?> pulls in the other HTML files (keeps every file small).
@@ -177,29 +180,44 @@ function disableDemoRepAccounts() {
   ui.alert('تم تعطيل الحسابات التجريبية: ' + reps.map(rep => rep.name).join('، '));
 }
 
-// Shared throttle for failed representative logins: 15 failures per 10-minute window.
-// It is independent of the entered PIN, so rotating guessed codes cannot bypass it.
-function repLoginThrottle_(recordFailure) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(5000);
-  try {
-    const cache = CacheService.getScriptCache(), key = 'rep_login_global';
-    const now = Date.now(), raw = cache.get(key);
-    let state = raw ? JSON.parse(raw) : null;
-    if (!state || now - state.start >= 600000) state = { start: now, count: 0 };
-    if (!recordFailure && state.count >= 15) throw new Error('محاولات دخول كثيرة. حاول بعد 10 دقائق.');
-    if (recordFailure) state.count++;
-    const ttl = Math.max(1, Math.ceil((600000 - (now - state.start)) / 1000));
-    cache.put(key, JSON.stringify(state), ttl);
-  } finally {
-    lock.releaseLock();
-  }
+// ---- Login throttling (cache counters only: no script lock, so logins never queue behind report saves) ----
+// An outsider must not be able to lock legitimate users out:
+//  * Admin: the failure counter is per username.
+//  * Rep: one shared counter (the 5-digit code is the only identifier) that blocks UNKNOWN devices only.
+//  * A device that already logged in holds a signed device token (HMAC with the server salt). A trusted
+//    device is never blocked by the shared counters; it has its own per-account limit instead.
+function salt_() { _SALT = _SALT || PropertiesService.getScriptProperties().getProperty('SALT'); return _SALT || ''; }
+function deviceToken_(uid) {
+  const k = salt_(); if (!k || !uid) return '';
+  return uid + '.' + Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('dev|' + uid, k));
+}
+function deviceUid_(token) {
+  const t = String(token || ''), i = t.lastIndexOf('.');
+  if (i < 1 || t.length > 200) return '';
+  const uid = t.slice(0, i);
+  return deviceToken_(uid) === t ? uid : '';
+}
+function loginFailures_(key) {
+  const raw = CacheService.getScriptCache().get(key); if (!raw) return 0;
+  try { const st = JSON.parse(raw); return Date.now() - st.start >= LOGIN_WINDOW_MS ? 0 : (+st.count || 0); } catch (e) { return 0; }
+}
+function bumpFailures_(key) {
+  const cache = CacheService.getScriptCache(), raw = cache.get(key), now = Date.now();
+  let st = null; try { st = raw ? JSON.parse(raw) : null; } catch (e) {}
+  if (!st || now - st.start >= LOGIN_WINDOW_MS) st = { start: now, count: 0 };
+  st.count++;
+  cache.put(key, JSON.stringify(st), Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (now - st.start)) / 1000)));
 }
 function login_(p) {
-  const isAdmin = p.role === 'admin';
-  const cache = CacheService.getScriptCache(), key = 'try_' + (isAdmin ? 'admin' : p.code);
-  if (!isAdmin) repLoginThrottle_(false);
-  if (+cache.get(key) >= 5) throw new Error('محاولات كثيرة. حاول بعد 10 دقائق.');
+  const isAdmin = p.role === 'admin', cache = CacheService.getScriptCache();
+  const trusted = deviceUid_(p.device);
+  const uname = isAdmin ? String(p.username || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_').slice(0, 40) : '';
+  const sharedKey = isAdmin ? 'try_admin_' + uname : 'rep_login_global', sharedLimit = isAdmin ? ADMIN_USER_LIMIT : REP_UNKNOWN_LIMIT;
+  const trustedKey = trusted ? 'try_u_' + trusted : '';
+  const sharedLocked = loginFailures_(sharedKey) >= sharedLimit;
+  const tooMany = new Error('محاولات كثيرة. حاول بعد 10 دقائق.');
+  if (trusted) { if (loginFailures_(trustedKey) >= TRUSTED_LIMIT) throw tooMany; }
+  else if (sharedLocked) throw tooMany;
   let user = null;
   if (isAdmin) {
     const username = String(p.username || '').trim().toLowerCase();
@@ -223,17 +241,28 @@ function login_(p) {
       : null;
     if (r) user = { id: r.id, name: r.name, role: 'rep' };
   }
+  if (user && sharedLocked && String(user.id) !== String(trusted)) user = null; // while locked, only the trusted account may pass
   if (!user) {
-    cache.put(key, String((+cache.get(key) || 0) + 1), 600);
-    if (!isAdmin) repLoginThrottle_(true);
+    bumpFailures_(trusted ? trustedKey : sharedKey);
     throw new Error('بيانات الدخول غير صحيحة');
   }
-  cache.remove(key);
-  const token = Utilities.getUuid() + Utilities.getUuid();
-  cache.put('s_' + token, JSON.stringify({ uid: user.id, name: user.name, role: user.role }), SESSION_SEC);
+  cache.remove('try_u_' + user.id);
+  if (isAdmin && !sharedLocked) cache.remove(sharedKey);
+  const now = Date.now(), token = Utilities.getUuid() + Utilities.getUuid();
+  cache.put('s_' + token, JSON.stringify({ uid: user.id, name: user.name, role: user.role, iat: now, ts: now }), SESSION_SEC);
   const s = { uid: user.id, name: user.name, role: user.role, token: token };
   // one round trip: session + lookups + today's report (login audit is written by a follow-up call)
-  return { token, user, boot: bootstrap_(s), report: user.role === 'rep' ? myReport_(s, {}) : null, prev: user.role === 'rep' ? prevInfo_(s) : null };
+  return { token, device: deviceToken_(user.id), user, boot: bootstrap_(s), report: user.role === 'rep' ? myReport_(s, {}) : null, prev: user.role === 'rep' ? prevInfo_(s) : null };
+}
+// Owner-only: clears the shared login counters (menu: MedRep Pro).
+function resetLoginThrottle() {
+  ownerOnly_();
+  const ui = SpreadsheetApp.getUi(), r = ui.prompt('إعادة ضبط عدّادات الدخول', 'أدخل اسم مستخدم الإدارة المقفل (أو اتركه فارغًا لإعادة ضبط عدّاد المندوبين فقط):', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const u = String(r.getResponseText() || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_').slice(0, 40);
+  const keys = ['rep_login_global']; if (u) keys.push('try_admin_' + u);
+  CacheService.getScriptCache().removeAll(keys);
+  ui.alert('تمت إعادة ضبط العدّادات.');
 }
 /* ---------- individual administrator accounts ---------- */
 function ensureAdminSchema_() {
@@ -301,23 +330,50 @@ function assertIndependentLocationApproval_(s, entityId) {
 }
 
 function session_(token) {
-  const raw = token && CacheService.getScriptCache().get('s_' + token);
+  const cache = CacheService.getScriptCache(), raw = token && cache.get('s_' + token);
   if (!raw) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
   const s = JSON.parse(raw); s.token = token;
-  if (s.role === 'rep' && CacheService.getScriptCache().get('off_' + s.uid)) throw new Error('تم تعطيل هذا الحساب.');
+  if (s.role === 'rep' && cache.get('off_' + s.uid)) throw new Error('تم تعطيل هذا الحساب.');
   if (s.role === 'admin' && /^ADM-/.test(String(s.uid))) {
     const account = sheet_('Admins') ? dbAll_('Admins').find(a => String(a.id) === String(s.uid)) : null;
     if (!account || String(account.active) === 'false') {
-      CacheService.getScriptCache().remove('s_' + token);
+      cache.remove('s_' + token);
       throw new Error('تم تعطيل حساب الإدارة أو لم يعد موجودًا. سجّل الدخول بحساب نشط.');
     }
+  }
+  // Sliding session: renewed while the user is active, with an absolute cap per login.
+  // The cache TTL cannot exceed 6h, so the rep account is re-checked at every renewal (the 'off_' flag also expires).
+  const now = Date.now();
+  if (s.iat && now - s.iat > SESSION_MAX_MS) { cache.remove('s_' + token); throw new Error('انتهت الجلسة. سجّل الدخول من جديد.'); }
+  if (!s.ts || now - s.ts > SESSION_TOUCH_MS) {
+    if (s.role === 'rep') {
+      const acc = dbAll_('Reps').find(x => String(x.id) === String(s.uid));
+      if (!acc || String(acc.active) === 'false') { cache.remove('s_' + token); throw new Error('تم تعطيل هذا الحساب.'); }
+    }
+    cache.put('s_' + token, JSON.stringify({ uid: s.uid, name: s.name, role: s.role, iat: s.iat || now, ts: now }), SESSION_SEC);
   }
   return s;
 }
 
 /* ---------- bootstrap: lookups + settings for the UI (nothing hardcoded client-side) ---------- */
+// CacheService values are limited to 100KB: large JSON is split into chunks (30k chars keeps Arabic text under the limit).
+const LARGE_CHUNK = 30000, LARGE_MAX_CHUNKS = 20;
+function cacheGetLarge_(key) {
+  const c = CacheService.getScriptCache(), n = +c.get(key);
+  if (!(n >= 1 && n <= LARGE_MAX_CHUNKS)) return null;
+  const keys = []; for (let i = 0; i < n; i++) keys.push(key + '_' + i);
+  const parts = c.getAll(keys), out = [];
+  for (let i = 0; i < n; i++) { const x = parts[key + '_' + i]; if (x == null) return null; out.push(x); }
+  return out.join('');
+}
+function cachePutLarge_(key, str, sec) {
+  const n = Math.ceil(str.length / LARGE_CHUNK); if (n < 1 || n > LARGE_MAX_CHUNKS) return false;
+  const all = {}; for (let i = 0; i < n; i++) all[key + '_' + i] = str.slice(i * LARGE_CHUNK, (i + 1) * LARGE_CHUNK);
+  all[key] = String(n);
+  try { CacheService.getScriptCache().putAll(all, sec); return true; } catch (e) { return false; }
+}
 function lookups_() {
-  const cache = CacheService.getScriptCache(), hit = cache.get('lk'); if (hit) return JSON.parse(hit);
+  const hit = cacheGetLarge_('lk'); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   ensureDoctorWorkplaces_();
   const act = r => String(r.active) !== 'false';
   const allWorkplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, active: w.active, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
@@ -325,24 +381,31 @@ function lookups_() {
   const byFacilityName = new Map();
   allWorkplaces.forEach(w => { const key = normName_(w.workplace), prior = byFacilityName.get(key); if (!prior || (w.reviewed && !prior.reviewed)) byFacilityName.set(key, w); });
   const workplaces = Array.from(byFacilityName.values());
+  // Each doctor carries only his own workplaces (id + name). The shared facility list is sent once, in `facilities`.
+  const byDoctor = {};
+  allWorkplaces.forEach(w => { if (w.doctorId) (byDoctor[w.doctorId] = byDoctor[w.doctorId] || []).push({ id: w.id, workplace: w.workplace }); });
   // GPS coordinates and internal review metadata remain server-side.
   const v = {
     facilities: workplaces,
-    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: workplaces })),
+    doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: byDoctor[r.id] || [] })),
     pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
     products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status })),
     specialties: specialtyList_()
   };
-  try { cache.put('lk', JSON.stringify(v), 300); } catch (e) {}
+  cachePutLarge_('lk', JSON.stringify(v), 300);
   return v;
 }
-function clearCache_() { _ST = null; CacheService.getScriptCache().removeAll(['st', 'lk']); }
+function clearCache_() {
+  _ST = null;
+  const keys = ['st', 'lk', 'dwp_ok']; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i);
+  CacheService.getScriptCache().removeAll(keys);
+}
 function bootstrap_(s) {
   const lk = lookups_();
   return {
     settings: (function () { const x = settings_(); if (s.role !== 'admin') { delete x.reportEmail; delete x.gpsRadius; delete x.gpsRefAcc; } return x; })(), statuses: STATUS,
     reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
-    doctors: s.role === 'admin' ? lk.doctors : lk.doctors.map(d => Object.assign({}, d, { workplaces: (d.workplaces || []).map(w => { const o = Object.assign({}, w); delete o.refState; return o; }) })),
+    doctors: lk.doctors,
     facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products, specialties: lk.specialties || [],
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null
   };
@@ -397,130 +460,148 @@ function myReport_(s, p) {
 }
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
 function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
-function persistReport_(s, p, lockHeld) {
-  // Serialize report lookup + ID/number allocation + write to prevent concurrent saves overwriting each other.
+// Takes the script lock, or fails fast with a message the client recognises and retries automatically.
+function acquireLock_(ms) {
   const lock = LockService.getScriptLock();
-  if (!lockHeld) lock.waitLock(10000);
-  try {
-  const date = p.date || today_(), all = dbAll_('Reports');
+  try { lock.waitLock(ms); } catch (e) { throw new Error('النظام مشغول لحظيًا، ستُعاد المحاولة تلقائيًا.'); }
+  return lock;
+}
+const reportStamp_ = r => r ? [r.id, r.status, r.updatedAt, r.reopens].join('|') : '';
+// Heavy part of a save (reads every master table, validates ids, computes GPS verdicts). It runs WITHOUT the script lock,
+// reading each sheet once. The result carries a stamp of the report row it was based on; persistReport_ re-checks it under the lock.
+function prepareReport_(s, p) {
+  const date = p.date || today_();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ غير صالح');
-  let r = all.find(x => x.repId === s.uid && x.date === date);
+  const r = dbAll_('Reports').find(x => x.repId === s.uid && x.date === date) || null;
   if (r && ['مسودة', 'معاد للمندوب'].indexOf(r.status) < 0) throw new Error('لا يمكن تعديل تقرير بعد إرساله. أعد فتحه أولًا.');
   if (!editable_(date, r)) throw new Error('انتهت مهلة كتابة هذا التقرير. اطلب من الإدارة إعادته إليك.');
-  // GPS: client sends only raw {lat,lng,acc,ts}; the verdict is computed here and never taken from the client.
-  const prevD = r ? JSON.parse(r.doctors || '[]') : [], prevP = r ? JSON.parse(r.pharmacies || '[]') : [];
-  const clean = (list, prev) => (list || []).map((v, i) => {
-    const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
-    delete o._v; // internal server-only flag; never accept it from the client
-    const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
-    if (pv) o.gps = pv.gps;
-    else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }
-    else o.gps = { status: 'غير متاح' };
-    return o;
-  });
-  const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
-  // Validate explicit master IDs even when GPS is unavailable; IDs are not trusted merely because the client sent them.
-  const masterDoctors = dbAll_('Doctors'), masterWorkplaces = dbAll_('DoctorWorkplaces'), masterPharmacies = dbAll_('Pharmacies');
-  docs.forEach(v => {
-    const namedDoctors = masterDoctors.filter(d => normName_(d.name) === normName_(v.name));
-    const doctor = v.doctorId
-      ? masterDoctors.find(d => String(d.id) === String(v.doctorId))
-      : (namedDoctors.length === 1 ? namedDoctors[0] : null);
-    if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
-    if (v.workplaceId) {
-      const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
-      if (!place || String(place.active) === 'false' || (v.place && normName_(place.workplace) !== normName_(v.place))) {
-        throw new Error('مكان المنشأة غير صالح أو معطّل. أعد اختيار المنشأة.');
-      }
-    }
-  });
-  phs.forEach(v => {
-    if (!v.pharmacyId) return;
-    const pharmacy = masterPharmacies.find(p => String(p.id) === String(v.pharmacyId));
-    if (!pharmacy || String(pharmacy.active) === 'false' || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية غير صالح أو أن الصيدلية معطّلة. أعد اختيار الصيدلية.');
-  });
-  if (docs.concat(phs).some(v => v._v)) {
-    ensureDoctorWorkplaces_();
-    const st = settings_(), D = dbAll_('Doctors'), W = dbAll_('DoctorWorkplaces'), P = dbAll_('Pharmacies');
-    docs.forEach(v => { if (v._v) {
-      const namedDoctors = D.filter(x => normName_(x.name) === normName_(v.name)); const doctor = v.doctorId ? D.find(x => String(x.id) === String(v.doctorId)) : (namedDoctors.length === 1 ? namedDoctors[0] : null);
-      const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
-      let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
-      // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
-      if (v.workplaceId && (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place))) {
-        geo_(v, null, 'DoctorWorkplaces', s, st); return;
-      }
-      if (!place && !v.workplaceId) {
-        const matches = W.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place));
-        if (matches.length) place = matches.find(x => facilityForLegacy_('DoctorWorkplaces', x.id)) || matches[0];
-      }
-      if (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place)) {
-        geo_(v, null, 'DoctorWorkplaces', s, st); return;
-      }
-      v.workplaceId = place.id;
-      const facilityGeo = facilityGeoEntity_('DoctorWorkplaces', place.id);
-      geo_(v, facilityGeo || place, 'DoctorWorkplaces', s, st);
-    }});
-    phs.forEach(v => { if (v._v) {
-      const pharmacyMatches = v.pharmacyId ? P.filter(x => String(x.id) === String(v.pharmacyId)) : P.filter(x => normName_(x.name) === normName_(v.name)); const pharmacy = pharmacyMatches.length === 1 ? pharmacyMatches[0] : null;
-      if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) geo_(v, null, 'Pharmacies', s, st);
-      else { const facilityGeo = facilityGeoEntity_('Pharmacies', pharmacy.id); geo_(v, facilityGeo || pharmacy, 'Pharmacies', s, st); }
-    }});
-  }
-  // facilityId is server-derived metadata; never trust a client-supplied facilityId.
-  const hasFacilitySchema = !!sheet_('Facilities') && !!sheet_('DoctorPlaces');
-  docs.concat(phs).forEach(v => { delete v.facilityId; });
-  if (hasFacilitySchema) {
-    const readMaster = name => sheet_(name) ? dbAll_(name) : [];
-    const facilityRows = readMaster('Facilities'), relationRows = readMaster('DoctorPlaces');
-    const doctorRows = readMaster('Doctors'), workplaceRows = readMaster('DoctorWorkplaces');
-    const findDoctor = v => v.doctorId
-      ? doctorRows.find(d => String(d.id) === String(v.doctorId))
-      : doctorRows.filter(d => normName_(d.name) === normName_(v.name)).length === 1
-        ? doctorRows.find(d => normName_(d.name) === normName_(v.name)) : null;
+  ensureDoctorWorkplaces_(); // may write, so it runs before the read scope starts
+  return readScope_(() => {
+    // GPS: client sends only raw {lat,lng,acc,ts}; the verdict is computed here and never taken from the client.
+    const prevD = r ? JSON.parse(r.doctors || '[]') : [], prevP = r ? JSON.parse(r.pharmacies || '[]') : [];
+    const clean = (list, prev) => (list || []).map((v, i) => {
+      const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
+      delete o._v; // internal server-only flag; never accept it from the client
+      const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
+      if (pv) o.gps = pv.gps;
+      else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }
+      else o.gps = { status: 'غير متاح' };
+      return o;
+    });
+    const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
+    // Validate explicit master IDs even when GPS is unavailable; IDs are not trusted merely because the client sent them.
+    const masterDoctors = dbAll_('Doctors'), masterWorkplaces = dbAll_('DoctorWorkplaces'), masterPharmacies = dbAll_('Pharmacies');
     docs.forEach(v => {
-      const doctor = findDoctor(v);
-      if (!doctor || normName_(doctor.name) !== normName_(v.name)) return;
-      let candidates = [];
+      const namedDoctors = masterDoctors.filter(d => normName_(d.name) === normName_(v.name));
+      const doctor = v.doctorId
+        ? masterDoctors.find(d => String(d.id) === String(v.doctorId))
+        : (namedDoctors.length === 1 ? namedDoctors[0] : null);
+      if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
       if (v.workplaceId) {
-        const w = workplaceRows.find(x => String(x.id) === String(v.workplaceId));
-        if (w && String(w.doctorId) === String(doctor.id) && (!v.place || normName_(w.workplace) === normName_(v.place))) candidates = [w];
-      } else {
-        candidates = workplaceRows.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
+        const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
+        if (!place || String(place.active) === 'false' || (v.place && normName_(place.workplace) !== normName_(v.place))) {
+          throw new Error('مكان المنشأة غير صالح أو معطّل. أعد اختيار المنشأة.');
+        }
       }
-      const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id)));
-      const mappedIds = Array.from(new Set(mapped.map(rel => String(rel.facilityId)).filter(id => facilityRows.some(f => String(f.id) === id))));
-      if (mappedIds.length === 1) v.facilityId = mappedIds[0];
     });
-    const pharmacyFacilities = facilityRows.filter(f => f.legacyEntity === 'Pharmacies');
     phs.forEach(v => {
-      const candidates = v.pharmacyId
-        ? pharmacyFacilities.filter(f => String(f.legacyId) === String(v.pharmacyId))
-        : pharmacyFacilities.filter(f => normName_(f.name) === normName_(v.name));
-      if (candidates.length === 1 && normName_(candidates[0].name) === normName_(v.name)) v.facilityId = candidates[0].id;
+      if (!v.pharmacyId) return;
+      const pharmacy = masterPharmacies.find(p => String(p.id) === String(v.pharmacyId));
+      if (!pharmacy || String(pharmacy.active) === 'false' || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية غير صالح أو أن الصيدلية معطّلة. أعد اختيار الصيدلية.');
     });
-  }
-  const now = new Date().toISOString();
-  const row = {
-    id: r ? r.id : 'REPORT-' + Utilities.getUuid(), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
-    status: r ? r.status : 'مسودة', notes: String(p.notes || '').slice(0, 2000),
-    doctors: JSON.stringify(docs), pharmacies: JSON.stringify(phs),
-    snapshot: r ? r.snapshot : '', snapshot1: r ? r.snapshot1 : '', reopens: r ? (+r.reopens || 0) : 0, createdAt: r ? r.createdAt : now, updatedAt: now, submittedAt: r ? r.submittedAt : '', reviewNote: r ? r.reviewNote : ''
-  };
-  dbUpsert_('Reports', 'id', row);
-  audit_(s, r ? 'edit_report' : 'create_report', row.no);
-  return row;
+    if (docs.concat(phs).some(v => v._v)) {
+      const st = settings_(), D = masterDoctors, W = masterWorkplaces, P = masterPharmacies;
+      docs.forEach(v => { if (v._v) {
+        const namedDoctors = D.filter(x => normName_(x.name) === normName_(v.name)); const doctor = v.doctorId ? D.find(x => String(x.id) === String(v.doctorId)) : (namedDoctors.length === 1 ? namedDoctors[0] : null);
+        const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
+        let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
+        // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
+        if (v.workplaceId && (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place))) {
+          geo_(v, null, 'DoctorWorkplaces', s, st); return;
+        }
+        if (!place && !v.workplaceId) {
+          const matches = W.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place));
+          if (matches.length) place = matches.find(x => facilityForLegacy_('DoctorWorkplaces', x.id)) || matches[0];
+        }
+        if (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place)) {
+          geo_(v, null, 'DoctorWorkplaces', s, st); return;
+        }
+        v.workplaceId = place.id;
+        const facilityGeo = facilityGeoEntity_('DoctorWorkplaces', place.id);
+        geo_(v, facilityGeo || place, 'DoctorWorkplaces', s, st);
+      }});
+      phs.forEach(v => { if (v._v) {
+        const pharmacyMatches = v.pharmacyId ? P.filter(x => String(x.id) === String(v.pharmacyId)) : P.filter(x => normName_(x.name) === normName_(v.name)); const pharmacy = pharmacyMatches.length === 1 ? pharmacyMatches[0] : null;
+        if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) geo_(v, null, 'Pharmacies', s, st);
+        else { const facilityGeo = facilityGeoEntity_('Pharmacies', pharmacy.id); geo_(v, facilityGeo || pharmacy, 'Pharmacies', s, st); }
+      }});
+    }
+    // facilityId is server-derived metadata; never trust a client-supplied facilityId.
+    const hasFacilitySchema = !!sheet_('Facilities') && !!sheet_('DoctorPlaces');
+    docs.concat(phs).forEach(v => { delete v.facilityId; });
+    if (hasFacilitySchema) {
+      const readMaster = name => sheet_(name) ? dbAll_(name) : [];
+      const facilityRows = readMaster('Facilities'), relationRows = readMaster('DoctorPlaces');
+      const doctorRows = readMaster('Doctors'), workplaceRows = readMaster('DoctorWorkplaces');
+      const findDoctor = v => v.doctorId
+        ? doctorRows.find(d => String(d.id) === String(v.doctorId))
+        : doctorRows.filter(d => normName_(d.name) === normName_(v.name)).length === 1
+          ? doctorRows.find(d => normName_(d.name) === normName_(v.name)) : null;
+      docs.forEach(v => {
+        const doctor = findDoctor(v);
+        if (!doctor || normName_(doctor.name) !== normName_(v.name)) return;
+        let candidates = [];
+        if (v.workplaceId) {
+          const w = workplaceRows.find(x => String(x.id) === String(v.workplaceId));
+          if (w && String(w.doctorId) === String(doctor.id) && (!v.place || normName_(w.workplace) === normName_(v.place))) candidates = [w];
+        } else {
+          candidates = workplaceRows.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
+        }
+        const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id)));
+        const mappedIds = Array.from(new Set(mapped.map(rel => String(rel.facilityId)).filter(id => facilityRows.some(f => String(f.id) === id))));
+        if (mappedIds.length === 1) v.facilityId = mappedIds[0];
+      });
+      const pharmacyFacilities = facilityRows.filter(f => f.legacyEntity === 'Pharmacies');
+      phs.forEach(v => {
+        const candidates = v.pharmacyId
+          ? pharmacyFacilities.filter(f => String(f.legacyId) === String(v.pharmacyId))
+          : pharmacyFacilities.filter(f => normName_(f.name) === normName_(v.name));
+        if (candidates.length === 1 && normName_(candidates[0].name) === normName_(v.name)) v.facilityId = candidates[0].id;
+      });
+    }
+    return { date: date, docs: docs, phs: phs, existing: r, stamp: reportStamp_(r) };
+  });
+}
+// Draft upsert. Only the short read-compare-write section holds the script lock.
+function persistReport_(s, p, lockHeld, pre) {
+  let lock = null;
+  if (!lockHeld) { pre = pre || prepareReport_(s, p); lock = acquireLock_(10000); }
+  try {
+    if (!pre) pre = prepareReport_(s, p);
+    const cur = dbAll_('Reports').find(x => x.repId === s.uid && x.date === pre.date) || null;
+    if (reportStamp_(cur) !== pre.stamp) pre = prepareReport_(s, p); // the row changed since validation: redo it under the lock
+    const r = pre.existing, date = pre.date, docs = pre.docs, phs = pre.phs;
+    const now = new Date().toISOString();
+    const row = {
+      id: r ? r.id : 'REPORT-' + Utilities.getUuid(), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
+      status: r ? r.status : 'مسودة', notes: String(p.notes || '').slice(0, 2000),
+      doctors: JSON.stringify(docs), pharmacies: JSON.stringify(phs),
+      snapshot: r ? r.snapshot : '', snapshot1: r ? r.snapshot1 : '', reopens: r ? (+r.reopens || 0) : 0, createdAt: r ? r.createdAt : now, updatedAt: now, submittedAt: r ? r.submittedAt : '', reviewNote: r ? r.reviewNote : ''
+    };
+    dbUpsert_('Reports', 'id', row);
+    audit_(s, r ? 'edit_report' : 'create_report', row.no);
+    return row;
   } finally {
-    if (!lockHeld) lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 // Submit = validate + freeze historical snapshot (names/products copied as text, immune to later edits)
 function submitReport_(s, p) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  const pre = prepareReport_(s, p); // heavy validation outside the lock
+  const lock = acquireLock_(10000);
   let snap, result;
   try {
-    const r = parseReport_(persistReport_(s, p, true));
+    const r = parseReport_(persistReport_(s, p, true, pre));
     if (!r.doctors.length && !r.pharmacies.length) throw new Error('أضف زيارة واحدة على الأقل.');
     const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
     if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
@@ -611,8 +692,8 @@ function gpsReviewSummary_(s, p) {
   const r = dbAll_('Reports').find(x => String(x.id) === String(p.id));
   if (!r) throw new Error('التقرير غير موجود.');
   const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
-  const visits = doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
-    .concat(pharmacies.map(v => Object.assign({kind:'صيدلية',name:v.name||'',place:v.loc||''}, reportVisitGpsCheck_(v, 'pharmacy', st))));
+  const visits = readScope_(() => doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
+    .concat(pharmacies.map(v => Object.assign({kind:'صيدلية',name:v.name||'',place:v.loc||''}, reportVisitGpsCheck_(v, 'pharmacy', st)))));
   return { reportId:r.id, status:r.status, matched:visits.filter(v=>v.status==='تم التحقق').length,
     exceptions:visits.filter(v=>v.status!=='تم التحقق').length, visits:visits };
 }
@@ -622,7 +703,7 @@ function reviewReport_(s, p) {
   const note = String(p.note || '').trim().slice(0, 1000);
   if (p.approve) {
     const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
-    const checks = doctors.map(v => reportVisitGpsCheck_(v, 'doctor', st)).concat(pharmacies.map(v => reportVisitGpsCheck_(v, 'pharmacy', st)));
+    const checks = readScope_(() => doctors.map(v => reportVisitGpsCheck_(v, 'doctor', st)).concat(pharmacies.map(v => reportVisitGpsCheck_(v, 'pharmacy', st))));
     const exceptions = checks.filter(x => x.status !== 'تم التحقق');
     if (exceptions.length && note.length < 5) throw new Error('توجد زيارة لم يثبت تطابق موقعها. اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل)، أو أعد التقرير للمندوب.');
     if (exceptions.length) audit_(s, 'gps_exception_approval', r.no, JSON.stringify(exceptions.map(x => ({status:x.status,distance:x.distance,reference:x.reference}))) + ' · ' + note);
@@ -650,7 +731,7 @@ function specialtyList_() {
 function addSpecialty_(s, p) {
   const name = String(p.name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
   if (name.length < 2) throw new Error('اسم التخصص قصير جدًا.');
-  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  const lock = acquireLock_(10000);
   try {
     const list = specialtyList_(), existing = list.find(x => normName_(x) === normName_(name));
     if (existing) return { name: existing, existing: true, specialties: list };
@@ -670,7 +751,7 @@ function addMaster_(s, sheet, p) {
   if (sheet === 'Doctors') ensureDoctorWorkplaces_();
   const name = String(p.name || '').trim().slice(0, 80);
   if (name.length < 3) throw new Error('الاسم قصير جدًا');
-  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  const lock = acquireLock_(10000);
   try {
     const rows = dbAll_(sheet), n = normName_(name), dup = rows.find(r => normName_(r.name) === n);
     if (dup) return dup; // already exists: reuse it, never create a duplicate
@@ -693,6 +774,7 @@ function addMaster_(s, sheet, p) {
 
 /* ---------- doctor workplaces: one doctor may work at multiple facilities ---------- */
 function ensureDoctorWorkplaces_() {
+  const flagCache = CacheService.getScriptCache(); if (flagCache.get('dwp_ok')) return; // verified within the last 5 minutes
   ensureSheet_('DoctorWorkplaces');
   const doctors = dbAll_('Doctors'), places = dbAll_('DoctorWorkplaces');
   doctors.forEach(d => {
@@ -701,6 +783,7 @@ function ensureDoctorWorkplaces_() {
     const w = { id: nextWorkplaceId_(places), doctorId: d.id, doctorName: d.name, workplace: name, sector: d.sector || '', lat: '', lng: '', radius: '', active: String(d.active) === 'false' ? false : true, refState: '', refBy: '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
     dbAppend_('DoctorWorkplaces', w); places.push(w);
   });
+  try { flagCache.put('dwp_ok', '1', 300); } catch (e) {}
 }
 function nextWorkplaceId_(rows) { return 'DWP-' + ('00000' + (rows.reduce((m, w) => Math.max(m, +(String(w.id).match(/(\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-5); }
 function addDoctorWorkplaceRow_(s, doctor, workplace, sector, reviewed) {
@@ -857,6 +940,7 @@ function gpsReference_(s, p) {
 
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
+  return readScope_(() => {
   const counts = {};
   dbAll_('Reports').forEach(r => {
     let visits; try { visits = JSON.parse(r.doctors || '[]'); } catch (e) { return; }
@@ -869,6 +953,7 @@ function workplacesList_(s, p) {
     const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
     return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
       refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
+  });
   });
 }
 
@@ -1569,7 +1654,7 @@ function repSave_(s, p) {
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addToUi();
 }
 function addRepsFromSheet() {
   ownerOnly_();
@@ -2027,16 +2112,37 @@ function audit_(s, action, ref, details) {
 }
 
 /* ---------- sheets data layer (swap for another DB without touching services) ---------- */
-function sheet_(n) { return SpreadsheetApp.getActive().getSheetByName(n); }
+function sheet_(n) {
+  if (_SHEETS[n]) return _SHEETS[n];
+  _SS = _SS || SpreadsheetApp.getActive();
+  const sh = _SS.getSheetByName(n); if (sh) _SHEETS[n] = sh; // never cache a missing sheet: ensureSheet_ may create it
+  return sh;
+}
+// Read scope: inside readScope_(fn) every sheet is read at most once. Use ONLY for read-only work
+// (dbAppend_/dbUpsert_ drop the memo of the sheet they touch, as a safety net).
+function readScope_(fn) {
+  const prev = _RM; _RM = prev || {};
+  try { return fn(); } finally { _RM = prev; }
+}
 function dbAll_(n) {
+  if (_RM) { if (!_RM[n]) _RM[n] = dbAllRaw_(n); return _RM[n]; }
+  return dbAllRaw_(n);
+}
+function dbAllRaw_(n) {
   const sh = sheet_(n), v = sh.getDataRange().getValues(), h = T[n];
   return v.slice(1).filter(r => r[0] !== '').map(r => { const o = {}; h.forEach((c, i) => o[c] = r[i] instanceof Date ? ((c === 'date' || c === 'from' || c === 'to') ? Utilities.formatDate(r[i], SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : r[i].toISOString()) : r[i]); return o; });
 }
-function dbAppend_(n, o) { sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }
+function dbAppend_(n, o) { if (_RM) delete _RM[n]; sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }
+// Upsert reads only the key column, then just the matching row (not the whole sheet).
 function dbUpsert_(n, key, o) {
-  const sh = sheet_(n), vals = sh.getDataRange().getValues(), ki = T[n].indexOf(key);
-  for (let i = 1; i < vals.length; i++) if (String(vals[i][ki]) === String(o[key])) {
-    sh.getRange(i + 1, 1, 1, T[n].length).setValues([T[n].map((c, j) => o[c] === undefined ? vals[i][j] : o[c])]); return;
+  if (_RM) delete _RM[n];
+  const sh = sheet_(n), ki = T[n].indexOf(key), last = sh.getLastRow();
+  if (last >= 2) {
+    const ids = sh.getRange(2, ki + 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(o[key])) {
+      const rowNo = i + 2, cur = sh.getRange(rowNo, 1, 1, T[n].length).getValues()[0];
+      sh.getRange(rowNo, 1, 1, T[n].length).setValues([T[n].map((c, j) => o[c] === undefined ? cur[j] : o[c])]); return;
+    }
   }
   dbAppend_(n, o);
 }

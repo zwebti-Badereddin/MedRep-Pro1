@@ -194,7 +194,7 @@ function home(){
 const rowHtml=(k,v,i,t,s)=>`<div class="row"><span class="n">${String(i+1).padStart(2,"0")}</span><div class="t"><b>${t}</b><small>${esc(s)}</small></div><button data-ed="${k}${i}">تعديل</button><button class="del" data-del="${k}${i}" aria-label="حذف">✕</button></div>`;
 let t0;
 function cancelAuto(){clearTimeout(t0);t0=null}
-function auto(){if(locked())return;cancelAuto();t0=setTimeout(()=>{t0=null;saveNow().catch(e=>toast("تعذر الحفظ التلقائي: "+e.message))},800)}
+function auto(){if(locked())return;cancelAuto();t0=setTimeout(()=>{t0=null;saveNow().catch(e=>toast("تعذر الحفظ التلقائي: "+e.message))},2000)}
 
 const opts=(a,v)=>a.map(x=>`<option ${x===v?"selected":""}>${esc(x)}</option>`).join("");
 const seg=(n,v)=>`<div class="seg">${["صباحًا","مساءً"].map(x=>`<label><input type="radio" name="${n}" value="${x}" ${x===v?"checked":""}><span>${x}</span></label>`).join("")}</div>`;
