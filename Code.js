@@ -251,8 +251,14 @@ function login_(p) {
   const now = Date.now(), token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('s_' + token, JSON.stringify({ uid: user.id, name: user.name, role: user.role, iat: now, ts: now }), SESSION_SEC);
   const s = { uid: user.id, name: user.name, role: user.role, token: token };
-  // one round trip: session + lookups + today's report (login audit is written by a follow-up call)
-  return { token, device: deviceToken_(user.id), user, boot: bootstrap_(s), report: user.role === 'rep' ? myReport_(s, {}) : null, prev: user.role === 'rep' ? prevInfo_(s) : null };
+  // Share read-only sheet results across today's and previous report lookups during login.
+  // This preserves the returned data while avoiding a second full Reports read.
+  const boot = bootstrap_(s);
+  if (user.role === 'rep') {
+    const loginData = readScope_(() => ({ report: myReport_(s, {}), prev: prevInfo_(s) }));
+    return { token, device: deviceToken_(user.id), user, boot, report: loginData.report, prev: loginData.prev };
+  }
+  return { token, device: deviceToken_(user.id), user, boot, report: null, prev: null };
 }
 // Owner-only: clears the shared login counters (menu: MedRep Pro).
 function resetLoginThrottle() {
