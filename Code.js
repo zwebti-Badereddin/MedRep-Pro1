@@ -803,7 +803,8 @@ function workplacesList_(s, p) {
   const workplaces = dbAll_('DoctorWorkplaces');
   const facilities = sheet_('Facilities') ? dbAll_('Facilities') : [];
   const relations = sheet_('DoctorPlaces') ? dbAll_('DoctorPlaces') : [];
-  const locations = sheet_('FacilityLocations') ? dbAll_('FacilityLocations') : [];
+  const hasFacilityLocations = !!sheet_('FacilityLocations');
+  const locations = hasFacilityLocations ? dbAll_('FacilityLocations') : [];
   const facilityById = new Map(facilities.map(f => [String(f.id), f]));
   const legacyFacilityByKey = new Map();
   facilities.forEach(f => {
@@ -833,7 +834,7 @@ function workplacesList_(s, p) {
     if (!facility) facility = legacyFacilityByKey.get('DoctorWorkplaces|' + String(w.id)) || null;
 
     let geo = null;
-    if (facility) {
+    if (facility && hasFacilityLocations) {
       const locs = locationsByFacility.get(String(facility.id)) || [];
       const loc = locs[0];
       if (!loc) {
