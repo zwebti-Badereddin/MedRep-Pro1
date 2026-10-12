@@ -1667,9 +1667,19 @@ function migrateLegacyFacilitiesV1() {
     const addLocation = (entity, legacy, facility, reviewed) => {
       if (!validPoint(legacy)) return;
       const id = (entity === 'DoctorWorkplaces' ? 'LOC-DW-' : 'LOC-PH-') + String(legacy.id);
-      if (locations.some(l => l.id === id)) return;
       const confirmed = legacy.refBy === 'ADMIN_MAP' && legacy.refState === 'مؤكد' &&
         (entity !== 'DoctorWorkplaces' || String(legacy.reviewed) === 'true');
+      const prior = locations.find(l => String(l.id) === id);
+      if (prior) {
+        // Repair approvals omitted by an earlier run of this same migration, without changing coordinates or status.
+        if (confirmed && prior.state === 'مؤكد' && prior.source === 'ADMIN_MAP' && (!prior.approvedBy || !prior.approvedAt)) {
+          prior.approvedBy = 'MIGRATION_V1';
+          prior.approvedAt = now;
+          prior.note = String(prior.note || '') + '؛ استكمال بيانات اعتماد الترحيل';
+          dbUpsert_('FacilityLocations', 'id', prior);
+        }
+        return;
+      }
       const row = {
         id: id, facilityId: facility.id, lat: +legacy.lat, lng: +legacy.lng,
         radius: legacy.radius === '' || legacy.radius == null ? '' : +legacy.radius,
