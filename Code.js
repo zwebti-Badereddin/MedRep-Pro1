@@ -639,7 +639,7 @@ function parseReport_(r) {
 /* ---------- rep-managed medical specialties (stored in Settings; no schema migration) ---------- */
 function specialtyList_() {
   const out = [], add = value => {
-    const name = String(value || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+    const name = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
     if (name && !out.some(x => normName_(x) === normName_(name))) out.push(name);
   };
   const row = dbAll_('Settings').find(r => String(r.key) === 'specialties');
@@ -648,7 +648,7 @@ function specialtyList_() {
   return out;
 }
 function addSpecialty_(s, p) {
-  const name = String(p.name || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+  const name = String(p.name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
   if (name.length < 2) throw new Error('اسم التخصص قصير جدًا.');
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
   try {
