@@ -941,19 +941,27 @@ function gpsReference_(s, p) {
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
   return readScope_(() => {
-  const counts = {};
-  dbAll_('Reports').forEach(r => {
-    let visits; try { visits = JSON.parse(r.doctors || '[]'); } catch (e) { return; }
-    visits.forEach(v => {
-      const key = v.workplaceId || (v.name + '|' + (v.place || ''));
-      counts[key] = (counts[key] || 0) + 1;
+    const counts = {};
+    // Read only the doctors column instead of materializing every Reports column.
+    const reportsSheet = sheet_('Reports');
+    const lastReportRow = reportsSheet.getLastRow();
+    if (lastReportRow >= 2) {
+      const doctorsCol = T.Reports.indexOf('doctors') + 1;
+      const doctorVisitsRows = reportsSheet.getRange(2, doctorsCol, lastReportRow - 1, 1).getValues();
+      doctorVisitsRows.forEach(row => {
+        let visits;
+        try { visits = JSON.parse(row[0] || '[]'); } catch (e) { return; }
+        visits.forEach(v => {
+          const key = v.workplaceId || (v.name + '|' + (v.place || ''));
+          counts[key] = (counts[key] || 0) + 1;
+        });
+      });
+    }
+    return dbAll_('DoctorWorkplaces').map(w => {
+      const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
+      return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
+        refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
     });
-  });
-  return dbAll_('DoctorWorkplaces').map(w => {
-    const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
-    return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
-      refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
-  });
   });
 }
 
