@@ -44,8 +44,11 @@ function doGet(e) {
 // Single entry point called by google.script.run.api(token, action, payload)
 // Temporary performance instrumentation: logs action, elapsed time and outcome only.
 // Never log tokens, payloads, user identifiers, or error messages.
+let _PH = null; // per-request phase timings (ms), added to the perf log
+function phase_(name, t0) { if (_PH) _PH[name] = (_PH[name] || 0) + (Date.now() - t0); }
 function api(token, action, p) {
   const startedAt = Date.now();
+  _PH = {};
   let outcome = 'error';
   const measuredAction = /^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(String(action || '')) ? String(action) : 'unknown';
   p = p || {};
@@ -69,9 +72,11 @@ function api(token, action, p) {
       console.log('[MedRepPerf] ' + JSON.stringify({
         action: measuredAction,
         elapsedMs: Date.now() - startedAt,
-        outcome: outcome
+        outcome: outcome,
+        phases: Object.keys(_PH || {}).length ? _PH : undefined
       }));
     } catch (ignored) {}
+    _PH = null;
   }
 }
 const ok = d => ({ ok: true, data: d });
@@ -251,14 +256,12 @@ function login_(p) {
   const now = Date.now(), token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('s_' + token, JSON.stringify({ uid: user.id, name: user.name, role: user.role, iat: now, ts: now }), SESSION_SEC);
   const s = { uid: user.id, name: user.name, role: user.role, token: token };
-  // Share read-only sheet results across today's and previous report lookups during login.
-  // This preserves the returned data while avoiding a second full Reports read.
-  const boot = bootstrap_(s);
-  if (user.role === 'rep') {
-    const loginData = readScope_(() => ({ report: myReport_(s, {}), prev: prevInfo_(s) }));
-    return { token, device: deviceToken_(user.id), user, boot, report: loginData.report, prev: loginData.prev };
-  }
-  return { token, device: deviceToken_(user.id), user, boot, report: null, prev: null };
+  // one round trip: session + lookups + today's report (login audit is written by a follow-up call)
+  let t = Date.now();
+  const boot = bootstrap_(s); phase_('bootstrap', t); t = Date.now();
+  const report = user.role === 'rep' ? myReport_(s, {}) : null; phase_('todayReport', t); t = Date.now();
+  const prev = user.role === 'rep' ? prevInfo_(s) : null; phase_('prevInfo', t);
+  return { token, device: deviceToken_(user.id), user, boot, report, prev };
 }
 // Owner-only: clears the shared login counters (menu: MedRep Pro).
 function resetLoginThrottle() {
@@ -404,6 +407,7 @@ function lookups_() {
 function clearCache_() {
   _ST = null;
   const keys = ['st', 'lk', 'dwp_ok']; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i);
+  VALIDATION_TABLES.forEach(n => { keys.push('m_' + n); for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('m_' + n + '_' + i); });
   CacheService.getScriptCache().removeAll(keys);
 }
 function bootstrap_(s) {
@@ -443,12 +447,12 @@ function editable_(date, existing) {
 }
 function prevInfo_(s) {
   const y = yesterday_(), wd = String(settings_().workDays || '0,1,2,3,4').split(',').map(Number);
-  const mine = dbAll_('Reports').filter(x => x.repId === s.uid), r = mine.find(x => x.date === y);
+  const mine = reportsLight_().filter(x => x.repId === s.uid), r = mine.find(x => x.date === y);
   return { date: y, status: r ? r.status : null, open: editable_(y, r), work: wd.indexOf(new Date(y + 'T12:00:00Z').getUTCDay()) >= 0 && offWeight_(offData_(), s.uid, y) < 1, returned: mine.filter(x => x.status === 'معاد للمندوب').length };
 }
 // The first submitted version stays frozen in snapshot1; every reopen is audited; re-sending after closeHour counts as late.
 function reopenReport_(s, p) {
-  const r = dbAll_('Reports').find(x => x.id === p.id && x.repId === s.uid);
+  const r = findReport_(x => x.id === p.id && x.repId === s.uid);
   if (!r) throw new Error('التقرير غير موجود');
   if (r.status === 'معتمد') throw new Error('التقرير معتمد ولا يمكن إعادة فتحه. اطلب ذلك من الإدارة.');
   if (r.status !== 'مرسل') throw new Error('التقرير غير مرسل.');
@@ -460,12 +464,13 @@ function reopenReport_(s, p) {
 }
 function myReport_(s, p) {
   const date = p.date || today_();
-  let r = dbAll_('Reports').find(x => x.repId === s.uid && x.date === date);
+  let r = findReport_(x => x.repId === s.uid && x.date === date);
   if (!r) r = { id: null, no: null, repId: s.uid, date, status: 'مسودة', notes: '', doctors: [], pharmacies: [] };
   return repView_(parseReport_(r)); // route is rep-only
 }
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
-function saveReport_(s, p) { const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
+function saveReport_(s, p) {
+  const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
 // Takes the script lock, or fails fast with a message the client recognises and retries automatically.
 function acquireLock_(ms) {
   const lock = LockService.getScriptLock();
@@ -478,11 +483,14 @@ const reportStamp_ = r => r ? [r.id, r.status, r.updatedAt, r.reopens].join('|')
 function prepareReport_(s, p) {
   const date = p.date || today_();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ غير صالح');
-  const r = dbAll_('Reports').find(x => x.repId === s.uid && x.date === date) || null;
+  const hit = findReportRow_(x => x.repId === s.uid && x.date === date), r = hit ? hit.r : null;
   if (r && ['مسودة', 'معاد للمندوب'].indexOf(r.status) < 0) throw new Error('لا يمكن تعديل تقرير بعد إرساله. أعد فتحه أولًا.');
   if (!editable_(date, r)) throw new Error('انتهت مهلة كتابة هذا التقرير. اطلب من الإدارة إعادته إليك.');
   ensureDoctorWorkplaces_(); // may write, so it runs before the read scope starts
   return readScope_(() => {
+    const tM = Date.now();
+    VALIDATION_TABLES.forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
+    phase_('masters', tM);
     // GPS: client sends only raw {lat,lng,acc,ts}; the verdict is computed here and never taken from the client.
     const prevD = r ? JSON.parse(r.doctors || '[]') : [], prevP = r ? JSON.parse(r.pharmacies || '[]') : [];
     const clean = (list, prev) => (list || []).map((v, i) => {
@@ -575,17 +583,23 @@ function prepareReport_(s, p) {
         if (candidates.length === 1 && normName_(candidates[0].name) === normName_(v.name)) v.facilityId = candidates[0].id;
       });
     }
-    return { date: date, docs: docs, phs: phs, existing: r, stamp: reportStamp_(r) };
+    return { date: date, docs: docs, phs: phs, existing: r, rowNo: hit ? hit.rowNo : 0, stamp: reportStamp_(r) };
   });
 }
 // Draft upsert. Only the short read-compare-write section holds the script lock.
-function persistReport_(s, p, lockHeld, pre) {
-  let lock = null;
-  if (!lockHeld) { pre = pre || prepareReport_(s, p); lock = acquireLock_(10000); }
+function persistReport_(s, p, lockHeld, pre, dry) {
+  let lock = null, saved = null, isNew = false;
+  if (!lockHeld) { let t = Date.now(); pre = pre || prepareReport_(s, p); phase_('prepare', t); t = Date.now(); lock = acquireLock_(10000); phase_('lockWait', t); }
+  const tF = Date.now();
   try {
     if (!pre) pre = prepareReport_(s, p);
-    const cur = dbAll_('Reports').find(x => x.repId === s.uid && x.date === pre.date) || null;
-    if (reportStamp_(cur) !== pre.stamp) pre = prepareReport_(s, p); // the row changed since validation: redo it under the lock
+    // Freshness check under the lock. An existing report: read just its row. A new one: the small-column index (duplicate guard).
+    let curStamp;
+    if (pre.rowNo) {
+      const cur = rowObj_('Reports', sheet_('Reports').getRange(pre.rowNo, 1, 1, T.Reports.length).getValues()[0]);
+      curStamp = String(cur.id) === String(pre.existing.id) ? reportStamp_(cur) : '#moved';
+    } else curStamp = reportStamp_(reportsLight_().find(x => x.repId === s.uid && x.date === pre.date) || null);
+    if (curStamp !== pre.stamp) pre = prepareReport_(s, p); // the row changed since validation: redo it under the lock
     const r = pre.existing, date = pre.date, docs = pre.docs, phs = pre.phs;
     const now = new Date().toISOString();
     const row = {
@@ -594,34 +608,57 @@ function persistReport_(s, p, lockHeld, pre) {
       doctors: JSON.stringify(docs), pharmacies: JSON.stringify(phs),
       snapshot: r ? r.snapshot : '', snapshot1: r ? r.snapshot1 : '', reopens: r ? (+r.reopens || 0) : 0, createdAt: r ? r.createdAt : now, updatedAt: now, submittedAt: r ? r.submittedAt : '', reviewNote: r ? r.reviewNote : ''
     };
-    dbUpsert_('Reports', 'id', row);
-    audit_(s, r ? 'edit_report' : 'create_report', row.no);
-    return row;
+    if (dry) return row; // caller writes the final row itself (submit: one write instead of two)
+    dbUpsert_('Reports', 'id', row); phase_('write', tF);
+    saved = row; isNew = !r;
+    try { CacheService.getScriptCache().put('vc_' + row.id + '_' + row.updatedAt, String(docs.length + phs.length), 21600); } catch (e) {}
   } finally {
     if (lock) lock.releaseLock();
   }
+  const tA = Date.now();
+  if (isNew || auditDue_(saved.id)) audit_(s, isNew ? 'create_report' : 'edit_report', saved.no);
+  phase_('audit', tA);
+  return saved;
+}
+// Autosave fires on every edit; one audit line per report per 15 minutes is enough (creation, submit, reopen, review stay individually logged).
+function auditDue_(id) {
+  const c = CacheService.getScriptCache(), k = 'ae_' + id;
+  if (c.get(k)) return false; c.put(k, '1', 900); return true;
 }
 // Submit = validate + freeze historical snapshot (names/products copied as text, immune to later edits)
 function submitReport_(s, p) {
+  let t0 = Date.now();
   const pre = prepareReport_(s, p); // heavy validation outside the lock
+  phase_('prepare', t0); t0 = Date.now();
   const lock = acquireLock_(10000);
+  phase_('lockWait', t0);
   let snap, result;
   try {
-    const r = parseReport_(persistReport_(s, p, true, pre));
-    if (!r.doctors.length && !r.pharmacies.length) throw new Error('أضف زيارة واحدة على الأقل.');
+    t0 = Date.now();
+    const draft = persistReport_(s, p, true, pre, true), r = parseReport_(draft);
+    phase_('freshness', t0);
+    const fail = msg => { dbUpsert_('Reports', 'id', draft); throw new Error(msg); }; // an invalid submit still keeps the draft
+    if (!r.doctors.length && !r.pharmacies.length) fail('أضف زيارة واحدة على الأقل.');
     const bad = r.doctors.filter(v => !v.name || !v.specialty).length + r.pharmacies.filter(v => !v.name).length;
-    if (bad) throw new Error('بعض الزيارات ينقصها الاسم أو التخصص.');
+    if (bad) fail('بعض الزيارات ينقصها الاسم أو التخصص.');
     const rep = dbAll_('Reps').find(x => x.id === s.uid);
-    if (!rep) throw new Error('تعذّر العثور على حساب المندوب.');
+    if (!rep) fail('تعذّر العثور على حساب المندوب.');
+    t0 = Date.now();
     snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
     r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
     r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
-    dbUpsert_('Reports', 'id', r); audit_(s, 'submit_report', r.no);
+    const nVisits = JSON.parse(r.doctors).length + JSON.parse(r.pharmacies).length;
+    dbUpsert_('Reports', 'id', r);
+    phase_('write', t0); t0 = Date.now();
+    try { CacheService.getScriptCache().put('vc_' + r.id + '_' + r.updatedAt, String(nVisits), 21600); } catch (e) {}
+    if (!pre.existing) audit_(s, 'create_report', r.no);
+    audit_(s, 'submit_report', r.no);
+    phase_('audit', t0);
     result = { no: r.no, status: r.status };
   } finally {
     lock.releaseLock();
   }
-  notify_(snap);
+  t0 = Date.now(); notify_(snap); phase_('email', t0);
   return result;
 }
 /* ---------- what a representative may see of GPS ----------
@@ -644,7 +681,7 @@ function searchText_(r, role) {
   return JSON.stringify(repVisits_(d).concat(repVisits_(p))).toLowerCase();
 }
 function getReport_(s, p) {
-  const r = dbAll_('Reports').find(x => x.id === p.id);
+  const r = findReport_(x => x.id === p.id);
   if (!r || (s.role === 'rep' && r.repId !== s.uid)) throw new Error('التقرير غير موجود');
   const out = parseReport_(r);
   if (r.snapshot) out.snapshot = JSON.parse(r.snapshot);
@@ -653,6 +690,15 @@ function getReport_(s, p) {
 }
 // Filters: repId, from, to, no, status, q (doctor / pharmacy / product text search)
 function listReports_(s, p) {
+  if (p.q) return listReportsFull_(s, p); // free-text search needs the visit contents
+  const reps = {}; dbAll_('Reps').forEach(r => reps[r.id] = r.name);
+  const rows = reportsLight_().filter(r =>
+    (s.role === 'admin' || r.repId === s.uid) &&
+    (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
+    (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to)), vc = visitCounts_(rows);
+  return rows.map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0, visits: vc[r.id] || 0 })).reverse();
+}
+function listReportsFull_(s, p) {
   const q = (p.q || '').toLowerCase(), reps = {};
   dbAll_('Reps').forEach(r => reps[r.id] = r.name);
   return dbAll_('Reports').filter(r =>
@@ -695,7 +741,7 @@ function gpsPointValidServer_(lat, lng) {
   return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
 }
 function gpsReviewSummary_(s, p) {
-  const r = dbAll_('Reports').find(x => String(x.id) === String(p.id));
+  const r = findReport_(x => String(x.id) === String(p.id));
   if (!r) throw new Error('التقرير غير موجود.');
   const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
   const visits = readScope_(() => doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
@@ -704,7 +750,7 @@ function gpsReviewSummary_(s, p) {
     exceptions:visits.filter(v=>v.status!=='تم التحقق').length, visits:visits };
 }
 function reviewReport_(s, p) {
-  const r = dbAll_('Reports').find(x => x.id === p.id);
+  const r = findReport_(x => x.id === p.id);
   if (!r || r.status !== 'مرسل') throw new Error('يمكن مراجعة التقارير المرسلة فقط.');
   const note = String(p.note || '').trim().slice(0, 1000);
   if (p.approve) {
@@ -858,7 +904,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
         facilityId:facility.id, workDays:'', notes:'', active:String(w.active) !== 'false', legacyWorkplaceId:w.id,
         createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
       dbAppend_('DoctorPlaces', rel); relations.push(rel);
-    } else {
+    } else if (String(rel.facilityId) !== String(facility.id) || (String(rel.active) !== 'false') !== (String(w.active) !== 'false')) {
       rel.facilityId=facility.id; rel.active=String(w.active) !== 'false'; rel.updatedAt=now; rel.updatedBy=s.uid;
       dbUpsert_('DoctorPlaces','id',rel);
     }
@@ -879,6 +925,9 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
 }
 function addDoctorWorkplace_(s, p) {
   ensureDoctorWorkplaces_();
+  return readScope_(() => addDoctorWorkplaceCore_(s, p)); // each sheet is read once; writes invalidate only their own sheet
+}
+function addDoctorWorkplaceCore_(s, p) {
   const doctor = dbAll_('Doctors').find(d => d.id === p.doctorId && String(d.active) !== 'false');
   if (!doctor) throw new Error('اختر طبيبًا مسجلًا أولًا.');
   const name = String(p.workplace || '').trim();
@@ -902,9 +951,9 @@ function addDoctorWorkplace_(s, p) {
   if (proposal.alreadyApproved) { row.reviewed = 'true'; dbUpsert_('DoctorWorkplaces', 'id', row); }
   clearCache_();
   audit_(s, 'propose_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace + ' · facility=' + proposal.facilityId + ' · lat=' + lat + ' · lng=' + lng);
-  const geo = facilityGeoEntity_('DoctorWorkplaces', row.id);
+  // The outcome is already known (an approved reference exists, or a proposal awaiting review was just written): no re-read needed.
   return { id: row.id, doctorId: row.doctorId, doctorName: row.doctorName, workplace: row.workplace,
-    sector: row.sector, reviewed: !!(geo && String(geo.reviewed)==='true'), refState: geo ? geo.refState : 'مراجعة مطلوبة',
+    sector: row.sector, reviewed: !!proposal.alreadyApproved, refState: proposal.alreadyApproved ? 'مؤكد' : 'مراجعة مطلوبة',
     lat:lat, lng:lng, existing:false };
 }
 function gpsReference_(s, p) {
@@ -947,27 +996,19 @@ function gpsReference_(s, p) {
 function workplacesList_(s, p) {
   ensureDoctorWorkplaces_();
   return readScope_(() => {
-    const counts = {};
-    // Read only the doctors column instead of materializing every Reports column.
-    const reportsSheet = sheet_('Reports');
-    const lastReportRow = reportsSheet.getLastRow();
-    if (lastReportRow >= 2) {
-      const doctorsCol = T.Reports.indexOf('doctors') + 1;
-      const doctorVisitsRows = reportsSheet.getRange(2, doctorsCol, lastReportRow - 1, 1).getValues();
-      doctorVisitsRows.forEach(row => {
-        let visits;
-        try { visits = JSON.parse(row[0] || '[]'); } catch (e) { return; }
-        visits.forEach(v => {
-          const key = v.workplaceId || (v.name + '|' + (v.place || ''));
-          counts[key] = (counts[key] || 0) + 1;
-        });
-      });
-    }
-    return dbAll_('DoctorWorkplaces').map(w => {
-      const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
-      return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
-        refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
-    });
+  let t = Date.now();
+  // Same write-through-invalidated table cache as report saving: any admin edit drops it at once.
+  VALIDATION_TABLES.forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
+  phase_('tables', t); t = Date.now();
+  const counts = usageCounts_('wp');
+  phase_('usage', t); t = Date.now();
+  const out = dbAll_('DoctorWorkplaces').map(w => {
+    const geo = facilityGeoEntity_('DoctorWorkplaces', w.id);
+    return Object.assign({}, w, geo ? { lat:geo.lat, lng:geo.lng, radius:geo.radius, refState:geo.refState,
+      refBy:geo.refBy, reviewed:geo.reviewed } : {}, { uses: counts[w.id] || counts[w.doctorName + '|' + w.workplace] || 0 });
+  });
+  phase_('geo', t);
+  return out;
   });
 }
 
@@ -977,11 +1018,7 @@ function masterSheet_(e) {
   return e;
 }
 function masterList_(s, p) {
-  const sh = masterSheet_(p.entity), col = sh === 'Doctors' ? 'doctors' : 'pharmacies', cnt = {};
-  dbAll_('Reports').forEach(r => {
-    let visits; try { visits = JSON.parse(r[col] || '[]'); } catch (e) { return; }
-    visits.forEach(v => { cnt[v.name] = (cnt[v.name] || 0) + 1; });
-  });
+  const sh = masterSheet_(p.entity), col = sh === 'Doctors' ? 'doctors' : 'pharmacies', cnt = usageCounts_(col);
   return dbAll_(sh).map(r => Object.assign({}, r, { uses: cnt[r.name] || 0 }));
 }
 // Update operational report names only; immutable submitted snapshots remain unchanged.
@@ -1329,7 +1366,7 @@ function performance_(s, p) {
   const wdays = String(settings_().workDays || '0,1,2,3,4').split(',').map(Number), off = offData_(), allDays = workDays_(from, to, wdays);
   const SCALED = ['visits', 'doctor_cov', 'pharmacy_cov'];
   const availOf = id => allDays.reduce((a, d) => a + (1 - offWeight_(off, id, d)), 0);
-  const reports = dbAll_('Reports').filter(r => r.date >= from && r.date <= to && ['مرسل', 'معتمد'].indexOf(r.status) >= 0).map(parseReport_);
+  const reports = reportsFull_(reportsLight_().filter(r => r.date >= from && r.date <= to && ['مرسل', 'معتمد'].indexOf(r.status) >= 0)).map(parseReport_);
   const totalW = cfg.reduce((a, k) => a + (+k.weight || 0), 0) || 1;
   return dbAll_('Reps').filter(r => String(r.active) !== 'false').map(rep => {
     const rs = reports.filter(r => r.repId === rep.id), docs = [].concat.apply([], rs.map(r => r.doctors)), phs = [].concat.apply([], rs.map(r => r.pharmacies));
@@ -1576,7 +1613,7 @@ function compliance_(from, to) {
   const wd = String(st.workDays || '0,1,2,3,4').split(',').map(Number), DAY = 864e5, f = d => Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
   const yesterday = f(new Date(new Date(today_() + 'T12:00:00Z').getTime() - DAY)), end = to < yesterday ? to : yesterday, days = [];
   for (let d = new Date(from + 'T12:00:00Z'); f(d) <= end; d = new Date(d.getTime() + DAY)) if (wd.indexOf(d.getUTCDay()) >= 0) days.push(f(d));
-  const reports = dbAll_('Reports').filter(x => ['مرسل', 'معتمد'].indexOf(x.status) >= 0), out = {}, off = offData_();
+  const reports = reportsLight_().filter(x => ['مرسل', 'معتمد'].indexOf(x.status) >= 0), out = {}, off = offData_();
   dbAll_('Reps').forEach(rep => {
     let onTime = 0, late = 0;
     const rd = days.filter(d => offWeight_(off, rep.id, d) < 1); // holidays and full-day leaves are not required days
@@ -1609,7 +1646,7 @@ const slimM_ = r => ({ repId: r.repId, score: +r.score, compliance: +r.complianc
 function trend_(s, p) {
   ensureMonthly_();
   const y = +p.year, curYm = today_().slice(0, 7), reps = dbAll_('Reps').filter(r => String(r.active) !== 'false');
-  const first = dbAll_('Reports').reduce((a, r) => (!a || r.date < a ? r.date : a), ''), firstYm = first ? first.slice(0, 7) : curYm;
+  const first = reportsLight_().reduce((a, r) => (!a || r.date < a ? r.date : a), ''), firstYm = first ? first.slice(0, 7) : curYm;
   const stored = {}; dbAll_('Monthly').forEach(r => { (stored[r.ym] = stored[r.ym] || []).push(r); });
   const months = [];
   for (let m = 1; m <= 12; m++) {
@@ -1644,7 +1681,7 @@ function monthlyClose_() {
 /* ---------- reps management (admin page): add, edit, change code, disable ---------- */
 function repsList_() {
   const last = {}, cnt = {};
-  dbAll_('Reports').forEach(r => { cnt[r.repId] = (cnt[r.repId] || 0) + 1; if (!last[r.repId] || r.date > last[r.repId]) last[r.repId] = r.date; });
+  reportsLight_().forEach(r => { cnt[r.repId] = (cnt[r.repId] || 0) + 1; if (!last[r.repId] || r.date > last[r.repId]) last[r.repId] = r.date; });
   return dbAll_('Reps').map(r => ({ id: r.id, name: r.name, phone: r.phone, email: r.email, active: r.active, count: cnt[r.id] || 0, last: last[r.id] || '' })); // codeHash never leaves the server
 }
 function repSave_(s, p) {
@@ -2043,9 +2080,10 @@ function delRow_(s, sheet, id, action) {
 
 /* ---------- rep self-service: own report history and own score ---------- */
 function myReports_(s) {
-  return dbAll_('Reports').filter(r => r.repId === s.uid).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60).map(r => ({
+  const mine = reportsLight_().filter(r => r.repId === s.uid).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60), vc = visitCounts_(mine);
+  return mine.map(r => ({
     id: r.id, no: r.no, date: r.date, status: r.status, reopens: +r.reopens || 0, reviewNote: r.status === 'معاد للمندوب' ? r.reviewNote : '',
-    visits: JSON.parse(r.doctors || '[]').length + JSON.parse(r.pharmacies || '[]').length }));
+    visits: vc[r.id] || 0 }));
 }
 function myPerformance_(s, p) {
   ensureMonthly_();
@@ -2062,7 +2100,7 @@ function remindCore_(day, subject, bodyFn, tellManager) {
   const st = settings_(); if (String(st.remindEnabled) !== 'true') return;
   const wd = String(st.workDays || '0,1,2,3,4').split(',').map(Number), off = offData_();
   if (wd.indexOf(new Date(day + 'T12:00:00Z').getUTCDay()) < 0 || off.hol[day]) return;
-  const reports = dbAll_('Reports').filter(r => r.date === day), missing = [], url = ScriptApp.getService().getUrl(), hh = ('0' + closeHour_(st)).slice(-2);
+  const reports = reportsLight_().filter(r => r.date === day), missing = [], url = ScriptApp.getService().getUrl(), hh = ('0' + closeHour_(st)).slice(-2);
   dbAll_('Reps').filter(r => String(r.active) !== 'false').forEach(rep => {
     if (offWeight_(off, rep.id, day) >= 1) return; // on leave
     const r = reports.find(x => x.repId === rep.id);
@@ -2142,19 +2180,104 @@ function dbAll_(n) {
   if (_RM) { if (!_RM[n]) _RM[n] = dbAllRaw_(n); return _RM[n]; }
   return dbAllRaw_(n);
 }
-function dbAllRaw_(n) {
-  const sh = sheet_(n), v = sh.getDataRange().getValues(), h = T[n];
-  return v.slice(1).filter(r => r[0] !== '').map(r => { const o = {}; h.forEach((c, i) => o[c] = r[i] instanceof Date ? ((c === 'date' || c === 'from' || c === 'to') ? Utilities.formatDate(r[i], SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : r[i].toISOString()) : r[i]); return o; });
+function cellVal_(c, v) {
+  if (!(v instanceof Date)) return v;
+  _SS = _SS || SpreadsheetApp.getActive();
+  return (c === 'date' || c === 'from' || c === 'to') ? Utilities.formatDate(v, _SS.getSpreadsheetTimeZone(), 'yyyy-MM-dd') : v.toISOString();
 }
-function dbAppend_(n, o) { if (_RM) delete _RM[n]; sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }
+function rowObj_(n, r) { const o = {}; T[n].forEach((c, i) => o[c] = cellVal_(c, r[i])); return o; }
+function dbAllRaw_(n) {
+  const sh = sheet_(n), v = sh.getDataRange().getValues();
+  return v.slice(1).filter(r => r[0] !== '').map(r => rowObj_(n, r));
+}
+// The Reports sheet is by far the heaviest (big JSON cells in every row). Hot paths must not read it whole.
+// reportsLight_ reads only the small columns (3 narrow range reads); findReport_ then reads ONE full row.
+function reportsLight_() {
+  const sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return [];
+  const H = T.Reports, n = last - 1, c1 = H.indexOf('createdAt') + 1, c2 = H.indexOf('reopens') + 1;
+  const a = sh.getRange(2, 1, n, 5).getValues(), b = sh.getRange(2, c1, n, 4).getValues(), d = sh.getRange(2, c2, n, 1).getValues(), out = [];
+  for (let i = 0; i < n; i++) {
+    if (a[i][0] === '') continue;
+    out.push({ rowNo: i + 2, id: a[i][0], no: a[i][1], repId: a[i][2], date: cellVal_('date', a[i][3]), status: a[i][4],
+      createdAt: cellVal_('createdAt', b[i][0]), updatedAt: cellVal_('updatedAt', b[i][1]), submittedAt: cellVal_('submittedAt', b[i][2]), reviewNote: b[i][3], reopens: d[i][0] });
+  }
+  return out;
+}
+function reportsFull_(rows) {
+  if (!rows.length) return [];
+  const sh = sheet_('Reports'), W = T.Reports.length;
+  if (rows.length <= 8) return rows.map(r => rowObj_('Reports', sh.getRange(r.rowNo, 1, 1, W).getValues()[0]));
+  const lo = Math.min.apply(null, rows.map(r => r.rowNo)), hi = Math.max.apply(null, rows.map(r => r.rowNo));
+  const v = sh.getRange(lo, 1, hi - lo + 1, W).getValues();
+  return rows.map(r => rowObj_('Reports', v[r.rowNo - lo]));
+}
+// Number of visits per report without reading the JSON of every report on every call.
+// Cached per (id, updatedAt): a changed report gets a new key, so counts never go stale. Only cache misses touch the sheet.
+function visitCounts_(rows) {
+  const c = CacheService.getScriptCache(), out = {}, keyOf = r => 'vc_' + r.id + '_' + r.updatedAt, got = {}, miss = [];
+  const keys = rows.map(keyOf);
+  for (let i = 0; i < keys.length; i += 100) Object.assign(got, c.getAll(keys.slice(i, i + 100)));
+  rows.forEach((r, i) => { const v = got[keys[i]]; if (v != null) out[r.id] = +v; else miss.push(r); });
+  if (miss.length) {
+    const sh = sheet_('Reports'), H = T.Reports, cd = H.indexOf('doctors') + 1, cp = H.indexOf('pharmacies') + 1; // adjacent columns
+    const len = x => { try { return JSON.parse(x || '[]').length; } catch (e) { return 0; } }, put = {};
+    let block = null, lo = 0;
+    if (miss.length > 8) { lo = Math.min.apply(null, miss.map(r => r.rowNo)); const hi = Math.max.apply(null, miss.map(r => r.rowNo)); block = sh.getRange(lo, cd, hi - lo + 1, cp - cd + 1).getValues(); }
+    miss.forEach(r => {
+      const v = block ? block[r.rowNo - lo] : sh.getRange(r.rowNo, cd, 1, cp - cd + 1).getValues()[0], n = len(v[0]) + len(v[cp - cd]);
+      out[r.id] = n; put[keyOf(r)] = String(n);
+    });
+    const ks = Object.keys(put);
+    for (let i = 0; i < ks.length; i += 100) { const part = {}; ks.slice(i, i + 100).forEach(k => part[k] = put[k]); try { c.putAll(part, 21600); } catch (e) {} }
+  }
+  return out;
+}
+// Display-only usage counters scan every report's JSON, so they are cached for 30 minutes.
+function usageCounts_(kind) {
+  const hit = cacheGetLarge_('uc_' + kind); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const counts = {}, col = kind === 'pharmacies' ? 'pharmacies' : 'doctors';
+  // Only the one column that holds the visits is read (the snapshots are the bulk of every row and are not needed here).
+  const sh = sheet_('Reports'), last = sh.getLastRow();
+  if (last >= 2) sh.getRange(2, T.Reports.indexOf(col) + 1, last - 1, 1).getValues().forEach(row => {
+    let visits; try { visits = JSON.parse(row[0] || '[]'); } catch (e) { return; }
+    visits.forEach(v => { const key = kind === 'wp' ? (v.workplaceId || (v.name + '|' + (v.place || ''))) : v.name; counts[key] = (counts[key] || 0) + 1; });
+  });
+  cachePutLarge_('uc_' + kind, JSON.stringify(counts), 1800);
+  return counts;
+}
+function findReportRow_(match) {
+  const hit = reportsLight_().find(match); if (!hit) return null;
+  const full = rowObj_('Reports', sheet_('Reports').getRange(hit.rowNo, 1, 1, T.Reports.length).getValues()[0]);
+  if (String(full.id) !== String(hit.id)) { const f = dbAll_('Reports').find(x => String(x.id) === String(hit.id)); return f ? { r: f, rowNo: 0 } : null; } // rows shifted: safe fallback
+  return { r: full, rowNo: hit.rowNo };
+}
+function findReport_(match) { const x = findReportRow_(match); return x && x.r; }
+// Reference tables used to validate a visit and judge its GPS. Cached for 2 minutes, but ONLY the report save/submit path
+// reads them from the cache (ID generation and admin screens always read the sheet), and every write through
+// dbAppend_/dbUpsert_ drops the table's cache at once.
+const VALIDATION_TABLES = ['Doctors', 'DoctorWorkplaces', 'Pharmacies', 'Facilities', 'FacilityLocations', 'DoctorPlaces'];
+function dropTableCache_(n) {
+  if (VALIDATION_TABLES.indexOf(n) < 0) return;
+  const keys = ['m_' + n]; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('m_' + n + '_' + i);
+  try { CacheService.getScriptCache().removeAll(keys); } catch (e) {}
+}
+function cachedTable_(n) {
+  const hit = cacheGetLarge_('m_' + n);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const rows = dbAllRaw_(n);
+  cachePutLarge_('m_' + n, JSON.stringify(rows), 120);
+  return rows;
+}
+function dbAppend_(n, o) { dropTableCache_(n); if (_RM) delete _RM[n]; sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }
 // Upsert reads only the key column, then just the matching row (not the whole sheet).
 function dbUpsert_(n, key, o) {
+  dropTableCache_(n);
   if (_RM) delete _RM[n];
   const sh = sheet_(n), ki = T[n].indexOf(key), last = sh.getLastRow();
   if (last >= 2) {
-    const ids = sh.getRange(2, ki + 1, last - 1, 1).getValues();
+    const ids = sh.getRange(2, ki + 1, last - 1, 1).getValues(), whole = T[n].every(c => o[c] !== undefined);
     for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(o[key])) {
-      const rowNo = i + 2, cur = sh.getRange(rowNo, 1, 1, T[n].length).getValues()[0];
+      const rowNo = i + 2, cur = whole ? null : sh.getRange(rowNo, 1, 1, T[n].length).getValues()[0]; // a complete row needs no read
       sh.getRange(rowNo, 1, 1, T[n].length).setValues([T[n].map((c, j) => o[c] === undefined ? cur[j] : o[c])]); return;
     }
   }
