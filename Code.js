@@ -689,14 +689,47 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
     throw new Error('جداول المنشآت غير مهيأة. شغّل تهيئة مخطط المنشآت من حساب مالك المشروع أولًا.');
   }
   const name = String(workplace.workplace || '').trim(), key = normName_(name), now = new Date().toISOString();
-  let facility = dbAll_('Facilities').find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key);
+  const allW = dbAll_('DoctorWorkplaces').filter(w => normName_(w.workplace) === key);
+  let facilities = dbAll_('Facilities');
+  let locations = dbAll_('FacilityLocations');
+  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key);
+
+  // Preserve a previously approved legacy reference when the first shared relation is created.
+  // Reuse only an unambiguous approved coordinate; conflicting approved points require admin review.
+  if (!facility) {
+    const legacyIds = new Set(allW.map(w => String(w.id)));
+    const candidates = facilities.filter(f => f.legacyEntity === 'DoctorWorkplaces' && legacyIds.has(String(f.legacyId)));
+    const approved = [];
+    candidates.forEach(f => {
+      locations.filter(l => String(l.facilityId) === String(f.id) && String(l.active) !== 'false' &&
+        l.state === 'مؤكد' && l.source === 'ADMIN_MAP' && l.lat !== '' && l.lat != null &&
+        l.lng !== '' && l.lng != null && isFinite(+l.lat) && isFinite(+l.lng)).forEach(l => approved.push({facility:f, location:l}));
+    });
+    if (approved.length) {
+      const anchor = approved[0].location;
+      const conflicting = approved.some(x => dist_(+anchor.lat, +anchor.lng, +x.location.lat, +x.location.lng) > 25);
+      if (conflicting) throw new Error('توجد مراجع إدارية معتمدة ومتباعدة للاسم نفسه. أوقفنا الاقتراح حفاظًا على المرجع؛ راجع المنشآت من لوحة الإدارة أولًا.');
+      facility = approved[0].facility;
+      // Legacy rows establish the prior admin approval; complete missing audit metadata without moving the pin.
+      approved.filter(x => String(x.facility.id) === String(facility.id)).forEach(x => {
+        if (!x.location.approvedBy) x.location.approvedBy = 'MIGRATION_V1';
+        if (!x.location.approvedAt) x.location.approvedAt = now;
+        dbUpsert_('FacilityLocations', 'id', x.location);
+      });
+      facility.legacyEntity = 'SHARED_DOCTOR_FACILITY';
+      facility.legacyId = facility.id;
+      facility.updatedAt = now; facility.updatedBy = s.uid;
+      dbUpsert_('Facilities', 'id', facility);
+      facilities = dbAll_('Facilities');
+    }
+  }
   if (!facility) {
     const id = 'FAC-SH-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
     facility = { id:id, name:name, type:'منشأة طبية', region:'', address:'',
       status:'نشط', legacyEntity:'SHARED_DOCTOR_FACILITY', legacyId:id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
     dbAppend_('Facilities', facility);
   }
-  const allW = dbAll_('DoctorWorkplaces').filter(w => normName_(w.workplace) === key);
+
   const relations = dbAll_('DoctorPlaces');
   allW.forEach(w => {
     let rel = relations.find(x => String(x.legacyWorkplaceId) === String(w.id));
@@ -711,8 +744,9 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
     }
   });
   const locs = dbAll_('FacilityLocations').filter(l => String(l.facilityId) === String(facility.id));
-  const approved = locs.some(l => String(l.active) !== 'false' && l.state === 'مؤكد' && l.approvedBy && l.approvedAt && l.source === 'ADMIN_MAP');
-  if (!approved) {
+  const approvedReference = locs.find(l => String(l.active) !== 'false' && l.state === 'مؤكد' &&
+    l.approvedBy && l.approvedAt && l.source === 'ADMIN_MAP');
+  if (!approvedReference) {
     const active = locs.filter(l => String(l.active) !== 'false');
     const version = locs.reduce((m,l)=>Math.max(m,+l.version||0),0)+1;
     active.forEach(l=>{l.active=false;dbUpsert_('FacilityLocations','id',l)});
@@ -721,7 +755,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
       approvedBy:'',approvedAt:'',version:version,active:true,note:'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا'});
   }
   facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility);
-  return { facilityId:facility.id, alreadyApproved:approved };
+  return { facilityId:facility.id, alreadyApproved:!!approvedReference };
 }
 function addDoctorWorkplace_(s, p) {
   ensureDoctorWorkplaces_();
@@ -998,7 +1032,7 @@ function reverifyWorkplace_(ent) {
   const st = settings_(), geoEnt = facilityGeoEntity_('DoctorWorkplaces', ent.id) || ent, rad = Math.max(20, +geoEnt.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues(), ix = k => T.Reports.indexOf(k), parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let changed = false; (list || []).forEach(v => { const g = v.gps, identityMatches = (!v.doctorId || String(v.doctorId) === String(ent.doctorId)) && normName_(v.name) === normName_(ent.doctorName), matches = identityMatches && (v.workplaceId ? String(v.workplaceId) === String(ent.id) : normName_(v.place) === normName_(ent.workplace));
-    if (matches && g && !g.rawLocationReducedAt && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') { recordGpsReverification_(g, geoEnt, rad, refAcc); changed = true; n++; } }); return changed; };
+    if (matches && g && !g.rawLocationReducedAt && typeof g.lat === 'number' && typeof g.lng === 'number' && isFinite(g.lat) && isFinite(g.lng)) { recordGpsReverification_(g, geoEnt, rad, refAcc); changed = true; n++; } }); return changed; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) { const op = parse(vals[i][ix('doctors')]); if (op && fix(op)) rs.getRange(i + 1, ix('doctors') + 1).setValue(JSON.stringify(op)); }
   return n;
@@ -1010,7 +1044,7 @@ function reverify_(sheet, ent) {
   const parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
-    if ((v.pharmacyId ? String(v.pharmacyId) === String(ent.id) && normName_(v.name) === normName_(ent.name) : normName_(v.name) === normName_(ent.name)) && g && !g.rawLocationReducedAt && g.status === 'مرجع غير مؤكد' && typeof g.lat === 'number') {
+    if ((v.pharmacyId ? String(v.pharmacyId) === String(ent.id) && normName_(v.name) === normName_(ent.name) : normName_(v.name) === normName_(ent.name)) && g && !g.rawLocationReducedAt && typeof g.lat === 'number' && typeof g.lng === 'number' && isFinite(g.lat) && isFinite(g.lng)) {
       recordGpsReverification_(g, geoEnt, rad, refAcc); ch = true; n++; } }); return ch; };
   // Update only the operational visit data. snapshot/snapshot1 are immutable historical copies.
   for (let i = 1; i < vals.length; i++) {
