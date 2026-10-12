@@ -830,10 +830,6 @@ function rewriteNames_(sheet, from, to) {
 /* ---------- facility location authority (legacy UI adapter) ---------- */
 function facilityForLegacy_(entity, legacyId) {
   if (!sheet_('Facilities')) return null;
-  return dbAll_('Facilities').find(f => f.legacyEntity === entity && String(f.legacyId) === String(legacyId)) || null;
-}
-function facilityForLegacy_(entity, legacyId) {
-  if (!sheet_('Facilities')) return null;
   // Doctor workplaces resolve through the shared facility relation first.
   if (entity === 'DoctorWorkplaces' && sheet_('DoctorPlaces')) {
     const rel = dbAll_('DoctorPlaces').find(x => String(x.legacyWorkplaceId) === String(legacyId) && String(x.active) !== 'false');
@@ -1674,9 +1670,9 @@ function migrateLegacyFacilitiesV1() {
         id: id, facilityId: facility.id, lat: +legacy.lat, lng: +legacy.lng,
         radius: legacy.radius === '' || legacy.radius == null ? '' : +legacy.radius,
         source: legacy.refBy || 'LEGACY', state: confirmed ? 'مؤكد' : 'مراجعة مطلوبة',
-        proposedBy: '', proposedAt: '', approvedBy: '', approvedAt: '', version: 1,
+        proposedBy: '', proposedAt: '', approvedBy: confirmed ? 'MIGRATION_V1' : '', approvedAt: confirmed ? now : '', version: 1,
         active: String(legacy.active) === 'false' ? false : true,
-        note: 'منقول دون تعديل من ' + entity + ' / ' + legacy.id
+        note: 'منقول دون تعديل من ' + entity + ' / ' + legacy.id + (confirmed ? '؛ اعتماد سابق منقول من المرجع الإداري القديم' : '')
       };
       dbAppend_('FacilityLocations', row); locations.push(row); locationsAdded++;
     };
