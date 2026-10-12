@@ -825,7 +825,6 @@ function workplacesList_(s, p) {
     locationsByFacility.get(key).push(loc);
   });
   locationsByFacility.forEach(rows => rows.sort((a, b) => (+b.version || 0) - (+a.version || 0)));
-  const workplaceById = new Map(workplaces.map(w => [String(w.id), w]));
 
   return workplaces.map(w => {
     let facility = null;
