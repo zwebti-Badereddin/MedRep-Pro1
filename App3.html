@@ -34,11 +34,12 @@ function form(k,idx){
  <label>الطلبية</label><input id="f_order" value="${f("order")}">`;
  $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
  $("#ov").classList.add("on");startGeo();
+ if(k==="d"){
  const specWrap=$("#f_spec_new_wrap"),specInput=$("#f_spec_new"),specMsg=$("#f_spec_msg"),specToggle=$("#f_spec_toggle"),specSave=$("#f_spec_save");
  specToggle.onclick=()=>{specWrap.style.display=specWrap.style.display==="none"?"block":"none";specMsg.textContent="";if(specWrap.style.display==="block")specInput.focus()};
  $("#f_spec_cancel").onclick=()=>{specWrap.style.display="none";specInput.value="";specMsg.textContent=""};
  specSave.onclick=async()=>{
-  const name=specInput.value.trim().replace(/\\s+/g," ");
+  const name=specInput.value.trim().replace(/\s+/g," ");
   if(name.length<2){specMsg.textContent="أدخل اسم تخصص من حرفين على الأقل.";return}
   specSave.disabled=true;specMsg.textContent="جارٍ حفظ التخصص…";
   try{
@@ -51,6 +52,7 @@ function form(k,idx){
   }catch(e){specMsg.textContent=e.message||"تعذر حفظ التخصص."}
   finally{specSave.disabled=false}
  };
+ }
   {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
    const fillDoctor=r=>{if(r.isNew){const list=(CFG.facilities||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح منشأة جديدة</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
