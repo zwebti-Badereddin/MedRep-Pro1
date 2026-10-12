@@ -580,10 +580,14 @@ function reportVisitGpsCheck_(v, kind, st) {
   let ent = null;
   if (kind === 'doctor') {
     const rows = dbAll_('DoctorWorkplaces');
-    let w = v.workplaceId ? rows.find(x => String(x.id) === String(v.workplaceId)) : null;
+    let w = v.workplaceId ? rows.find(x => String(x.id) === String(v.workplaceId) &&
+      (!v.doctorId || String(x.doctorId) === String(v.doctorId))) : null;
     if (!w) {
-      const matches = rows.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place || ''));
-      if (matches.length) w = matches[0];
+      const matches = rows.filter(x => String(x.active) !== 'false' &&
+        normName_(x.workplace) === normName_(v.place || '') &&
+        (!v.doctorId || String(x.doctorId) === String(v.doctorId)));
+      // A name-only fallback is safe only when it resolves to exactly one workplace for this doctor.
+      if (matches.length === 1) w = matches[0];
     }
     if (w && String(w.active) !== 'false') ent = facilityGeoEntity_('DoctorWorkplaces', w.id) || w;
   } else {
@@ -799,8 +803,9 @@ function gpsReference_(s, p) {
     const placeName = normName_(p.place || '');
     let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId && String(w.active) !== 'false' && (!placeName || normName_(w.workplace) === placeName)) : null;
     if (!workplace && placeName) {
-      const matches = dbAll_('DoctorWorkplaces').filter(w => String(w.active) !== 'false' && normName_(w.workplace) === placeName);
-      if (matches.length) workplace = matches.find(w => facilityForLegacy_('DoctorWorkplaces', w.id)) || matches[0];
+      const matches = dbAll_('DoctorWorkplaces').filter(w => String(w.active) !== 'false' &&
+        normName_(w.workplace) === placeName && (!doctorId || String(w.doctorId) === doctorId));
+      if (matches.length === 1) workplace = matches[0];
     }
     if (workplace) geo = facilityGeoEntity_('DoctorWorkplaces', workplace.id);
   } else if (kind === 'pharmacy') {
