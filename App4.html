@@ -4,8 +4,8 @@
 const SC={"مسودة":"s0","جاهز للمراجعة":"s1","مرسل":"s2","معتمد":"s3","معاد للمندوب":"s4"};
 let repScreenSeq=0;
 function repTop(t){return `<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:12px">${t}</h2></div>`}
-function repNav(a){return `<div class="tabs">${[["t","اليوم"],["h","تقاريري"],["p","أدائي"]].map(x=>`<button class="btn rn${x[0]===a?" on":""}" data-n="${x[0]}">${x[1]}</button>`).join("")}</div>`}
-function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else screenPerf()});
+function repNav(a){const items=[["t","اليوم"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);return `<div class="tabs">${items.map(x=>`<button class="btn rn${x[0]===a?" on":""}" data-n="${x[0]}">${x[1]}</button>`).join("")}</div>`}
+function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
 async function screenHistory(){
  const seq=++repScreenSeq;
@@ -48,12 +48,12 @@ function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.
  cb(null)};im.src=rd.result};rd.readAsDataURL(file)}
 function tabCo(){
  const view=settingsViewSeq,live=()=>view===settingsViewSeq&&!!$("#sv2");
- const st=CFG.st||{},logoInitial=String(st.logo||""),v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true";LG=undefined;
+ const st=CFG.st||{},logoInitial=String(st.logo||""),v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true",repPerfEnabled=String(st.repPerformanceEnabled)!=="false";LG=undefined;
  $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
  <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
  <label>عنوان التقرير</label><input id="c_t" value="${v("reportTitle")}"><label>هاتف الشركة</label><input id="c_p" value="${v("phone")}"><label>عنوان الشركة</label><input id="c_a" value="${v("address")}">
  <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https://drive.google.com/file/d/..." value="${v("logo")}"><div style="display:flex;gap:10px;align-items:center;margin-top:8px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${logoInitial?"block":"none"}" src="${logoInitial?esc(logoInitial):""}"><button class="mini" id="c_logo_save">حفظ رابط الشعار</button><button class="mini" id="c_rm">إزالة</button></div><div class="empty" style="margin-top:6px">إذا استخدمت Google Drive، اجعل الوصول إلى الصورة «أي شخص لديه الرابط».</div>
- <div class="sec"><h3>التقارير والموقع</h3></div><label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="c_e" value="${v("reportEmail")}">
+ <div class="sec"><h3>إعدادات واجهة المندوب</h3></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="c_rep_perf" type="checkbox" style="width:auto;min-height:0" ${repPerfEnabled?"checked":""}> إظهار قسم «أدائي» للمندوب</label><div class="empty" style="margin:6px 0 12px">عند إلغاء التحديد يختفي تبويب «أدائي» من واجهة المندوب فقط، ولا تُحذف بيانات الأداء.</div><div class="sec"><h3>التقارير والموقع</h3></div><label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="c_e" value="${v("reportEmail")}">
  <div class="two"><div><label>ساعة الإغلاق (0–23)</label><input id="c_ch" type="number" min="0" max="23" value="${esc(st.closeHour||10)}"></div><div><label>نطاق الموقع (متر)</label><input id="c_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"></div></div><label>أقصى دقة GPS مقبولة (متر)</label><input id="c_ga" type="number" min="1" max="500" value="${esc(st.gpsRefAcc||50)}"><small>القراءة ذات دقة أضعف من هذا الحد لا تُحتسب متحققة.</small>
  <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="c_w" value="${esc(st.workDays||"0,1,2,3,4")}">
  <div class="sec"><h3>التذكيرات</h3></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="c_r" type="checkbox" style="width:auto;min-height:0" ${re?"checked":""}> تفعيل التذكيرات (للمندوب بالبريد، وملخص للمدير بمن لم يرسل)</label>
@@ -62,7 +62,7 @@ function tabCo(){
  $("#c_logo_url").oninput=()=>{const u=$("#c_logo_url").value.trim();if(u){$("#c_img").src=u;$("#c_img").style.display="block"}else $("#c_img").style.display="none"};
  $("#c_logo_save").onclick=()=>saveLogo($("#c_logo_url").value.trim());
  $("#c_rm").onclick=()=>{ $("#c_logo_url").value=""; saveLogo("") };
- $("#c_go").onclick=async()=>{const vals={companyName:$("#c_n").value,shortName:$("#c_s").value,brandColor:$("#c_c").value,reportTitle:$("#c_t").value,phone:$("#c_p").value,address:$("#c_a").value,reportEmail:$("#c_e").value,closeHour:$("#c_ch").value,workDays:$("#c_w").value.replace(/\s/g,""),gpsRadius:$("#c_g").value,gpsRefAcc:$("#c_ga").value};
+ $("#c_go").onclick=async()=>{const vals={companyName:$("#c_n").value,shortName:$("#c_s").value,brandColor:$("#c_c").value,reportTitle:$("#c_t").value,phone:$("#c_p").value,address:$("#c_a").value,reportEmail:$("#c_e").value,closeHour:$("#c_ch").value,workDays:$("#c_w").value.replace(/\s/g,""),gpsRadius:$("#c_g").value,gpsRefAcc:$("#c_ga").value,repPerformanceEnabled:$("#c_rep_perf").checked?"true":"false"};
   if(+vals.gpsRadius<20||+vals.gpsRefAcc<1||+vals.gpsRefAcc>500)throw new Error("تحقق من نطاق الموقع ودقة GPS (1–500 متر).");const b=$("#c_go");b.disabled=true;$("#c_err").textContent="";
   try{await srv("saveSettings",{values:vals});if(!live())return;let rm="";const reminders={enabled:$("#c_r").checked,hour:$("#c_h").value,evening:$("#c_h2").value};
    try{await srv("setReminders",reminders)}catch(e){rm="حُفظت الإعدادات لكن تعذّر ضبط التذكيرات: "+e.message}
