@@ -801,7 +801,7 @@ function gpsReference_(s, p) {
     const workplaceId = String(p.workplaceId || '');
     const doctorName = normName_(p.doctorName || p.name || '');
     const placeName = normName_(p.place || '');
-    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId && String(w.active) !== 'false' && (!placeName || normName_(w.workplace) === placeName)) : null;
+    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId && String(w.active) !== 'false' && (!doctorId || String(w.doctorId) === doctorId) && (!placeName || normName_(w.workplace) === placeName)) : null;
     if (!workplace && placeName) {
       const matches = dbAll_('DoctorWorkplaces').filter(w => String(w.active) !== 'false' &&
         normName_(w.workplace) === placeName && (!doctorId || String(w.doctorId) === doctorId));
