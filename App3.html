@@ -33,7 +33,7 @@ function form(k,idx){
  <label>النشاط داخل الصيدلية</label><input id="f_act" value="${f("act")}">
  <label>الطلبية</label><input id="f_order" value="${f("order")}">`;
  $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
- $("#ov").classList.add("on");if(idx==null)startGeo();
+ $("#ov").classList.add("on");startGeo();
   {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
    const fillDoctor=r=>{if(r.isNew){const list=(CFG.facilities||[]).filter(w=>String(w.active)!=="false");$("#f_workplace").innerHTML=list.map(w=>'<option value="'+esc(w.id)+'" data-place="'+esc(w.workplace)+'">'+esc(w.workplace)+(w.reviewed?'':' (بانتظار اعتماد الإدارة)')+'</option>').join("")+'<option value="__new__">＋ اقتراح منشأة جديدة</option>';$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
@@ -67,7 +67,9 @@ function form(k,idx){
    const v=k==="d"?{name:rec.name,doctorId:rec.id,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,workplaceId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
     :{name:rec.name,pharmacyId:rec.id,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
   const arr=k==="d"?S.docs:S.phs;let ref;
-  if(idx!=null){v.gps=cur.gps;arr[idx]=v;ref=v}else{v.gps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:{status:"غير متاح"};arr.push(v);ref=v;if(!v.gps||typeof v.gps.lat!=="number")grabGps(ref)}
+  const freshGps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:null;
+   if(idx!=null){v.gps=freshGps||cur.gps;arr[idx]=v;ref=v}else{v.gps=freshGps||{status:"غير متاح"};arr.push(v);ref=v}
+   if(!ref.gps||typeof ref.gps.lat!=="number")grabGps(ref)
   stopGeo();$("#ov").classList.remove("on");auto();home();
  };
 }
