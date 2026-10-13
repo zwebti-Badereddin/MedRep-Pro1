@@ -11,7 +11,7 @@ function tabM(){
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
- if(MS.ent==="Doctors"||MS.ent==="Pharmacies"){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+(MS.ent==="Doctors"?"أطباء":"صيدليات")+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
+ if(IMPORT_COLS[MS.ent]){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+IMPORT_NAMES[MS.ent]+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
 async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="Facilities"?"facilitiesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
@@ -34,7 +34,7 @@ function drawFacilities(){
  const pend=r=>(r.links||[]).filter(l=>l.active&&l.linkState==="بانتظار");
  const needs=r=>!off(r)&&(!r.approved||pend(r).length>0);
  const a=MS.rows.filter(r=>(f==="new"?needs(r):f==="links"?pend(r).length>0:f==="off"?off(r):!r.mergedInto)&&(!q||norm(r.name+" "+(r.links||[]).map(l=>l.doctorName).join(" ")).includes(q)));
- const geo=r=>!has(r)?"لا إحداثيات":r.approved?"الموقع معتمد ✓":r.geoSource==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":"الموقع بانتظار الاعتماد";
+ const geo=r=>!has(r)?"لا إحداثيات":r.approved?"الموقع معتمد ✓":r.geoSource==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":r.geoSource==="ADMIN_IMPORT"?"إحداثيات مستوردة من Excel — راجعها واعتمدها":"الموقع بانتظار الاعتماد";
  $("#ml").innerHTML='<button class="btn dash" id="facAdd">＋ إضافة منشأة</button><div style="height:10px"></div>'+(a.length?a.map(r=>{
   const docs=(r.links||[]).filter(l=>l.active&&l.linkState!=="مرفوض");
   return '<div class="row" data-id="'+esc(r.id)+'" style="display:block;'+(off(r)?"opacity:.65":"")+'"><b>'+esc(r.name)+'</b> '+
@@ -43,7 +43,7 @@ function drawFacilities(){
   (has(r)?'<div style="font-size:12px;color:var(--mut);margin-top:4px">الإحداثيات: '+(+r.lat).toFixed(6)+', '+(+r.lng).toFixed(6)+'</div>':'')+
   (docs.length?'<div style="font-size:12px;margin-top:6px">الأطباء: '+docs.map(l=>'<span style="display:inline-flex;gap:4px;align-items:center;margin:2px 8px 2px 0">'+esc(l.doctorName)+
    (l.linkState==="بانتظار"?' <span class="st s1">ربط جديد</span><button class="mini" type="button" data-l="approve" data-lid="'+esc(l.id)+'">اعتماد</button><button class="mini" type="button" data-l="reject" data-lid="'+esc(l.id)+'">رفض</button>':'')+'</span>').join("")+'</div>':'')+
-  (r.mergedInto?'':'<div class="acts"><button class="mini" data-a="map">'+(r.geoSource==="REP_PROPOSAL"&&!r.approved?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
+  (r.mergedInto?'':'<div class="acts"><button class="mini" data-a="map">'+((r.geoSource==="REP_PROPOSAL"||r.geoSource==="ADMIN_IMPORT")&&!r.approved?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
    (has(r)?'<a class="mini" href="https:\/\/www.openstreetmap.org/?mlat='+encodeURIComponent(r.lat)+'&mlon='+encodeURIComponent(r.lng)+'#map=18/'+encodeURIComponent(r.lat)+'/'+encodeURIComponent(r.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a><button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
    '<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button><button class="mini" data-a="toggle">'+(off(r)?"تفعيل":"تعطيل")+'</button></div>')+'</div>';
  }).join(""):'<div class="empty">لا توجد منشآت مطابقة.</div>');
@@ -73,17 +73,18 @@ function similarFacilitiesHtml(list){
  return '<div class="ap-sec"><b>توجد منشأة مسجلة مشابهة — تأكد أنها ليست نفسها:</b>'+list.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'</div>'+(x.distance!=null?'<span class="st">'+x.distance+' م</span>':'')+'</div>').join("")+'</div>';
 }
 /* Bulk import: paste columns copied from Excel (tab-separated), preview, then add. Existing names are never duplicated. */
-const IMPORT_COLS={Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة"};
+const IMPORT_COLS={Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة",Facilities:"الاسم · النوع · العنوان · خط العرض · خط الطول"};
+const IMPORT_NAMES={Doctors:"أطباء",Pharmacies:"صيدليات",Facilities:"منشآت"};
 const parsePasted=t=>String(t||"").split(/\r?\n/).map(l=>l.split("\t"));
 function importResultHtml(r,committed){
  const li=(a,f)=>a.length?'<ul>'+a.slice(0,50).map(f).join("")+(a.length>50?'<li>… و'+(a.length-50)+' غيرها</li>':"")+'</ul>':"";
  return '<div class="imres"><div class="ims"><span>'+(committed?"أُضيف ":"سيُضاف ")+(committed?r.added:r.add.length)+'</span><span>موجود مسبقًا '+r.dup.length+'</span><span>غير صالح '+r.invalid.length+'</span></div>'+
-  (committed?"":li(r.add,x=>'<li>'+esc(x.name)+(x.specialty||x.location?' · '+esc(x.specialty||x.location):"")+'</li>'))+
+  (committed?"":li(r.add,x=>'<li>'+esc(x.name)+(x.specialty||x.location||x.address?' · '+esc(x.specialty||x.location||x.address):"")+(x.lat!==""&&x.lat!=null?' · 📍':"")+'</li>'))+
   (r.dup.length?'<b>لن يُضاف لأنه موجود:</b>'+li(r.dup,x=>'<li>سطر '+x.line+': '+esc(x.name)+' ← '+esc(x.existing)+'</li>'):"")+
   (r.invalid.length?'<b>أسطر غير صالحة:</b>'+li(r.invalid,x=>'<li>سطر '+x.line+': '+esc(x.reason)+'</li>'):"")+'</div>'}
 function openImport(ent){
- $("#modal").innerHTML='<h3>استيراد '+(ent==="Doctors"?"أطباء":"صيدليات")+' من Excel</h3>'+
-  '<div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب: <b>'+IMPORT_COLS[ent]+'</b> ثم الصقها هنا. يكفي عمود الاسم وحده. أقصى عدد 1000 سطر.</div>'+
+ $("#modal").innerHTML='<h3>استيراد '+IMPORT_NAMES[ent]+' من Excel</h3>'+
+  '<div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب: <b>'+IMPORT_COLS[ent]+'</b> ثم الصقها هنا. يكفي عمود الاسم وحده. أقصى عدد 1000 سطر.'+(ent==="Facilities"?' الإحداثيات اختيارية، ويمكن لصقها من خرائط Google في عمود واحد بالشكل «32.88, 13.17». المواقع المستوردة لا تُعتمد تلقائيًا: راجع كل منشأة من الخريطة واعتمد موقعها.':"")+'</div>'+
   '<textarea id="im_t" rows="8" dir="auto"></textarea><div id="im_r"></div><div class="err" id="im_e"></div>'+
   '<div class="mfoot"><button type="button" class="btn" id="cx">إغلاق</button><button type="button" class="btn pri" id="sv">معاينة</button></div>';
  $("#ov").classList.add("on");$("#im_t").focus();

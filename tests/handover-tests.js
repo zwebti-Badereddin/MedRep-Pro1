@@ -111,6 +111,28 @@ test('import pharmacies maps name, location, nearest facility; only doctors and 
   expectError(() => env.call(adm, 'importMaster', { entity: 'Doctors', rows: Array.from({ length: 1001 }, (_, i) => ['طبيب رقم ' + i]) }), /1000/);
 });
 
+test('import facilities: type default, coordinates optional (two cells or "lat, lng"), invalid coordinates rejected, duplicates vs live facilities', () => {
+  const { env, adm } = setup();
+  const r = JSON.parse(JSON.stringify(env.call(adm, 'importMaster', { entity: 'Facilities', rows: [['اسم المنشأة', 'النوع'], ['مستشفى الخضراء', 'مستشفى', 'طريق المطار', '32.85', '13.21'],
+    ['مصحة النور', '', '', '32.88, 13.17'], ['عيادة الأمل', 'عيادة', 'الهاني'], ['مركز بلا طول', '', '', '32.8'], ['مكان بعيد', '', '', '200', '13'], ['مصحه الشفاء']] })));
+  assert.deepStrictEqual(r.add.map(x => [x.name, x.type, x.lat, x.lng]), [['مستشفى الخضراء', 'مستشفى', 32.85, 13.21], ['مصحة النور', 'منشأة طبية', 32.88, 13.17], ['عيادة الأمل', 'عيادة', '', '']]);
+  assert.deepStrictEqual(r.invalid.map(x => [x.line, x.reason]), [[5, 'إحداثيات غير صحيحة'], [6, 'إحداثيات غير صحيحة']]);
+  assert.deepStrictEqual(r.dup.map(x => x.existing), ['مصحة الشفاء']);
+});
+test('import facilities commit: new FAC ids; imported coordinates stay a proposal (not approved) and count as "needs review"', () => {
+  const { env, adm } = setup();
+  const r = env.call(adm, 'importMaster', { entity: 'Facilities', commit: true, rows: [['مستشفى الخضراء', 'مستشفى', 'طريق المطار', '32.85', '13.21'], ['عيادة الأمل']] });
+  assert.strictEqual(r.added, 2);
+  const [a, b] = env.rows('Facilities').slice(-2);
+  assert.ok(/^FAC-[0-9A-F]{12}$/.test(a.id) && a.id !== b.id && a.legacyId === a.id && a.legacyEntity === 'DOCTOR_FACILITY');
+  assert.deepStrictEqual([a.status, a.geoState, a.geoSource, a.geoBy, String(a.lat)], ['نشط', 'مراجعة مطلوبة', 'ADMIN_IMPORT', '', '32.85']);
+  assert.deepStrictEqual([b.geoState, b.geoSource, b.lat], ['', '', '']);
+  assert.ok(!env.ctx.facilityApproved_(a));
+  const list = env.call(adm, 'facilitiesList', {}), imp = list.find(f => f.id === a.id);
+  assert.ok(imp && !imp.approved);
+  assert.strictEqual(JSON.parse(JSON.stringify(env.call(adm, 'setupStatus'))).items.find(i => i.key === 'facilities').detail, '3 منشأة بلا موقع معتمد');
+});
+
 /* ---------- client ---------- */
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 const app1 = read('App1.html'), app2 = read('App2.html'), app4 = read('App4.html');
