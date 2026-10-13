@@ -33,7 +33,7 @@ function makeSheet(name, rows, reads) {
 // opts.legacyFacilitySchema: build Facilities / DoctorWorkplaces WITHOUT the V2 columns (the shape before migrateFacilityModelV2).
 function makeEnv(seed, opts) {
   opts = opts || {};
-  const sheets = {}, cache = new Map(), props = new Map([['SALT', 'test-salt']]), reads = {};
+  const sheets = {}, cache = new Map(), props = new Map([['SALT', 'test-salt']]), reads = {}, ttl = {};
   const ss = {
     getSheetByName: n => sheets[n] || null,
     insertSheet: n => (sheets[n] = makeSheet(n, [], reads)),
@@ -49,10 +49,10 @@ function makeEnv(seed, opts) {
     console: { log: () => {} },
     SpreadsheetApp: { getActive: () => ss, getActiveSpreadsheet: () => ss, getUi: () => { throw new Error('no ui in tests'); } },
     CacheService: { getScriptCache: () => ({
-      get: k => (cache.has(k) ? cache.get(k) : null), put: (k, v) => { cache.set(k, String(v)); },
+      get: k => (cache.has(k) ? cache.get(k) : null), put: (k, v, s) => { cache.set(k, String(v)); ttl[k] = s; },
       remove: k => cache.delete(k), removeAll: ks => ks.forEach(k => cache.delete(k)),
       getAll: ks => { const o = {}; ks.forEach(k => { if (cache.has(k)) o[k] = cache.get(k); }); return o; },
-      putAll: o => Object.keys(o).forEach(k => cache.set(k, String(o[k])))
+      putAll: (o, s) => Object.keys(o).forEach(k => { cache.set(k, String(o[k])); ttl[k] = s; })
     }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, String(v)) }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
@@ -89,6 +89,6 @@ function makeEnv(seed, opts) {
   const rows = n => vm.runInContext('dbAllRaw_', ctx)(n);
   const snapshot = () => JSON.stringify(Object.keys(sheets).sort().map(n => [n, sheets[n]._data]));
   const resetReads = () => Object.keys(reads).forEach(k => delete reads[k]);
-  return { ctx, sheets, call, session, rows, reads, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
+  return { ctx, sheets, call, session, rows, reads, ttl, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
 }
 module.exports = { makeEnv };

@@ -95,11 +95,11 @@ let adminNavSeq=0;
 function adminHome(){
  const n=new Date();
  $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
- <div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
+ <div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
- const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
- document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("r");
+ const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
+ document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("d");
 }
 function tabSetLegacy(){
  const st=CFG.st||{};
@@ -110,7 +110,7 @@ function tabSetLegacy(){
  <label>عنوان التقرير</label><input id="c_t" value="${esc(st.reportTitle||"")}">
  <label>هاتف الشركة</label><input id="c_p" value="${esc(st.phone||"")}">
  <label>عنوان الشركة</label><input id="c_a" value="${esc(st.address||"")}">
- <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https://drive.google.com/file/d/..." value="${esc(st.logo||"")}">
+ <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https:\/\/drive.google.com/file/d/..." value="${esc(st.logo||"")}">
  <div style="display:flex;gap:10px;align-items:center;margin:8px 0 14px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${st.logo?"block":"none"}" src="${esc(st.logo||"")}"><button class="mini" id="c_logo_save" type="button">حفظ رابط الشعار</button><button class="mini" id="c_rm" type="button">إزالة الشعار</button></div>
  <label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="s_e" type="text" value="${esc(st.reportEmail||"")}">
  <label>ساعة إغلاق التقرير</label><input id="s_h" type="number" min="0" max="23" value="${esc(st.closeHour===undefined?10:st.closeHour)}">
@@ -233,7 +233,7 @@ function drawGpsComparisonVisit(v){
   if(drawSeq!==visitGpsDrawSeq||!$("#visitGpsMap"))return;
   const pts=[];if(repOk)pts.push([+g.lat,+g.lng]);if(refOk)pts.push([+rawRef.lat,+rawRef.lng]);
   visitCompareMapInstance=L.map("visitGpsMap",{scrollWheelZoom:true}).setView(pts[0],17);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:`&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`}).addTo(visitCompareMapInstance);
+  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:`&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`}).addTo(visitCompareMapInstance);
   if(refOk){
    L.circle([+rawRef.lat,+rawRef.lng],{radius:Math.max(20,+rawRef.radius||150),color:"#2563eb",fillColor:"#2563eb",fillOpacity:.08,weight:2}).addTo(visitCompareMapInstance);
    L.circleMarker([+rawRef.lat,+rawRef.lng],{radius:9,color:"#1d4ed8",fillColor:"#3b82f6",fillOpacity:1}).addTo(visitCompareMapInstance).bindPopup("موقع المنشأة المعتمد");

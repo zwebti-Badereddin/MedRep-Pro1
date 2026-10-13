@@ -130,6 +130,7 @@ const ROUTES = {
   saveSettings:  { role: 'admin', fn: saveSettings_ },
   saveLogo:      { role: 'admin', fn: saveCompanyLogo_ },
   performance:   { role: 'admin', fn: performance_ },
+  dashboard:     { role: 'admin', fn: dashboard_ },
   audit:         { role: 'admin', fn: (s, p) => dbAll_('Audit').slice(-(p.limit || 200)).reverse() }
 };
 
@@ -265,9 +266,12 @@ function login_(p) {
   // one round trip: session + lookups + today's report (login audit is written by a follow-up call)
   let t = Date.now();
   const boot = bootstrap_(s); phase_('bootstrap', t); t = Date.now();
-  const report = user.role === 'rep' ? myReport_(s, {}) : null; phase_('todayReport', t); t = Date.now();
-  const prev = user.role === 'rep' ? prevInfo_(s) : null; phase_('prevInfo', t);
-  return { token, device: deviceToken_(user.id), user, boot, report, prev };
+  // Login is read-only from here on: today's report and yesterday's info share ONE read of the Reports index.
+  const rep = user.role === 'rep' ? reportsLightOnce_(() => {
+    const r = myReport_(s, {}); phase_('todayReport', t); t = Date.now();
+    const p = prevInfo_(s); phase_('prevInfo', t); return { report: r, prev: p };
+  }) : { report: null, prev: null };
+  return { token, device: deviceToken_(user.id), user, boot, report: rep.report, prev: rep.prev };
 }
 // Owner-only: clears the shared login counters (menu: MedRep Pro).
 function resetLoginThrottle() {
@@ -389,8 +393,14 @@ function cachePutLarge_(key, str, sec) {
 }
 // V2 lookups use their own cache key: a value cached by the previous (workplace-based) deployment can never be served as V2.
 const LOOKUPS_KEY = 'lk2';
+// Lookups and settings change only through the app, and every such write calls clearCache_(), so they can be cached for the
+// CacheService maximum (6 h). A manual edit in the sheet shows after 6 h, or at once via the menu item refreshAppCache.
+const CACHE_LONG_SEC = 21600;
 function lookups_() {
   const hit = cacheGetLarge_(LOOKUPS_KEY); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  return readScope_(lookupsBuild_); // each sheet read once (Doctors and Settings are also read by specialtyList_)
+}
+function lookupsBuild_() {
   requireFacilityV2_();
   const act = r => String(r.active) !== 'false';
   // Facility choices come straight from Facilities (one row per facility, shared by all doctors). Pharmacy facilities are separate.
@@ -415,7 +425,7 @@ function lookups_() {
     products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status })),
     specialties: specialtyList_()
   };
-  cachePutLarge_(LOOKUPS_KEY, JSON.stringify(v), 300);
+  cachePutLarge_(LOOKUPS_KEY, JSON.stringify(v), CACHE_LONG_SEC);
   return v;
 }
 function clearCache_() {
@@ -724,7 +734,7 @@ function requireFacilityV2_() {
   const head = n => { const sh = sheet_(n); return sh && sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : []; };
   if (['Facilities', 'DoctorWorkplaces'].some(n => { const h = head(n); return T[n].some((col, i) => h[i] !== col); }))
     throw new Error('لم يكتمل تحديث بنية المنشآت. يجب أن يشغّل مالك المشروع migrateFacilityModelV2 أولًا.');
-  try { c.put('v2_ok', '1', 600); } catch (e) {}
+  try { c.put('v2_ok', '1', CACHE_LONG_SEC); } catch (e) {}
 }
 function workplacePolicy_() { return String(settings_().workplacePolicy || '') === 'strict' ? 'strict' : 'soft'; }
 // Follows merges (a few hops at most) so references to a merged facility reach the surviving one.
@@ -1582,7 +1592,7 @@ function settings_() {
     if (hit) o = JSON.parse(hit);
     else {
       o = {}; dbAll_('Settings').forEach(r => o[r.key] = r.value);
-      try { cache.put('st', JSON.stringify(o), 300); } catch (e) {}
+      try { cache.put('st', JSON.stringify(o), CACHE_LONG_SEC); } catch (e) {} // every settings write calls clearCache_()
     }
     _ST = Object.assign({}, o);
   }
@@ -1656,6 +1666,78 @@ function performance_(s, p) {
     });
     return { repId: rep.id, name: rep.name, compliance: comp[rep.id], off: { total: allDays.length, avail: availOf(rep.id) }, gps: { total: docs.length + phs.length, ver: docs.concat(phs).filter(v => v.gps && v.gps.status === 'تم التحقق').length, out: docs.concat(phs).filter(v => v.gps && v.gps.status === 'خارج النطاق').length, pending: docs.concat(phs).filter(v => !v.gps || ['تم التحقق', 'خارج النطاق'].indexOf(v.gps.status) < 0).length }, score: Math.round(rows.reduce((a, r) => a + r.weighted, 0)), kpis: rows };
   }).sort((a, b) => b.score - a.score).map((r, i) => Object.assign(r, { rank: i + 1 }));
+}
+
+/* ---------- admin dashboard: one cached call; reads only the two visit columns of the period's reports ---------- */
+const DASH_GPS = ['تم التحقق', 'خارج النطاق', 'غير حاسم', 'مرجع غير مؤكد', 'غير متاح'];
+function reportVisitColumns_(rows) {
+  const out = {}; if (!rows.length) return out;
+  const sh = sheet_('Reports'), cd = T.Reports.indexOf('doctors') + 1, cp = T.Reports.indexOf('pharmacies') + 1; // adjacent columns
+  const lo = Math.min.apply(null, rows.map(r => r.rowNo)), hi = Math.max.apply(null, rows.map(r => r.rowNo));
+  const block = sh.getRange(lo, cd, hi - lo + 1, cp - cd + 1).getValues();
+  const parse = x => { try { const a = JSON.parse(x || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+  rows.forEach(r => { const v = block[r.rowNo - lo]; out[r.id] = { doctors: parse(v[0]), pharmacies: parse(v[cp - cd]) }; });
+  return out;
+}
+function dashboard_(s, p) {
+  const td = today_(), from = isDate_(p.from) ? p.from : td.slice(0, 8) + '01', to = isDate_(p.to) ? p.to : td;
+  if (to < from) throw new Error('تاريخ البداية بعد تاريخ النهاية.');
+  const DAY = 864e5, ms = d => Date.parse(d + 'T12:00:00Z'), fmt = t => Utilities.formatDate(new Date(t), 'UTC', 'yyyy-MM-dd');
+  const days = Math.round((ms(to) - ms(from)) / DAY) + 1;
+  if (days > 366) throw new Error('اختر فترة لا تزيد على سنة.');
+  const key = 'dash_' + from + '_' + to, hit = cacheGetLarge_(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  // The previous period has the same length and ends the day before `from`: the cards compare against it.
+  const pFrom = fmt(ms(from) - days * DAY), pTo = fmt(ms(from) - DAY);
+  const sent = r => r.status === 'مرسل' || r.status === 'معتمد', light = reportsLight_();
+  const cur = light.filter(r => sent(r) && r.date >= from && r.date <= to), prev = light.filter(r => sent(r) && r.date >= pFrom && r.date <= pTo);
+  const visits = reportVisitColumns_(cur.concat(prev)), sum = (rows, k) => rows.reduce((n, r) => n + visits[r.id][k].length, 0);
+  const change = (a, b) => (b ? Math.round((a - b) / b * 100) : null);
+  const reps = {}; dbAll_('Reps').forEach(r => { reps[r.id] = r; });
+  // Daily movement and GPS verdicts of the period.
+  const daily = {}; for (let t = ms(from); t <= ms(to); t += DAY) daily[fmt(t)] = { d: 0, p: 0 };
+  const gps = {}; DASH_GPS.forEach(k => { gps[k] = 0; });
+  cur.forEach(r => {
+    const v = visits[r.id]; if (daily[r.date]) { daily[r.date].d += v.doctors.length; daily[r.date].p += v.pharmacies.length; }
+    v.doctors.concat(v.pharmacies).forEach(x => { const st = x && x.gps && x.gps.status; gps[DASH_GPS.indexOf(st) >= 0 ? st : 'غير متاح']++; });
+  });
+  // Most visited facilities: a visit counts for its facility (merges followed); older visits via their workplace row or place text.
+  const facilities = readScope_(() => {
+    const fx = { facilities: sheet_('Facilities') ? dbAll_('Facilities') : [], workplaces: dbAll_('DoctorWorkplaces') }, agg = {};
+    cur.forEach(r => visits[r.id].doctors.forEach(v => {
+      let f = v.facilityId ? facilityById_(v.facilityId, fx.facilities) : null;
+      if (!f && v.workplaceId) { const w = fx.workplaces.find(x => String(x.id) === String(v.workplaceId)); f = w ? facilityById_(w.facilityId, fx.facilities) : null; }
+      const k = f ? 'f:' + f.id : 'n:' + normName_(v.place || ''); if (k === 'n:') return;
+      const a = agg[k] = agg[k] || { id: f ? f.id : '', name: f ? f.name : String(v.place || ''), visits: 0, doctors: {} };
+      a.visits++; a.doctors[v.doctorId || normName_(v.name)] = 1;
+    }));
+    return Object.keys(agg).map(k => ({ id: agg[k].id, name: agg[k].name, visits: agg[k].visits, doctors: Object.keys(agg[k].doctors).length }))
+      .sort((a, b) => b.visits - a.visits || a.name.localeCompare(b.name)).slice(0, 10);
+  });
+  // Reporting compliance (on-time submissions / expected working days) of active reps, current vs previous period.
+  const active = Object.keys(reps).filter(id => String(reps[id].active) !== 'false');
+  const comp = compliance_(from, to), compPrev = compliance_(pFrom, pTo);
+  const rate = c => { const e = active.reduce((n, id) => n + ((c[id] || {}).expected || 0), 0), o = active.reduce((n, id) => n + ((c[id] || {}).onTime || 0), 0); return e ? Math.round(o / e * 100) : null; };
+  const compliance = active.map(id => Object.assign({ repId: id, name: reps[id].name }, comp[id] || { expected: 0, onTime: 0, late: 0, missing: 0, pct: 0 }))
+    .sort((a, b) => b.pct - a.pct || a.name.localeCompare(b.name));
+  // Latest reports (any status but draft), newest activity first.
+  const latestRows = light.filter(r => r.status !== 'مسودة').sort((a, b) => String(b.submittedAt || b.updatedAt) < String(a.submittedAt || a.updatedAt) ? -1 : 1).slice(0, 8), vc = visitCounts_(latestRows);
+  const docs = sum(cur, 'doctors'), phs = sum(cur, 'pharmacies'), docsPrev = sum(prev, 'doctors'), phsPrev = sum(prev, 'pharmacies');
+  const compNow = rate(comp), compBefore = rate(compPrev);
+  const out = {
+    from: from, to: to, prevFrom: pFrom, prevTo: pTo, reports: cur.length,
+    cards: {
+      doctorVisits: { value: docs, change: change(docs, docsPrev) },
+      pharmacyVisits: { value: phs, change: change(phs, phsPrev) },
+      compliance: { value: compNow, change: compNow == null || compBefore == null ? null : compNow - compBefore },
+      topFacility: facilities[0] ? { name: facilities[0].name, value: facilities[0].visits } : null
+    },
+    daily: Object.keys(daily).map(d => ({ date: d, doctors: daily[d].d, pharmacies: daily[d].p })),
+    gps: DASH_GPS.map(k => ({ status: k, count: gps[k] })), facilities: facilities, compliance: compliance,
+    latest: latestRows.map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repName: (reps[r.repId] || {}).name || '', visits: vc[r.id] || 0 }))
+  };
+  cachePutLarge_(key, JSON.stringify(out), 300);
+  return out;
 }
 
 /* ---------- GPS verification (visit never blocked; verdict is for management) ----------
@@ -1981,7 +2063,17 @@ function repSave_(s, p) {
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addToUi();
+}
+// Owner-only (menu): after editing master data directly in the sheet, drop the long-lived caches so the app shows it at once.
+function refreshAppCache() {
+  ownerOnly_();
+  clearCache_();
+  const c = CacheService.getScriptCache(), keys = ['v2_ok', 'uc_fac', 'uc_wp', 'uc_doctors', 'uc_pharmacies'];
+  keys.slice(1).forEach(k => { for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(k + '_' + i); });
+  c.removeAll(keys);
+  try { SpreadsheetApp.getUi().alert('تم تحديث بيانات التطبيق. ستظهر التعديلات عند الدخول التالي.'); } catch (e) {} // also runnable from the editor
+  return true;
 }
 function addRepsFromSheet() {
   ownerOnly_();
@@ -2709,7 +2801,18 @@ function dbAllRaw_(n) {
 }
 // The Reports sheet is by far the heaviest (big JSON cells in every row). Hot paths must not read it whole.
 // reportsLight_ reads only the small columns (3 narrow range reads); findReport_ then reads ONE full row.
+// Read-only scope that reuses one reportsLight_() result. Used ONLY by login: the save path must keep reading fresh rows under
+// its lock (duplicate guard), so nothing that writes may run inside this scope.
+let _RL = null;
+function reportsLightOnce_(fn) {
+  const prev = _RL; _RL = { rows: null };
+  try { return fn(); } finally { _RL = prev; }
+}
 function reportsLight_() {
+  if (_RL) return _RL.rows || (_RL.rows = reportsLightRead_());
+  return reportsLightRead_();
+}
+function reportsLightRead_() {
   const sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return [];
   const H = T.Reports, n = last - 1, c1 = H.indexOf('createdAt') + 1, c2 = H.indexOf('reopens') + 1;
   const a = sh.getRange(2, 1, n, 5).getValues(), b = sh.getRange(2, c1, n, 4).getValues(), d = sh.getRange(2, c2, n, 1).getValues(), out = [];

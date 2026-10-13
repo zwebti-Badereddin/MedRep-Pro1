@@ -20,7 +20,7 @@ function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent
  $("#ml").innerHTML=a.length?a.map(r=>{const hasL=r.lat!==""&&r.lat!=null&&isFinite(+r.lat)&&r.lng!==""&&r.lng!=null&&isFinite(+r.lng),pend=hasL&&(r.refBy!=="ADMIN_MAP"||r.refState!=="مؤكد"),ls=dr?"مرجع الزيارة من مكان العمل":!hasL?"لا موقع مسجّل":pend?"الموقع غير معتمد":"الموقع مؤكد ✓",by=isNew(r)?((REPS.find(x=>x.id===r.addedBy)||{}).name||""):"",sub=dr?[r.specialty,r.workplace].filter(Boolean).join(" · "):[r.location,r.nearFacility].filter(Boolean).join(" · ");
   return `<div class="row" data-id="${esc(r.id)}" style="display:block;${isOff(r)?"opacity:.65":""}"><b>${esc(r.name)}</b>${isNew(r)?' <span class="st s1">جديد</span>':""}
   <div style="color:var(--mut);font-size:13px">${esc(sub)}${sub?" · ":""}${r.uses} زيارة · ${ls}${by?" · أضافه "+esc(by):""}</div>
-  <div class="acts">${isNew(r)?'<button class="mini" data-a="review">اعتماد</button>':""}<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button>${!dr?'<button class="mini" data-a="map">تحديد الموقع من الخريطة</button>':""}${!dr&&pend&&r.refBy==="ADMIN_MAP"?'<button class="mini" data-a="approveLoc">اعتماد الموقع</button>':""}${!dr&&hasL?`<a class="mini" href="https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">الخريطة</a><button class="mini" data-a="clearLoc">مسح الموقع</button>`:""}<button class="mini" data-a="toggle">${isOff(r)?"تفعيل":"تعطيل"}</button></div></div>`}).join(""):'<div class="empty">لا توجد سجلات.</div>';
+  <div class="acts">${isNew(r)?'<button class="mini" data-a="review">اعتماد</button>':""}<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button>${!dr?'<button class="mini" data-a="map">تحديد الموقع من الخريطة</button>':""}${!dr&&pend&&r.refBy==="ADMIN_MAP"?'<button class="mini" data-a="approveLoc">اعتماد الموقع</button>':""}${!dr&&hasL?`<a class="mini" href="https:\/\/www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=18/${r.lat}/${r.lng}" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">الخريطة</a><button class="mini" data-a="clearLoc">مسح الموقع</button>`:""}<button class="mini" data-a="toggle">${isOff(r)?"تفعيل":"تعطيل"}</button></div></div>`}).join(""):'<div class="empty">لا توجد سجلات.</div>';
  document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),o=b.dataset.a;
   if(o==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
   if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else if(o==="map")openWorkplaceMap(r);else mAct(id,o)});
@@ -43,7 +43,7 @@ function drawFacilities(){
   (docs.length?'<div style="font-size:12px;margin-top:6px">الأطباء: '+docs.map(l=>'<span style="display:inline-flex;gap:4px;align-items:center;margin:2px 8px 2px 0">'+esc(l.doctorName)+
    (l.linkState==="بانتظار"?' <span class="st s1">ربط جديد</span><button class="mini" type="button" data-l="approve" data-lid="'+esc(l.id)+'">اعتماد</button><button class="mini" type="button" data-l="reject" data-lid="'+esc(l.id)+'">رفض</button>':'')+'</span>').join("")+'</div>':'')+
   (r.mergedInto?'':'<div class="acts"><button class="mini" data-a="map">'+(r.geoSource==="REP_PROPOSAL"&&!r.approved?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
-   (has(r)?'<a class="mini" href="https://www.openstreetmap.org/?mlat='+encodeURIComponent(r.lat)+'&mlon='+encodeURIComponent(r.lng)+'#map=18/'+encodeURIComponent(r.lat)+'/'+encodeURIComponent(r.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a><button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
+   (has(r)?'<a class="mini" href="https:\/\/www.openstreetmap.org/?mlat='+encodeURIComponent(r.lat)+'&mlon='+encodeURIComponent(r.lng)+'#map=18/'+encodeURIComponent(r.lat)+'/'+encodeURIComponent(r.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a><button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
    '<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button><button class="mini" data-a="toggle">'+(off(r)?"تفعيل":"تعطيل")+'</button></div>')+'</div>';
  }).join(""):'<div class="empty">لا توجد منشآت مطابقة.</div>');
  $("#facAdd").onclick=async()=>{
@@ -76,9 +76,9 @@ function loadWorkplaceMapLib(){
  workplaceMapLibPromise=new Promise((resolve,reject)=>{
   if(window.L){resolve();return}
   if(!document.querySelector('link[data-workplace-leaflet]')){
-   const css=document.createElement("link");css.rel="stylesheet";css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";css.dataset.workplaceLeaflet="1";document.head.appendChild(css);
+   const css=document.createElement("link");css.rel="stylesheet";css.href="https:\/\/unpkg.com/leaflet@1.9.4/dist/leaflet.css";css.dataset.workplaceLeaflet="1";document.head.appendChild(css);
   }
-  const script=document.createElement("script");script.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";script.onload=resolve;script.onerror=()=>{workplaceMapLibPromise=null;reject(new Error("تعذر تحميل مكتبة الخريطة. تحقق من الاتصال بالإنترنت ثم حاول مجددًا."))};document.head.appendChild(script);
+  const script=document.createElement("script");script.src="https:\/\/unpkg.com/leaflet@1.9.4/dist/leaflet.js";script.onload=resolve;script.onerror=()=>{workplaceMapLibPromise=null;reject(new Error("تعذر تحميل مكتبة الخريطة. تحقق من الاتصال بالإنترنت ثم حاول مجددًا."))};document.head.appendChild(script);
  });
  return workplaceMapLibPromise;
 }
@@ -101,7 +101,7 @@ function openWorkplaceMap(w){
   e.preventDefault();const query=$("#wpQuery").value.trim();if(!query)return;
   $("#wpSearchStatus").textContent="جارٍ البحث عن المكان…";
   try{
-   const url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q="+encodeURIComponent(query);
+   const url="https:\/\/nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q="+encodeURIComponent(query);
    const res=await fetch(url,{headers:{Accept:"application/json"}});if(!res.ok)throw new Error("تعذر تنفيذ البحث الآن.");
    const results=await res.json();if(!results.length){$("#wpSearchStatus").textContent="لم يُعثر على نتيجة. جرّب اسمًا أو عنوانًا أوضح، أو انقر مباشرة على الخريطة.";return}
    $("#wpSearchStatus").innerHTML=results.map((r,i)=>'<button type="button" class="mini" data-wpres="'+i+'" style="display:block;width:100%;text-align:right;margin:4px 0;white-space:normal">'+esc(r.display_name)+'</button>').join("");
@@ -112,7 +112,7 @@ function openWorkplaceMap(w){
   if(!$("#wpMap"))return;
   const initial=workplaceMapPoint||{lat:32.8872,lng:13.1913};
   workplaceMapInstance=L.map("wpMap").setView([initial.lat,initial.lng],workplaceMapPoint?17:12);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(workplaceMapInstance);
+  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(workplaceMapInstance);
   workplaceMapInstance.on("click",e=>setWorkplaceMapPoint(e.latlng.lat,e.latlng.lng,false));
   if(workplaceMapPoint)setWorkplaceMapPoint(initial.lat,initial.lng,false);
   setTimeout(()=>workplaceMapInstance&&workplaceMapInstance.invalidateSize(),150);

@@ -52,7 +52,7 @@ function tabCo(){
  $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
  <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
  <label>عنوان التقرير</label><input id="c_t" value="${v("reportTitle")}"><label>هاتف الشركة</label><input id="c_p" value="${v("phone")}"><label>عنوان الشركة</label><input id="c_a" value="${v("address")}">
- <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https://drive.google.com/file/d/..." value="${v("logo")}"><div style="display:flex;gap:10px;align-items:center;margin-top:8px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${logoInitial?"block":"none"}" src="${logoInitial?esc(logoInitial):""}"><button class="mini" id="c_logo_save">حفظ رابط الشعار</button><button class="mini" id="c_rm">إزالة</button></div><div class="empty" style="margin-top:6px">إذا استخدمت Google Drive، اجعل الوصول إلى الصورة «أي شخص لديه الرابط».</div>
+ <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https:\/\/drive.google.com/file/d/..." value="${v("logo")}"><div style="display:flex;gap:10px;align-items:center;margin-top:8px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${logoInitial?"block":"none"}" src="${logoInitial?esc(logoInitial):""}"><button class="mini" id="c_logo_save">حفظ رابط الشعار</button><button class="mini" id="c_rm">إزالة</button></div><div class="empty" style="margin-top:6px">إذا استخدمت Google Drive، اجعل الوصول إلى الصورة «أي شخص لديه الرابط».</div>
  <div class="sec"><h3>إعدادات واجهة المندوب</h3></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="c_rep_perf" type="checkbox" style="width:auto;min-height:0" ${repPerfEnabled?"checked":""}> إظهار قسم «أدائي» للمندوب</label><div class="empty" style="margin:6px 0 12px">عند إلغاء التحديد يختفي تبويب «أدائي» من واجهة المندوب فقط، ولا تُحذف بيانات الأداء.</div><label>ربط الأطباء بالمنشآت</label><select id="c_wpol"><option value="soft" ${String(st.workplacePolicy)!=="strict"?"selected":""}>مرن: تُحفظ الزيارة ويُعرض الربط الجديد على الإدارة</option><option value="strict" ${String(st.workplacePolicy)==="strict"?"selected":""}>صارم: لا تُحفظ الزيارة قبل اعتماد الإدارة للربط</option></select><div class="sec"><h3>التقارير والموقع</h3></div><label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="c_e" value="${v("reportEmail")}">
  <div class="two"><div><label>ساعة الإغلاق (0–23)</label><input id="c_ch" type="number" min="0" max="23" value="${esc(st.closeHour||10)}"></div><div><label>نطاق الموقع (متر)</label><input id="c_g" type="number" min="20" value="${esc(st.gpsRadius||150)}"></div></div><label>أقصى دقة GPS مقبولة (متر)</label><input id="c_ga" type="number" min="1" max="500" value="${esc(st.gpsRefAcc||50)}"><small>القراءة ذات دقة أضعف من هذا الحد لا تُحتسب متحققة.</small>
  <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="c_w" value="${esc(st.workDays||"0,1,2,3,4")}">
@@ -110,4 +110,89 @@ async function tabHol(view=settingsViewSeq){
   +`<div class="sec"><h3>إضافة عطلة</h3></div><label>التاريخ</label><input type="date" id="h_d" value="${isoD(new Date())}"><label>الاسم</label><input id="h_n" placeholder="مثل: عيد الفطر"><div class="err" id="h_err"></div><button class="btn pri full" id="h_go" style="margin-top:14px">إضافة</button>`;
   document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});if(view===settingsViewSeq&&$("#sv2"))tabHol(view)}catch(e){if(view===settingsViewSeq&&$("#sv2"))toast(e.message)}});
   $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});if(!host())return;toast("تمت الإضافة");tabHol(view)}catch(e){const err=host()&&$("#h_err");if(err)err.textContent=e.message}}}catch(e){if(host())toast(e.message)}}
+/* ===== Admin dashboard: four cards, daily visits, compliance per rep, GPS verdicts, top facilities, latest reports =====
+   Note: never put two slashes or slash-star inside a string here; Apps Script's comment stripper may cut the line. */
+const DASH_CSS='#av .dg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}'+
+ '#av .dk{position:relative;overflow:hidden;border-radius:18px;padding:14px;color:#fff;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:156px;box-shadow:0 6px 16px rgba(0,0,0,.12)}'+
+ '#av .dk::after{content:"";position:absolute;width:96px;height:96px;border-radius:50%;background:rgba(255,255,255,.09);left:-28px;bottom:-34px;pointer-events:none}'+
+ '#av .dk.k1{background:linear-gradient(135deg,#2563eb,#1e3a8a)}#av .dk.k2{background:linear-gradient(135deg,#16a34a,#14532d)}'+
+ '#av .dk.k3{background:linear-gradient(135deg,#7c3aed,#4c1d95)}#av .dk.k4{background:linear-gradient(135deg,#d97706,#78350f)}'+
+ '#av .dh{display:flex;align-items:center;gap:8px;min-width:0}'+
+ '#av .di{width:38px;height:38px;flex:none;border-radius:12px;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:20px;line-height:1}'+
+ '#av .dh small{font-size:13px;font-weight:700;line-height:1.35;opacity:.95}'+
+ '#av .dvv{display:block;margin-top:auto;font-size:32px;font-weight:800;line-height:1.1;overflow-wrap:anywhere}'+
+ '#av .dk.k4 .dvv{font-size:17px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'+
+ '#av .dc{align-self:flex-start;max-width:100%;font-size:11.5px;line-height:1.5;padding:3px 10px;border-radius:999px;background:rgba(0,0,0,.18)}'+
+ '#av .dp{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px;min-width:0}#av .dp h3{margin:0 0 10px;font-size:16px}'+
+ '#av .d2{display:grid;grid-template-columns:minmax(0,1fr);gap:0 12px}'+
+ '@media(min-width:760px){#av .dg{grid-template-columns:repeat(4,minmax(0,1fr))}#av .d2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}'+
+ '#av .dl{width:100%;height:auto;direction:ltr;display:block}#av .dl .g{stroke:var(--line);stroke-width:1}#av .dl .ax{font-size:11px;fill:var(--mut)}'+
+ '#av .dl .ln{fill:none;stroke-width:2.5;stroke-linejoin:round}#av .dl .ln.doctors{stroke:#2563eb}#av .dl .ln.pharmacies{stroke:#16a34a}'+
+ '#av .dl .ar{fill:rgba(37,99,235,.12)}#av .dl circle.doctors{fill:#2563eb}#av .dl circle.pharmacies{fill:#16a34a}'+
+ '#av .lgl{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-bottom:6px}#av .lgl i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:5px}'+
+ '#av .lgl i.doctors{background:#2563eb}#av .lgl i.pharmacies{background:#16a34a}'+
+ '#av .dd{display:flex;gap:14px;align-items:center;flex-wrap:wrap}#av .dn{width:150px;height:150px;flex:none}#av .dn .dt{font-size:26px;font-weight:800;fill:var(--ink)}#av .dn .ds{font-size:12px;fill:var(--mut)}'+
+ '#av .lg{flex:1;min-width:170px;display:grid;gap:6px;font-size:13px}#av .lg div{display:flex;align-items:center;gap:6px}#av .lg i{width:10px;height:10px;border-radius:50%;flex:none}'+
+ '#av .lg b{margin-inline-start:auto}#av .lg span{color:var(--mut);min-width:40px;text-align:left}'+
+ '#av .cr{margin:0 0 10px}#av .cn{display:flex;justify-content:space-between;gap:8px;font-size:14px}#av .cb{height:9px;background:var(--soft);border-radius:9px;overflow:hidden;margin:4px 0}'+
+ '#av .cb i{display:block;height:100%;border-radius:9px}#av .cr small{color:var(--mut);font-size:11px}'+
+ '#av .dtw{overflow-x:auto}#av .dtb{width:100%;border-collapse:collapse;font-size:13px}#av .dtb th,#av .dtb td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}'+
+ '#av .dtb th{color:var(--mut);font-weight:700;font-size:12px}#av .dtb tr.dr{cursor:pointer}#av .dtb tr.dr:hover{background:var(--soft)}';
+const DASH_GPS_COLORS={"تم التحقق":"#16a34a","خارج النطاق":"#dc2626","غير حاسم":"#f59e0b","مرجع غير مؤكد":"#7c3aed","غير متاح":"#94a3b8"};
+function dashChange(c,unit){
+ if(c==null)return '<span class="dc">لا توجد بيانات سابقة للمقارنة</span>';
+ if(c===0)return '<span class="dc">بدون تغيير عن الفترة السابقة</span>';
+ return '<span class="dc">'+(c>0?"▲ +":"▼ ")+c+(unit||"%")+' عن الفترة السابقة</span>';
+}
+function dashLine(daily){
+ const n=daily.length;if(!n)return '<div class="empty">لا توجد بيانات.</div>';
+ const W=640,H=220,L=36,R=12,TP=14,B=28,max=Math.max(1,...daily.map(x=>Math.max(x.doctors,x.pharmacies)));
+ const step=Math.pow(10,Math.floor(Math.log10(max))),top=Math.max(step,Math.ceil(max/step)*step);
+ const x=i=>L+(n===1?(W-L-R)/2:i*(W-L-R)/(n-1)),y=v=>H-B-v/top*(H-TP-B),f=v=>v.toFixed(1);
+ const pts=k=>daily.map((d,i)=>f(x(i))+","+f(y(d[k]))).join(" ");
+ const grid=[0,.25,.5,.75,1].map(t=>{const yy=f(y(top*t));return '<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'" class="g"/><text x="'+(L-6)+'" y="'+yy+'" class="ax" text-anchor="end" dominant-baseline="middle">'+Math.round(top*t)+'</text>'}).join("");
+ const every=Math.max(1,Math.ceil(n/7)),labels=daily.map((d,i)=>(i%every&&i!==n-1)?"":'<text x="'+f(x(i))+'" y="'+(H-8)+'" class="ax" text-anchor="middle">'+d.date.slice(8)+"/"+d.date.slice(5,7)+'</text>').join("");
+ const dots=k=>n>31?"":daily.map((d,i)=>'<circle cx="'+f(x(i))+'" cy="'+f(y(d[k]))+'" r="3" class="'+k+'"><title>'+d.date+" : "+d[k]+'</title></circle>').join("");
+ return '<svg viewBox="0 0 '+W+' '+H+'" class="dl" role="img" aria-label="حركة الزيارات اليومية">'+grid+
+  '<polygon class="ar" points="'+f(x(0))+","+(H-B)+" "+pts("doctors")+" "+f(x(n-1))+","+(H-B)+'"/>'+
+  '<polyline class="ln doctors" points="'+pts("doctors")+'"/><polyline class="ln pharmacies" points="'+pts("pharmacies")+'"/>'+dots("doctors")+dots("pharmacies")+labels+'</svg>';
+}
+function dashDonut(gps){
+ const total=gps.reduce((a,x)=>a+x.count,0),R=60,C=2*Math.PI*R;let off=0;
+ const rings=total?gps.filter(x=>x.count).map(x=>{const len=x.count/total*C,s='<circle r="'+R+'" cx="80" cy="80" fill="none" stroke="'+DASH_GPS_COLORS[x.status]+'" stroke-width="22" stroke-dasharray="'+len.toFixed(2)+" "+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 80 80)"><title>'+esc(x.status)+" : "+x.count+'</title></circle>';off+=len;return s}).join("")
+  :'<circle r="'+R+'" cx="80" cy="80" fill="none" stroke="var(--line)" stroke-width="22"/>';
+ return '<div class="dd"><svg viewBox="0 0 160 160" class="dn" role="img" aria-label="نتائج التحقق من الموقع">'+rings+'<text x="80" y="78" text-anchor="middle" class="dt">'+total+'</text><text x="80" y="100" text-anchor="middle" class="ds">زيارة</text></svg>'+
+  '<div class="lg">'+gps.map(x=>'<div><i style="background:'+DASH_GPS_COLORS[x.status]+'"></i>'+esc(x.status)+'<b>'+x.count+'</b><span>'+(total?Math.round(x.count/total*100):0)+'%</span></div>').join("")+'</div></div>';
+}
+function dashCompliance(rows){
+ if(!rows.length)return '<div class="empty">لا يوجد مندوبون نشطون.</div>';
+ return rows.map(r=>{const c=r.pct>=85?"#16a34a":r.pct>=60?"#f59e0b":"#dc2626";
+  return '<div class="cr"><div class="cn"><b>'+esc(r.name)+'</b><span>'+(r.expected?r.pct+"%":"—")+'</span></div><div class="cb"><i style="width:'+(r.expected?Math.max(2,Math.min(100,r.pct)):0)+'%;background:'+c+'"></i></div>'+
+   '<small>في الوقت '+r.onTime+' من '+r.expected+' · متأخر '+r.late+' · غير مرسل '+r.missing+'</small></div>'}).join("");
+}
+function dashHtml(d){
+ const c=d.cards,medal=i=>["🥇","🥈","🥉"][i]||String(i+1),stat=typeof STAT!=="undefined"?STAT:[];
+ const card=(k,icon,title,val,sub)=>'<div class="dk '+k+'"><div class="dh"><span class="di">'+icon+'</span><small>'+title+'</small></div><b class="dvv">'+val+'</b>'+sub+'</div>';
+ return '<style id="dash-style">'+DASH_CSS+'</style><div class="dg">'+
+  card("k1","🩺","زيارات الأطباء",c.doctorVisits.value,dashChange(c.doctorVisits.change))+
+  card("k2","💊","زيارات الصيدليات",c.pharmacyVisits.value,dashChange(c.pharmacyVisits.change))+
+  card("k3","✅","درجة التزام المندوبين",c.compliance.value==null?"—":c.compliance.value+"%",dashChange(c.compliance.change," نقطة"))+
+  card("k4","🏥","أكثر المنشآت زيارة",c.topFacility?esc(c.topFacility.name):"—",'<span class="dc">'+(c.topFacility?c.topFacility.value+" زيارة في الفترة":"لا توجد زيارات في الفترة")+'</span>')+'</div>'+
+  '<div class="dp"><h3>حركة الزيارات اليومية</h3><div class="lgl"><span><i class="doctors"></i>أطباء</span><span><i class="pharmacies"></i>صيدليات</span></div>'+dashLine(d.daily)+'</div>'+
+  '<div class="d2"><div class="dp"><h3>التزام المندوبين بإرسال التقارير</h3>'+dashCompliance(d.compliance)+'</div><div class="dp"><h3>نتائج التحقق من الموقع</h3>'+dashDonut(d.gps)+'</div></div>'+
+  '<div class="d2"><div class="dp"><h3>أكثر المنشآت زيارة</h3>'+(d.facilities.length?'<div class="dtw"><table class="dtb"><tr><th>#</th><th>المنشأة</th><th>الزيارات</th><th>الأطباء</th></tr>'+
+   d.facilities.map((f,i)=>'<tr><td>'+medal(i)+'</td><td>'+esc(f.name)+'</td><td>'+f.visits+'</td><td>'+f.doctors+'</td></tr>').join("")+'</table></div>':'<div class="empty">لا توجد زيارات أطباء في الفترة.</div>')+'</div>'+
+  '<div class="dp"><h3>آخر التقارير</h3>'+(d.latest.length?'<div class="dtw"><table class="dtb"><tr><th>رقم التقرير</th><th>المندوب</th><th>التاريخ</th><th>الزيارات</th><th>الحالة</th></tr>'+
+   d.latest.map(r=>'<tr class="dr" data-id="'+esc(r.id)+'"><td>'+esc(r.no)+'</td><td>'+esc(r.repName)+'</td><td>'+esc(r.date)+'</td><td>'+r.visits+'</td><td><span class="st s'+stat.indexOf(r.status)+'">'+esc(r.status)+'</span></td></tr>').join("")+'</table></div>':'<div class="empty">لا توجد تقارير مرسلة بعد.</div>')+'</div></div>'+
+  '<div class="empty" style="margin-top:8px">الفترة '+esc(d.from)+' — '+esc(d.to)+' مقارنة بالفترة السابقة '+esc(d.prevFrom)+' — '+esc(d.prevTo)+'. تُحتسب التقارير المرسلة والمعتمدة فقط، وتتحدث الأرقام كل 5 دقائق.</div>';
+}
+let dashSeq=0;
+async function tabD(){
+ const nav=adminNavSeq,seq=++dashSeq;
+ $("#av").innerHTML='<div class="empty">جارٍ تحميل لوحة المتابعة…</div>';
+ $("#fa").onchange=$("#fb").onchange=()=>{const on=document.querySelector(".tabs .btn.on");if(on&&on.dataset.t==="d")tabD()};
+ try{const d=await srv("dashboard",{from:$("#fa").value,to:$("#fb").value});if(nav!==adminNavSeq||seq!==dashSeq||!$("#av"))return;
+  $("#av").innerHTML=dashHtml(d);document.querySelectorAll("#av tr.dr").forEach(tr=>tr.onclick=()=>openRep(tr.dataset.id))}
+ catch(e){if(nav===adminNavSeq&&seq===dashSeq){toast(e.message);const av=$("#av");if(av)av.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+}
 </script>
