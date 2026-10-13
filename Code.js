@@ -476,15 +476,25 @@ function prevInfo_(s) {
 }
 // The first submitted version stays frozen in snapshot1; every reopen is audited; re-sending after closeHour counts as late.
 function reopenReport_(s, p) {
-  const r = findReport_(x => x.id === p.id && x.repId === s.uid);
-  if (!r) throw new Error('التقرير غير موجود');
+  let t = Date.now();
+  const hit = findReportRowById_(p.id), r = hit && hit.r;
+  if (!r || r.repId !== s.uid) throw new Error('التقرير غير موجود');
+  phase_('find', t); t = Date.now();
   if (r.status === 'معتمد') throw new Error('التقرير معتمد ولا يمكن إعادة فتحه. اطلب ذلك من الإدارة.');
   if (r.status !== 'مرسل') throw new Error('التقرير غير مرسل.');
   if (!editable_(r.date, null)) throw new Error('انتهت مهلة تعديل هذا التقرير. اطلب من الإدارة إعادته إليك.');
-  if (!r.snapshot1) r.snapshot1 = r.snapshot;
+  const firstReopen = !r.snapshot1;
+  if (firstReopen) r.snapshot1 = r.snapshot;
   r.reopens = (+r.reopens || 0) + 1; r.status = 'مسودة';
-  dbUpsert_('Reports', 'id', r); audit_(s, 'reopen_report', r.no, '#' + r.reopens);
-  return { status: r.status, reopens: r.reopens };
+  // Only status, reopens and (first time) snapshot1 change: the large visit/snapshot cells are not rewritten.
+  dbWriteCells_('Reports', hit.rowNo, 'id', r, firstReopen ? ['status', 'snapshot1', 'reopens'] : ['status', 'reopens']);
+  phase_('write', t); t = Date.now();
+  audit_(s, 'reopen_report', r.no, '#' + r.reopens);
+  phase_('audit', t); t = Date.now();
+  // The reopened draft and yesterday's info come back in this response: the phone needs no second round trip.
+  const out = { status: r.status, reopens: r.reopens, report: repView_(parseReport_(r)), prev: prevInfo_(s) };
+  phase_('reload', t);
+  return out;
 }
 function myReport_(s, p) {
   const date = p.date || today_();
@@ -670,7 +680,7 @@ function searchText_(r, role) {
   return JSON.stringify(repVisits_(d).concat(repVisits_(p))).toLowerCase();
 }
 function getReport_(s, p) {
-  const r = findReport_(x => x.id === p.id);
+  const r = findReportById_(p.id);
   if (!r || (s.role === 'rep' && r.repId !== s.uid)) throw new Error('التقرير غير موجود');
   const out = parseReport_(r);
   if (r.snapshot) out.snapshot = JSON.parse(r.snapshot);
@@ -828,7 +838,7 @@ function gpsPointValidServer_(lat, lng) {
   return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
 }
 function gpsReviewSummary_(s, p) {
-  const r = findReport_(x => String(x.id) === String(p.id));
+  const r = findReportById_(p.id);
   if (!r) throw new Error('التقرير غير موجود.');
   const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
   const visits = readScope_(() => doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
@@ -854,8 +864,9 @@ function approveVisitLinks_(s, doctors) {
   return n;
 }
 function reviewReport_(s, p) {
-  const r = findReport_(x => x.id === p.id);
+  const hit = findReportRowById_(p.id), r = hit && hit.r;
   if (!r || r.status !== 'مرسل') throw new Error('يمكن مراجعة التقارير المرسلة فقط.');
+  let linksChanged = false;
   const note = String(p.note || '').trim().slice(0, 1000);
   if (p.approve) {
     const st = settings_(), doctors = JSON.parse(r.doctors || '[]'), pharmacies = JSON.parse(r.pharmacies || '[]');
@@ -864,10 +875,12 @@ function reviewReport_(s, p) {
     if (exceptions.length && note.length < 5) throw new Error('توجد زيارة لم يثبت تطابق موقعها. اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل)، أو أعد التقرير للمندوب.');
     if (doctors.some(v => v.linkPending) && !p.approveLinks) throw new Error('يتضمن التقرير ارتباطات أطباء بمنشآت بانتظار الاعتماد. أكّد اعتمادها مع التقرير.');
     if (exceptions.length) audit_(s, 'gps_exception_approval', r.no, JSON.stringify(exceptions.map(x => ({status:x.status,distance:x.distance,reference:x.reference}))) + ' · ' + note);
-    if (doctors.some(v => v.linkPending)) { approveVisitLinks_(s, doctors); r.doctors = JSON.stringify(doctors); } // operational copy only; snapshots stay frozen
+    if (doctors.some(v => v.linkPending)) { approveVisitLinks_(s, doctors); r.doctors = JSON.stringify(doctors); linksChanged = true; } // operational copy only; snapshots stay frozen
   }
   r.status = p.approve ? 'معتمد' : 'معاد للمندوب'; r.reviewNote = note;
-  dbUpsert_('Reports', 'id', r); audit_(s, p.approve ? 'approve_report' : 'return_report', r.no, r.reviewNote);
+  // Only the changed cells are written (the visits cell only when links were approved); snapshots are never rewritten.
+  dbWriteCells_('Reports', hit.rowNo, 'id', r, linksChanged ? ['status', 'doctors', 'reviewNote'] : ['status', 'reviewNote']);
+  audit_(s, p.approve ? 'approve_report' : 'return_report', r.no, r.reviewNote);
   return { status: r.status };
 }
 function parseReport_(r) {
@@ -2908,6 +2921,30 @@ function findReportRow_(match) {
   return { r: full, rowNo: hit.rowNo };
 }
 function findReport_(match) { const x = findReportRow_(match); return x && x.r; }
+// A report whose id is known: ONE TextFinder call on the id column (exact, case-sensitive) instead of the 3-column index,
+// then that single row. The row's id is re-checked, so a wrong match can never be returned.
+function findReportRowById_(id) {
+  id = String(id == null ? '' : id); if (!id) return null;
+  const sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return null;
+  const cell = sh.getRange(2, 1, last - 1, 1).createTextFinder(id).matchEntireCell(true).matchCase(true).findNext();
+  if (!cell) return null;
+  const rowNo = cell.getRow(), r = rowObj_('Reports', sh.getRange(rowNo, 1, 1, T.Reports.length).getValues()[0]);
+  return String(r.id) === id ? { r: r, rowNo: rowNo } : null;
+}
+function findReportById_(id) { const x = findReportRowById_(id); return x && x.r; }
+// Writes only the listed columns of a known row (adjacent columns in one call) after confirming the row still holds this
+// record. Used where a full-row upsert would rewrite the large JSON cells for nothing.
+function dbWriteCells_(n, rowNo, key, o, cols) {
+  const sh = sheet_(n), H = T[n], ki = H.indexOf(key);
+  if (String(sh.getRange(rowNo, ki + 1).getValue()) !== String(o[key])) throw new Error('تغيّر موضع السجل أثناء الحفظ. أعد المحاولة.');
+  const idx = cols.map(c => H.indexOf(c)).filter(i => i >= 0).sort((a, b) => a - b);
+  for (let i = 0; i < idx.length;) {
+    let j = i; while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++;
+    sh.getRange(rowNo, idx[i] + 1, 1, j - i + 1).setValues([idx.slice(i, j + 1).map(k => o[H[k]] === undefined ? '' : o[H[k]])]);
+    i = j + 1;
+  }
+  dropTableCache_(n); if (_RM) delete _RM[n];
+}
 // Reference tables used to validate a visit and judge its GPS. Cached for 2 minutes, but ONLY the report save/submit path
 // reads them from the cache (ID generation and admin screens always read the sheet), and every write through
 // dbAppend_/dbUpsert_ drops the table's cache at once.

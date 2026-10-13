@@ -211,7 +211,7 @@ function home(){
  $("#draft").onclick=async()=>{try{await saveNow();home();toast("تم حفظ المسودة")}catch(e){toast(e.message)}};
  $("#review").onclick=preview;bindNav();if($("#rh"))$("#rh").onclick=screenHistory;
  if($("#bk"))$("#bk").onclick=()=>loadDay(TD);if($("#py"))$("#py").onclick=()=>loadDay(PREV.date);
- if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{await srv("reopenReport",{id:S.id});await loadDay(S.date)}catch(e){toast(e.message)}};
+ if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{const out=await srv("reopenReport",{id:S.id});if(out&&out.report){reportContextSeq++;cancelAuto();S=mapRep(out.report);PREV=out.prev||PREV;home()}else await loadDay(S.date)}catch(e){toast(e.message)}};
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
  if(locked()){$("#notes").disabled=true;document.querySelectorAll("[data-add],[data-ed],[data-del],#draft").forEach(e=>e.style.display="none")}
 }

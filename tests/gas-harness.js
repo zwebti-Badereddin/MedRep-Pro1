@@ -2,17 +2,24 @@
 'use strict';
 const fs = require('fs'), vm = require('vm'), crypto = require('crypto');
 
-function makeSheet(name, rows, reads) {
+function makeSheet(name, rows, reads, writes) {
   const data = rows.map(r => r.slice());
   let maxCols = 26;
   const width = () => data.reduce((m, r) => Math.max(m, r.length), 0);
   const cell = (r, c) => (data[r] && data[r][c] !== undefined ? data[r][c] : '');
+  const logWrite = (r0, c0, nr, nc) => writes.push({ sheet: name, row: r0, col: c0, rows: nr, cols: nc });
   const range = (r0, c0, nr, nc) => ({
     getValues: () => { reads[name] = (reads[name] || 0) + 1; return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => cell(r0 - 1 + i, c0 - 1 + j))); },
+    getValue: () => { reads[name] = (reads[name] || 0) + 1; return cell(r0 - 1, c0 - 1); },
     getDisplayValues() { return this.getValues().map(r => r.map(String)); },
-    setValues: vals => vals.forEach((row, i) => row.forEach((v, j) => { const r = r0 - 1 + i; while (data.length <= r) data.push([]); data[r][c0 - 1 + j] = v; })),
-    setValue: v => { const r = r0 - 1; while (data.length <= r) data.push([]); data[r][c0 - 1] = v; },
-    setNumberFormat: () => {}
+    setValues: vals => { logWrite(r0, c0, vals.length, vals[0] ? vals[0].length : 0); vals.forEach((row, i) => row.forEach((v, j) => { const r = r0 - 1 + i; while (data.length <= r) data.push([]); data[r][c0 - 1 + j] = v; })); },
+    setValue: v => { logWrite(r0, c0, 1, 1); const r = r0 - 1; while (data.length <= r) data.push([]); data[r][c0 - 1] = v; },
+    setNumberFormat: () => {},
+    // Exact, case-sensitive search like Range.createTextFinder(..).matchEntireCell(true).matchCase(true).findNext()
+    createTextFinder: text => { const f = { matchEntireCell: () => f, matchCase: () => f, findNext: () => {
+      reads[name] = (reads[name] || 0) + 1;
+      for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) if (String(cell(r0 - 1 + i, c0 - 1 + j)) === String(text)) return { getRow: () => r0 + i, getColumn: () => c0 + j };
+      return null; } }; return f; }
   });
   return {
     _name: name, _data: data,
@@ -33,10 +40,10 @@ function makeSheet(name, rows, reads) {
 // opts.legacyFacilitySchema: build Facilities / DoctorWorkplaces WITHOUT the V2 columns (the shape before migrateFacilityModelV2).
 function makeEnv(seed, opts) {
   opts = opts || {};
-  const sheets = {}, cache = new Map(), props = new Map([['SALT', 'test-salt']]), reads = {}, ttl = {};
+  const sheets = {}, cache = new Map(), props = new Map([['SALT', 'test-salt']]), reads = {}, ttl = {}, writes = [];
   const ss = {
     getSheetByName: n => sheets[n] || null,
-    insertSheet: n => (sheets[n] = makeSheet(n, [], reads)),
+    insertSheet: n => (sheets[n] = makeSheet(n, [], reads, writes)),
     getSpreadsheetTimeZone: () => 'UTC', getId: () => 'ss', getName: () => 'test'
   };
   const fmt = (d, f) => {
@@ -78,7 +85,7 @@ function makeEnv(seed, opts) {
     if (seed[n] === null) return; // explicitly absent sheet
     const cols = opts.legacyFacilitySchema && V2[n] ? T[n].slice(0, T[n].length - V2[n].length) : T[n];
     const rows = (seed[n] || []).map(o => cols.map(c => (o[c] === undefined ? '' : o[c])));
-    sheets[n] = makeSheet(n, [cols.slice()].concat(rows), reads);
+    sheets[n] = makeSheet(n, [cols.slice()].concat(rows), reads, writes);
   });
   const session = (uid, role) => { const t = 'tok-' + uid; cache.set('s_' + t, JSON.stringify({ uid, name: uid, role, iat: Date.now(), ts: Date.now() })); return t; };
   const call = (token, action, p) => {
@@ -88,7 +95,7 @@ function makeEnv(seed, opts) {
   };
   const rows = n => vm.runInContext('dbAllRaw_', ctx)(n);
   const snapshot = () => JSON.stringify(Object.keys(sheets).sort().map(n => [n, sheets[n]._data]));
-  const resetReads = () => Object.keys(reads).forEach(k => delete reads[k]);
-  return { ctx, sheets, call, session, rows, reads, ttl, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
+  const resetReads = () => { Object.keys(reads).forEach(k => delete reads[k]); writes.length = 0; };
+  return { ctx, sheets, call, session, rows, reads, ttl, writes, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
 }
 module.exports = { makeEnv };
