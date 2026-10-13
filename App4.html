@@ -34,21 +34,16 @@ async function screenPerf(ym){
   <div class="empty" style="margin-top:8px">الأهداف شهرية. الدرجة تُحسب من التقارير المرسلة، والشهر الحالي يتحدّث تلقائيًا.</div>`}catch(e){const pb=$("#pb2");if(seq===repScreenSeq&&pb)pb.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
 
 /* ===== Admin settings: company / KPI / products ===== */
-let SS="co",LG,settingsViewSeq=0;
+let SS="co",settingsViewSeq=0;
 function tabSet(){
  const view=++settingsViewSeq;
  $("#av").innerHTML=`<div class="tabs" style="margin:0 0 12px"><button class="btn" data-s="co">الشركة والنظام</button><button class="btn" data-s="kpi">المؤشرات</button><button class="btn" data-s="prod">المنتجات</button><button class="btn" data-s="hol">العطل</button></div><div id="sv2"></div>`;
  document.querySelectorAll("[data-s]").forEach(b=>{b.classList.toggle("on",b.dataset.s===SS);b.onclick=()=>{SS=b.dataset.s;tabSet()}});
  ({co:tabCo,kpi:()=>tabKpi(view),prod:()=>tabProd(view),hol:()=>tabHol(view)})[SS]();
 }
-function pickLogo(file,cb){const rd=new FileReader();rd.onerror=()=>cb(null);rd.onload=()=>{const im=new Image();im.onerror=()=>cb(null);im.onload=()=>{
- for(const max of [200,160,120,96]){const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));const x=c.getContext("2d");x.drawImage(im,0,0,c.width,c.height);
-  let u=c.toDataURL("image/png");if(u.length<=45000)return cb(u);
-  x.globalCompositeOperation="destination-over";x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);u=c.toDataURL("image/jpeg",.8);if(u.length<=45000)return cb(u)}
- cb(null)};im.src=rd.result};rd.readAsDataURL(file)}
 function tabCo(){
  const view=settingsViewSeq,live=()=>view===settingsViewSeq&&!!$("#sv2");
- const st=CFG.st||{},logoInitial=String(st.logo||""),v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true",repPerfEnabled=String(st.repPerformanceEnabled)!=="false";LG=undefined;
+ const st=CFG.st||{},logoInitial=String(st.logo||""),v=k=>esc(st[k]===undefined?"":st[k]),re=String(st.remindEnabled)==="true",repPerfEnabled=String(st.repPerformanceEnabled)!=="false";
  $("#sv2").innerHTML=`<label>اسم الشركة</label><input id="c_n" value="${v("companyName")}">
  <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${v("shortName")}"></div><div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
  <label>عنوان التقرير</label><input id="c_t" value="${v("reportTitle")}"><label>هاتف الشركة</label><input id="c_p" value="${v("phone")}"><label>عنوان الشركة</label><input id="c_a" value="${v("address")}">

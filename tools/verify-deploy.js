@@ -29,6 +29,11 @@ function userHtml(page) {
   return JSON.parse(JSON.parse('"' + lit + '"')).userHtml;
 }
 async function main() {
+  // Server: doGet answers ?ping=1 with plain "OK …" only if every server file loaded without error.
+  const ping = await fetch(cfg.webAppUrl + '?ping=1', { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' });
+  const pong = ping.ok ? (await ping.text()).trim() : '';
+  if (!/^OK\b/.test(pong)) { console.log('FAIL  server: ?ping=1 did not answer "OK" (HTTP ' + ping.status + '). A server file may fail to load.'); process.exit(1); }
+  console.log('PASS  server: ' + pong);
   const res = await fetch(cfg.webAppUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' });
   if (!res.ok) throw new Error('HTTP ' + res.status + ' from the web app.');
   const served = userHtml(await res.text());

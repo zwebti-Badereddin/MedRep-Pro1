@@ -2,6 +2,14 @@
 'use strict';
 const fs = require('fs'), vm = require('vm'), crypto = require('crypto');
 
+function serverFiles() {
+  const path = require('path');
+  if (process.env.CODE_JS) return [process.env.CODE_JS];
+  const dir = process.env.SERVER_DIR || path.join(__dirname, '..');
+  const files = fs.readdirSync(dir).filter(f => /.js$/.test(f)).sort().map(f => path.join(dir, f));
+  if (!files.length) throw new Error('no server .js files in ' + dir);
+  return process.env.LOAD_ORDER === 'reverse' ? files.reverse() : files;
+}
 function makeSheet(name, rows, reads, writes) {
   const data = rows.map(r => r.slice());
   let maxCols = 26;
@@ -79,7 +87,7 @@ function makeEnv(seed, opts) {
     HtmlService: {}, ContentService: {}, Logger: { log: () => {} }
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(process.env.CODE_JS || require('path').join(__dirname, '..', 'Code.js'), 'utf8'), ctx, { filename: 'Code.js' });
+  serverFiles().forEach(f => vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: require('path').basename(f) }));
   const T = vm.runInContext('T', ctx), V2 = vm.runInContext('FACILITY_V2_COLUMNS', ctx);
   Object.keys(T).forEach(n => {
     if (seed[n] === null) return; // explicitly absent sheet

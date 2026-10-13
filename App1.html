@@ -2,7 +2,7 @@
 (window.__parts=window.__parts||[]).push("App1");
 
 /* All lookups, branding and data now come from the server (Google Sheets) */
-let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],workplaces:[],products:[],samples:["—"]},TOKEN=null;
+let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],products:[],samples:["—"]},TOKEN=null;
 let NB=0;const bz=()=>{const e=document.getElementById("busy");if(e)e.style.display=NB?"block":"none"};
 function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
 function _call(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
@@ -38,7 +38,6 @@ const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[]
 function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)===i);
  CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
  CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.facilities=b.facilities||[];CFG.phs=b.pharmacies;CFG.specialties=u((b.specialties||[]).concat(b.doctors.map(d=>d.specialty)));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
- CFG.workplaces=u(b.doctors.map(d=>d.workplace));if(!CFG.workplaces.length)CFG.workplaces=["—"];
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
  CFG.st=st;document.documentElement.style.setProperty("--brand",CFG.company.color)}
 const locked=()=>S&&["مسودة","معاد للمندوب"].indexOf(S.status)<0;
@@ -101,39 +100,6 @@ function adminHome(){
  const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("d");
 }
-function tabSetLegacy(){
- const st=CFG.st||{};
- $("#av").innerHTML=`<h3 style="margin:4px 0 12px">الشركة والنظام</h3>
- <label>اسم الشركة</label><input id="c_n" value="${esc(st.companyName||"")}">
- <div class="two"><div><label>اختصار الشعار</label><input id="c_s" maxlength="3" value="${esc(st.shortName||"")}"></div>
- <div><label>لون الهوية</label><input id="c_c" type="color" style="padding:4px" value="${esc(st.brandColor||"#0b6b6f")}"></div></div>
- <label>عنوان التقرير</label><input id="c_t" value="${esc(st.reportTitle||"")}">
- <label>هاتف الشركة</label><input id="c_p" value="${esc(st.phone||"")}">
- <label>عنوان الشركة</label><input id="c_a" value="${esc(st.address||"")}">
- <label>رابط الشعار (Google Drive أو رابط صورة مباشر)</label><input id="c_logo_url" type="url" dir="ltr" placeholder="https:\/\/drive.google.com/file/d/..." value="${esc(st.logo||"")}">
- <div style="display:flex;gap:10px;align-items:center;margin:8px 0 14px"><img id="c_img" alt="معاينة الشعار" style="height:72px;max-width:220px;object-fit:contain;display:${st.logo?"block":"none"}" src="${esc(st.logo||"")}"><button class="mini" id="c_logo_save" type="button">حفظ رابط الشعار</button><button class="mini" id="c_rm" type="button">إزالة الشعار</button></div>
- <label>بريد استلام التقارير (يفصل بينها بفاصلة)</label><input id="s_e" type="text" value="${esc(st.reportEmail||"")}">
- <label>ساعة إغلاق التقرير</label><input id="s_h" type="number" min="0" max="23" value="${esc(st.closeHour===undefined?10:st.closeHour)}">
- <label>أيام العمل (0 الأحد … 6 السبت)</label><input id="s_w" value="${esc(st.workDays||"0,1,2,3,4")}">
- <label>نطاق التحقق من الموقع (بالمتر)</label><input id="s_g" type="number" min="20" value="${esc(st.gpsRadius||150)}">
- <button class="btn pri full" id="c_save" style="margin-top:14px">حفظ إعدادات الشركة والنظام</button>
- <div class="empty" style="margin-top:8px">لروابط Google Drive، اجعل الوصول إلى الصورة «أي شخص لديه الرابط».</div>`;
- const logo=$("#c_logo_url"),img=$("#c_img");
- const preview=()=>{const u=logo.value.trim();img.src=u;img.style.display=u?"block":"none"};
- logo.oninput=preview;
- $("#c_logo_save").onclick=async()=>{try{const url=await srv("saveLogo",{url:logo.value.trim()});logo.value=url;st.logo=url;CFG.company.logo=url;preview();toast("تم حفظ رابط الشعار")}catch(e){toast(e.message)}};
- $("#c_rm").onclick=async()=>{try{await srv("saveLogo",{url:""});logo.value="";st.logo="";CFG.company.logo="";preview();toast("تمت إزالة الشعار")}catch(e){toast(e.message)}};
- $("#c_save").onclick=async()=>{try{
-  const values={companyName:$("#c_n").value.trim(),shortName:$("#c_s").value.trim(),brandColor:$("#c_c").value,reportTitle:$("#c_t").value.trim(),phone:$("#c_p").value.trim(),address:$("#c_a").value.trim(),reportEmail:$("#s_e").value.trim(),closeHour:$("#s_h").value,workDays:$("#s_w").value.replace(/\s/g,""),gpsRadius:$("#s_g").value};
-  await srv("saveSettings",{values});
-  const logoUrl=await srv("saveLogo",{url:logo.value.trim()});
-  Object.assign(st,values,{logo:logoUrl});CFG.st=st;
-  CFG.company={name:values.companyName,short:values.shortName,color:values.brandColor,title:values.reportTitle,phone:values.phone,address:values.address,logo:logoUrl,prefix:CFG.company.prefix||"MR"};
-  document.documentElement.style.setProperty("--brand",values.brandColor);
-  toast("تم حفظ إعدادات الشركة والنظام");
- }catch(e){toast("تعذر حفظ الإعدادات: "+e.message)}};
-}
-
 function tabR(){
  $("#av").innerHTML=`<div class="two"><div><label>المندوب</label><select id="fr"><option value="">الكل</option>${REPS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
  <div><label>الحالة</label><select id="fs"><option value="">الكل</option>${STAT.map(x=>`<option>${x}</option>`).join("")}</select></div></div>
