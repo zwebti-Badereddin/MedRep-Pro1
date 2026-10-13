@@ -215,32 +215,40 @@ function drawGpsComparisonVisit(v){
 
 async function review(ok,note){
  if(!ok&&!note){$("#ferr").textContent="اكتب ملاحظة للمندوب.";return}
- let approveLinks=false;
  if(ok){
   let summary;
   try{summary=await srv("gpsReviewSummary",{id:CUR.id})}catch(e){toast("تعذر التحقق من المواقع الحالية: "+e.message);return}
-  const links=summary.pendingLinks||[];
-  if(links.length){ // doctors visited at a facility they were not linked to yet: approving the report approves these links too
-   if(!confirm("يتضمن التقرير "+links.length+" ربطًا جديدًا لطبيب بمنشأة:\n"+links.slice(0,8).map(x=>"• "+x.name+" ← "+x.place).join("\n")+"\n\nهل تعتمد هذه الارتباطات مع التقرير؟"))return;
-   approveLinks=true;
-  }
-  const exceptions=(summary.visits||[]).filter(v=>v.status!=="تم التحقق");
-  if(exceptions.length){
-   const detail=exceptions.slice(0,5).map(v=>v.kind+" "+v.name+": "+v.status+(v.distance!=null?" ("+v.distance+" م)":"")).join("\n");
-   const reason=prompt("توجد "+exceptions.length+" زيارة لم يثبت تطابق موقعها.\n"+detail+"\n\nإذا قررت اعتماد التقرير استثنائيًا، اكتب السبب ليُسجّل في سجل الإدارة:");
-   if(reason==null)return;
-   if(reason.trim().length<5){toast("سبب الاعتماد الاستثنائي يجب ألا يقل عن 5 أحرف.");return}
-   note=reason.trim();
-  }
+  const exceptions=(summary.visits||[]).filter(v=>v.status!=="تم التحقق"),links=summary.pendingLinks||[];
+  // Visits without a verified location, or doctors seen at a facility they were not linked to: decide in one dialog.
+  if(exceptions.length||links.length){openApproveDialog(exceptions,links);return}
  }
- try{await srv("reviewReport",{id:CUR.id,approve:ok,note,approveLinks});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){
-  if(ok&&String(e.message||e).includes("سبب الاعتماد الاستثنائي")){
-   const reason=prompt("يتطلب اعتماد التقرير استثنائيًا سببًا مسجلًا من المدير:");
-   if(reason==null)return;
-   if(reason.trim().length<5){toast("سبب الاعتماد الاستثنائي يجب ألا يقل عن 5 أحرف.");return}
-   try{await srv("reviewReport",{id:CUR.id,approve:true,note:reason.trim(),approveLinks});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast("تم اعتماد التقرير استثنائيًا وتسجيل السبب");const g=$("#fgo");if(g)g.click()}catch(err){toast(err.message)}
-  }else toast(e.message)
- }
+ try{await doReview(ok,note,false)}catch(e){toast(e.message)}
+}
+async function doReview(ok,note,approveLinks){
+ await srv("reviewReport",{id:CUR.id,approve:ok,note,approveLinks});
+ $("#ov").classList.remove("on");$("#pv").classList.remove("on");
+ toast(ok?(note?"تم اعتماد التقرير وتسجيل السبب":"تم اعتماد التقرير"):"أُعيد التقرير للمندوب");
+ const g=$("#fgo");if(g)g.click();
+}
+function approveDialogHtml(exceptions,links){
+ const stCls=s=>s==="خارج النطاق"?"s4":s==="غير حاسم"?"s1":"";
+ const exHtml=exceptions.length?'<div class="ap-sec"><b>زيارات لم يثبت تطابق موقعها ('+exceptions.length+')</b>'+exceptions.map(v=>'<div class="ap-row"><div class="ap-t">'+esc(v.kind+" — "+v.name)+(v.place?'<small>'+esc(v.place)+'</small>':'')+'</div><span class="st '+stCls(v.status)+'">'+esc(v.status)+(v.distance!=null?" · "+v.distance+" م":"")+'</span></div>').join("")+
+  '<label for="ap_note">سبب الاعتماد الاستثنائي * <small>(5 أحرف على الأقل، يُسجَّل في سجل الإدارة)</small></label><textarea id="ap_note" rows="3" placeholder="مثال: المنشأة داخل مجمع طبي والإشارة ضعيفة"></textarea></div>':'';
+ const lkHtml=links.length?'<div class="ap-sec"><b>ارتباطات أطباء جديدة بمنشآت ('+links.length+')</b>'+links.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'<small>'+esc(x.place)+'</small></div></div>').join("")+
+  '<label class="ap-check"><input type="checkbox" id="ap_links"> أعتمد هذه الارتباطات مع التقرير</label></div>':'';
+ return '<h3>اعتماد التقرير</h3><div class="empty" style="text-align:right;margin:8px 0">راجع ما يلي قبل الاعتماد. حكم الموقع أداة مراجعة وليس دليل تقصير.</div>'+exHtml+lkHtml+
+  '<div class="err" id="ap_err"></div><div class="mfoot"><button type="button" class="btn" id="ap_x">إلغاء</button><button type="button" class="btn pri" id="ap_ok">'+(exceptions.length?"اعتماد استثنائي":"اعتماد التقرير")+'</button></div>';
+}
+function openApproveDialog(exceptions,links){
+ $("#modal").innerHTML=approveDialogHtml(exceptions,links);$("#ov").classList.add("on");
+ $("#ap_x").onclick=()=>$("#ov").classList.remove("on");
+ $("#ap_ok").onclick=async()=>{
+  const note=exceptions.length?$("#ap_note").value.trim():"",err=$("#ap_err");err.textContent="";
+  if(exceptions.length&&note.length<5){err.textContent="اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل).";$("#ap_note").focus();return}
+  if(links.length&&!$("#ap_links").checked){err.textContent="أكّد اعتماد الارتباطات الجديدة، أو أعد التقرير للمندوب.";return}
+  const b=$("#ap_ok");b.disabled=true;
+  try{await doReview(true,note,links.length>0)}catch(e){err.textContent=e.message;b.disabled=false}
+ };
 }
 function perfChart(r){
  const rows=(r.kpis||[]).map(k=>({name:k.name,actual:+k.actual||0,target:+k.target||0,pct:Math.max(0,Math.min(100,+k.achievement||0))}));

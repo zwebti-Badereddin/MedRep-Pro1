@@ -46,22 +46,47 @@ function drawFacilities(){
    (has(r)?'<a class="mini" href="https:\/\/www.openstreetmap.org/?mlat='+encodeURIComponent(r.lat)+'&mlon='+encodeURIComponent(r.lng)+'#map=18/'+encodeURIComponent(r.lat)+'/'+encodeURIComponent(r.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a><button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
    '<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button><button class="mini" data-a="toggle">'+(off(r)?"تفعيل":"تعطيل")+'</button></div>')+'</div>';
  }).join(""):'<div class="empty">لا توجد منشآت مطابقة.</div>');
- $("#facAdd").onclick=async()=>{
-  const name=prompt("اسم المنشأة:");if(name==null||!name.trim())return;
-  const type=prompt("نوع المنشأة (مستشفى / مصحة / عيادة / مركز):","منشأة طبية");if(type==null)return;
-  const row={name:name.trim(),type:type.trim()};
-  try{let out=await srv("facilityAct",{op:"create",row});
-   if(out.similar){if(!confirm("توجد منشأة مشابهة:\n"+out.similar.map(x=>"• "+x.name+(x.distance!=null?" ("+x.distance+" م)":"")).join("\n")+"\n\nهل تنشئ منشأة جديدة رغم ذلك؟"))return;out=await srv("facilityAct",{op:"create",confirmNew:true,row})}
-   toast("تمت إضافة المنشأة. حدّد موقعها من الخريطة.");await loadM()}catch(e){toast(e.message)}};
+ $("#facAdd").onclick=()=>facilityForm(null);
  document.querySelectorAll("#ml button[data-l]").forEach(b=>b.onclick=async()=>{try{await srv("linkAct",{id:b.dataset.lid,op:b.dataset.l});toast("تم");await loadM()}catch(e){toast(e.message)}});
  document.querySelectorAll("#ml button[data-a]").forEach(b=>b.onclick=()=>{
   const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),op=b.dataset.a;
   if(op==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
   if(op==="map")openWorkplaceMap({id:r.id,workplace:r.name,doctorName:"",lat:r.lat,lng:r.lng});
-  else if(op==="edit"){const name=prompt("اسم المنشأة (الإحداثيات لا تتغير):",r.name);if(name==null)return;const type=prompt("نوع المنشأة:",r.type||"");if(type==null)return;mAct(id,"edit",{row:{name,type}})}
+  else if(op==="edit")facilityForm(r);
   else if(op==="merge")fMerge(r);
   else mAct(id,op)
  });
+}
+/* Add / edit a facility in one sheet. Adding shows similar facilities (same name or < 100 m) inside the form first. */
+const FAC_TYPES=["منشأة طبية","مستشفى","مصحة","عيادة","مركز صحي","مستوصف"];
+function facilityFormHtml(r){
+ const t=r&&r.type?r.type:"منشأة طبية",types=FAC_TYPES.indexOf(t)>=0?FAC_TYPES:FAC_TYPES.concat([t]);
+ return '<h3>'+(r?"تعديل منشأة":"إضافة منشأة")+'</h3>'+
+  '<label for="fc_name">اسم المنشأة *</label><input id="fc_name" maxlength="120" value="'+esc(r?r.name:"")+'" placeholder="مثال: مصحة الشفاء">'+
+  '<label for="fc_type">نوع المنشأة</label><select id="fc_type">'+types.map(x=>'<option'+(x===t?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select>'+
+  '<div class="empty" style="text-align:right;margin-top:10px">'+(r?"تغيير الاسم لا يغيّر إحداثيات المنشأة ولا ارتباطات الأطباء بها.":"بعد الإضافة حدّد موقع المنشأة من الخريطة ليُعتمد مرجعًا للتحقق من الزيارات.")+'</div>'+
+  '<div id="fc_similar"></div><div class="err" id="ferr"></div>'+
+  '<div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">'+(r?"حفظ التعديل":"إضافة المنشأة")+'</button></div>';
+}
+function similarFacilitiesHtml(list){
+ return '<div class="ap-sec"><b>توجد منشأة مسجلة مشابهة — تأكد أنها ليست نفسها:</b>'+list.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'</div>'+(x.distance!=null?'<span class="st">'+x.distance+' م</span>':'')+'</div>').join("")+'</div>';
+}
+function facilityForm(r){
+ $("#modal").innerHTML=facilityFormHtml(r);$("#ov").classList.add("on");
+ let confirmNew=false;
+ $("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#fc_name").focus();
+ $("#sv").onclick=async()=>{
+  const row={name:$("#fc_name").value.trim(),type:$("#fc_type").value},err=$("#ferr");err.textContent="";
+  if(row.name.length<2){err.textContent="أدخل اسم المنشأة.";$("#fc_name").focus();return}
+  if(r){mAct(r.id,"edit",{row});return}
+  const b=$("#sv");b.disabled=true;
+  try{
+   const out=await srv("facilityAct",{op:"create",confirmNew,row});
+   if(out.similar){$("#fc_similar").innerHTML=similarFacilitiesHtml(out.similar);confirmNew=true;b.textContent="إضافة منشأة جديدة رغم ذلك";b.disabled=false;return}
+   $("#ov").classList.remove("on");toast("تمت إضافة المنشأة. حدّد موقعها من الخريطة.");await loadM();
+  }catch(e){err.textContent=e.message;b.disabled=false}
+ };
 }
 function fMerge(r){const oth=MS.rows.filter(x=>x.id!==r.id&&!x.mergedInto&&String(x.status)!=="معطل").sort((a,b)=>a.name.localeCompare(b.name,"ar"));
  $("#modal").innerHTML=`<h3>دمج «${esc(r.name)}»</h3><p style="color:var(--mut);font-size:14px;line-height:1.7">تُنقل ارتباطات الأطباء إلى المنشأة التي تختارها وتُعطَّل هذه المنشأة. التقارير القديمة تبقى كما هي وتُحتسب على المنشأة الجديدة تلقائيًا.</p>
