@@ -511,6 +511,7 @@ function prepareReport_(s, p) {
         ? masterDoctors.find(d => String(d.id) === String(v.doctorId))
         : (namedDoctors.length === 1 ? namedDoctors[0] : null);
       if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
+      if (v.doctorId && String(doctor.active) === 'false') throw new Error('هذا الطبيب معطّل أو مدموج في سجل آخر. أعد اختيار الطبيب.');
       if (v.workplaceId) {
         const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
         if (!place || String(place.active) === 'false' || (v.place && normName_(place.workplace) !== normName_(v.place))) {
@@ -724,6 +725,7 @@ function reportVisitGpsCheck_(v, kind, st) {
       // A name-only fallback is safe only when it resolves to exactly one workplace for this doctor.
       if (matches.length === 1) w = matches[0];
     }
+    if (w && v.workplaceId && !sameWorkplaceSite_(rows.find(x => String(x.id) === String(v.workplaceId)), w)) w = null;
     if (w && String(w.active) !== 'false') ent = facilityGeoEntity_('DoctorWorkplaces', w.id) || w;
   } else {
     const rows = dbAll_('Pharmacies');
@@ -736,6 +738,15 @@ function reportVisitGpsCheck_(v, kind, st) {
   const radius = Math.max(20, +ent.radius || +st.gpsRadius || 150), maxAcc = Math.max(1, +st.gpsRefAcc || 50);
   const distance = dist_(+ent.lat, +ent.lng, +g.lat, +g.lng);
   return { status:geoVerdict_(distance, g.acc, radius, maxAcc), distance:distance, reference:String(ent.name || ent.workplace || '') };
+}
+// A name/owner fallback may stand in for the workplace row a visit referenced only when both are approved map references
+// no more than 25 m apart (the same-site rule used by proposeSharedDoctorFacility_).
+function sameWorkplaceSite_(ref, w) {
+  if (!ref || !w) return false;
+  if (String(ref.id) === String(w.id)) return true;
+  const a = facilityGeoEntity_('DoctorWorkplaces', ref.id) || ref, b = facilityGeoEntity_('DoctorWorkplaces', w.id) || w;
+  const approved = e => e.refBy === 'ADMIN_MAP' && e.refState === 'مؤكد' && String(e.reviewed) === 'true' && gpsPointValidServer_(e.lat, e.lng);
+  return approved(a) && approved(b) && dist_(+a.lat, +a.lng, +b.lat, +b.lng) <= 25;
 }
 function gpsPointValidServer_(lat, lng) {
   return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
@@ -831,7 +842,7 @@ function ensureDoctorWorkplaces_() {
   const doctors = dbAll_('Doctors'), places = dbAll_('DoctorWorkplaces');
   doctors.forEach(d => {
     const name = String(d.workplace || '').trim();
-    if (!name || places.some(w => w.doctorId === d.id && normName_(w.workplace) === normName_(name))) return;
+    if (!name || places.some(w => w.doctorId === d.id)) return;
     const w = { id: nextWorkplaceId_(places), doctorId: d.id, doctorName: d.name, workplace: name, sector: d.sector || '', lat: '', lng: '', radius: '', active: String(d.active) === 'false' ? false : true, refState: '', refBy: '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
     dbAppend_('DoctorWorkplaces', w); places.push(w);
   });
@@ -972,6 +983,7 @@ function gpsReference_(s, p) {
         normName_(w.workplace) === placeName && (!doctorId || String(w.doctorId) === doctorId));
       if (matches.length === 1) workplace = matches[0];
     }
+    if (workplace && workplaceId && !sameWorkplaceSite_(dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId), workplace)) workplace = null;
     if (workplace) geo = facilityGeoEntity_('DoctorWorkplaces', workplace.id);
   } else if (kind === 'pharmacy') {
     const pharmacyId = String(p.pharmacyId || '');
@@ -1022,13 +1034,13 @@ function masterList_(s, p) {
   return dbAll_(sh).map(r => Object.assign({}, r, { uses: cnt[r.name] || 0 }));
 }
 // Update operational report names only; immutable submitted snapshots remain unchanged.
-function rewriteNames_(sheet, from, to) {
-  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), sh = sheet_('Reports'), vals = sh.getDataRange().getValues();
+function rewriteNames_(sheet, from, to, fromId, toId, wpMap) {
+  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), idKey = sheet === 'Doctors' ? 'doctorId' : 'pharmacyId', sh = sheet_('Reports'), vals = sh.getDataRange().getValues();
   let n = 0;
   for (let i = 1; i < vals.length; i++) {
     let arr; try { arr = JSON.parse(vals[i][ci] || '[]'); } catch (e) { continue; }
     let changed = false;
-    arr.forEach(v => { if (v.name === from) { v.name = to; changed = true; } });
+    arr.forEach(v => { const byId = fromId != null && v[idKey]; if (byId ? String(v[idKey]) === String(fromId) : v.name === from) { v.name = to; if (byId) v[idKey] = toId; changed = true; } if (wpMap && v.workplaceId && wpMap[v.workplaceId]) { v.workplaceId = wpMap[v.workplaceId]; changed = true; } });
     if (changed) { sh.getRange(i + 1, ci + 1).setValue(JSON.stringify(arr)); n++; }
   }
   return n;
@@ -1223,13 +1235,14 @@ function reverify_(sheet, ent) {
 }
 
 function mergeDoctorWorkplaces_(fromDoctor, toDoctor) {
-  ensureDoctorWorkplaces_(); const rows = dbAll_('DoctorWorkplaces');
+  ensureDoctorWorkplaces_(); const rows = dbAll_('DoctorWorkplaces'), moved = {};
   rows.filter(w => w.doctorId === fromDoctor.id).forEach(w => {
     const duplicate = rows.find(x => x.doctorId === toDoctor.id && normName_(x.workplace) === normName_(w.workplace) && String(x.active) !== 'false');
-    if (duplicate) { w.active = false; w.reviewed = 'true'; }
+    if (duplicate) { w.active = false; w.reviewed = 'true'; const fa = facilityForLegacy_('DoctorWorkplaces', w.id), fb = facilityForLegacy_('DoctorWorkplaces', duplicate.id); if (fa && fb && String(fa.id) === String(fb.id)) moved[w.id] = duplicate.id; }
     else { w.doctorId = toDoctor.id; w.doctorName = toDoctor.name; }
     dbUpsert_('DoctorWorkplaces', 'id', w);
   });
+  return moved;
 }
 function masterAct_(s, p) {
   const sh = masterSheet_(p.entity), rows = dbAll_(sh), r = rows.find(x => x.id === p.id);
@@ -1240,8 +1253,8 @@ function masterAct_(s, p) {
   else if (p.op === 'merge') {
     const t = rows.find(x => x.id === p.into);
     if (!t || t.id === r.id) throw new Error('اختر سجلًا صحيحًا للدمج');
-    note = 'into ' + t.id + ', reports: ' + rewriteNames_(sh, r.name, t.name);
-    if (sh === 'Doctors') mergeDoctorWorkplaces_(r, t);
+    const wpMap = sh === 'Doctors' ? mergeDoctorWorkplaces_(r, t) : null;
+    note = 'into ' + t.id + ', reports: ' + rewriteNames_(sh, r.name, t.name, r.id, t.id, wpMap);
     r.active = false; r.reviewed = 'true';
   } else if (p.op === 'edit') {
     const row = p.row || {}, nm = String(row.name || '').trim().slice(0, 80), cut = v => String(v || '').trim().slice(0, 80);
