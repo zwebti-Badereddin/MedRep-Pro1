@@ -61,7 +61,8 @@ function api(token, action, p) {
       outcome = 'ok';
       return result;
     }
-    const s = session_(token);
+    let tS = Date.now();
+    const s = session_(token); phase_('session', tS);
     const route = ROUTES[action];
     if (!route) throw new Error('عملية غير معروفة');
     if (route.role !== 'any' && route.role !== s.role) throw new Error('غير مصرح');
@@ -336,6 +337,7 @@ function setAdminAccountActive() {
   if (action !== ui.Button.YES) return { cancelled: true };
   account.active = nextActive; account.updatedAt = new Date().toISOString(); account.updatedBy = 'OWNER';
   dbUpsert_('Admins', 'id', account);
+  CacheService.getScriptCache().remove('adm_ok_' + account.id); // a disabled admin is refused at his very next request
   audit_({ uid: 'OWNER', role: 'owner' }, nextActive ? 'enable_admin_account' : 'disable_admin_account', account.id, username);
   ui.alert('تم ' + (nextActive ? 'تفعيل' : 'تعطيل') + ' الحساب.');
   return { id: account.id, active: nextActive };
@@ -353,12 +355,15 @@ function session_(token) {
   if (!raw) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
   const s = JSON.parse(raw); s.token = token;
   if (s.role === 'rep' && cache.get('off_' + s.uid)) throw new Error('تم تعطيل هذا الحساب.');
-  if (s.role === 'admin' && /^ADM-/.test(String(s.uid))) {
+  // An administrator account is re-checked in the Admins sheet at most every 5 minutes (it used to be read on every admin
+  // request); disabling an account drops this mark at once (setAdminAccountActive).
+  if (s.role === 'admin' && /^ADM-/.test(String(s.uid)) && !cache.get('adm_ok_' + s.uid)) {
     const account = sheet_('Admins') ? dbAll_('Admins').find(a => String(a.id) === String(s.uid)) : null;
     if (!account || String(account.active) === 'false') {
       cache.remove('s_' + token);
       throw new Error('تم تعطيل حساب الإدارة أو لم يعد موجودًا. سجّل الدخول بحساب نشط.');
     }
+    try { cache.put('adm_ok_' + s.uid, '1', 300); } catch (e) {}
   }
   // Sliding session: renewed while the user is active, with an absolute cap per login.
   // The cache TTL cannot exceed 6h, so the rep account is re-checked at every renewal (the 'off_' flag also expires).
@@ -430,7 +435,8 @@ function lookupsBuild_() {
 }
 function clearCache_() {
   _ST = null;
-  const keys = ['st', 'lk', LOOKUPS_KEY, 'dwp_ok']; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i, LOOKUPS_KEY + '_' + i);
+  const keys = ['st', 'lk', LOOKUPS_KEY, 'dwp_ok', REP_NAMES_KEY];
+  for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i, LOOKUPS_KEY + '_' + i, REP_NAMES_KEY + '_' + i);
   VALIDATION_TABLES.forEach(n => { keys.push(TABLE_CACHE + n); for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(TABLE_CACHE + n + '_' + i); });
   CacheService.getScriptCache().removeAll(keys);
 }
@@ -688,18 +694,28 @@ function getReport_(s, p) {
   return s.role === 'rep' ? repView_(out) : out;
 }
 // Filters: repId, from, to, no, status, q (doctor / pharmacy / product text search)
+// Rep id -> name, cached with the other long-lived lookups (every rep change goes through saveEntity_, which clears it).
+const REP_NAMES_KEY = 'repn';
+function repNames_() {
+  const hit = cacheGetLarge_(REP_NAMES_KEY); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const reps = {}; dbAll_('Reps').forEach(r => { reps[r.id] = r.name; });
+  cachePutLarge_(REP_NAMES_KEY, JSON.stringify(reps), CACHE_LONG_SEC);
+  return reps;
+}
 function listReports_(s, p) {
   if (p.q) return listReportsFull_(s, p); // free-text search needs the visit contents
-  const reps = {}; dbAll_('Reps').forEach(r => reps[r.id] = r.name);
+  let t = Date.now();
+  const reps = repNames_(); phase_('reps', t); t = Date.now();
   const rows = reportsLight_().filter(r =>
     (s.role === 'admin' || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
-    (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to)), vc = visitCounts_(rows);
+    (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to));
+  phase_('index', t); t = Date.now();
+  const vc = visitCounts_(rows); phase_('counts', t);
   return rows.map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0, visits: vc[r.id] || 0 })).reverse();
 }
 function listReportsFull_(s, p) {
-  const q = (p.q || '').toLowerCase(), reps = {};
-  dbAll_('Reps').forEach(r => reps[r.id] = r.name);
+  const q = (p.q || '').toLowerCase(), reps = repNames_();
   return dbAll_('Reports').filter(r =>
     (s.role === 'admin' || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
@@ -2093,7 +2109,7 @@ function refreshAppCache() {
 const WARM_HANDLER = 'warmCachesTriggerHandler', WARM_EVERY_MIN = 10;
 function warmCaches_() {
   const t = Date.now(), wasCached = !!cacheGetLarge_(LOOKUPS_KEY);
-  lookups_(); settings_(); offData_();
+  lookups_(); settings_(); offData_(); repNames_();
   return { lookupsWereCached: wasCached, ms: Date.now() - t };
 }
 // Public because triggers can only call top-level functions; it refuses any caller but its own installed trigger.
