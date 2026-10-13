@@ -45,6 +45,9 @@ function testDataCleanupPlan_(t) {
     const links = linkFac[S(f.id)] || [];
     if (links.length && links.every(w => has('DoctorWorkplaces', w.id)) && !keepFac.has(S(f.id))) mark('Facilities', f, 'لا يرتبط بها إلا روابط محذوفة');
   });
+  // Legacy per-entity facility rows (pharmacy GPS references still live there) follow their removed pharmacy or doctor link.
+  rows('Facilities').forEach(f => { if (has(f.legacyEntity === 'Pharmacies' ? 'Pharmacies' : f.legacyEntity === 'DoctorWorkplaces' ? 'DoctorWorkplaces' : '-', f.legacyId)
+    && !keepFac.has(S(f.id)) && !(linkFac[S(f.id)] || []).some(w => !has('DoctorWorkplaces', w.id))) mark('Facilities', f, 'مرجع موقع قديم لعنصر محذوف'); });
   rows('DoctorWorkplaces').forEach(w => { if (!has('DoctorWorkplaces', w.id) && has('Facilities', w.facilityId)) blockers.push({ type: 'facilityStillLinked', facilityId: S(w.facilityId), workplaceId: S(w.id), doctorId: S(w.doctorId) }); });
   rows('Facilities').forEach(f => { if (!has('Facilities', f.id) && has('Facilities', f.mergedInto)) blockers.push({ type: 'mergedIntoRemovedFacility', facilityId: S(f.id), mergedInto: S(f.mergedInto) }); });
   rows('FacilityLocations').forEach(l => { if (has('Facilities', l.facilityId)) mark('FacilityLocations', l, 'سجل موقع منشأة محذوفة'); });

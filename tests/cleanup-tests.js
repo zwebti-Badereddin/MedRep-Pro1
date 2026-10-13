@@ -116,6 +116,20 @@ test('demo names match despite spacing, a joined "د." prefix, hamza and invisib
   assert.ok(!p.rows.Pharmacies && p.warnings.some(w => w.type === 'demoNotFound' && w.name === 'صيدلية الشفاء'));
   assert.ok(!p.warnings.some(w => w.type === 'demoNotFound' && w.sheet === 'Doctors'));
 });
+test('a removed pharmacy takes its legacy facility row and location history; a legacy row still linked by a kept doctor stays', () => {
+  const s = SEED();
+  s.Facilities.push({ id: 'FAC-PH1', name: 'صيدلية تجربة', status: 'نشط', legacyEntity: 'Pharmacies', legacyId: 'PH-0002' },
+    { id: 'FAC-PH2', name: 'صيدلية حقيقية', status: 'نشط', legacyEntity: 'Pharmacies', legacyId: 'PH-0009' },
+    { id: 'FAC-DW1', name: 'قديم', status: 'معطل', legacyEntity: 'DoctorWorkplaces', legacyId: 'DWP-00001' });
+  s.FacilityLocations.push({ id: 'LOC-PH1', facilityId: 'FAC-PH1', active: true }, { id: 'LOC-PH2', facilityId: 'FAC-PH2', active: true });
+  const { env } = setup(s, { Pharmacies: ['PH-0002'] }), p = env.ctx.previewTestDataCleanup();
+  assert.ok(p.ready);
+  assert.deepStrictEqual(p.rows.Facilities.map(x => x.id).sort(), ['FAC-0001', 'FAC-DW1', 'FAC-PH1']);
+  assert.ok(p.rows.FacilityLocations.some(x => x.id === 'LOC-PH1') && !p.rows.FacilityLocations.some(x => x.id === 'LOC-PH2'));
+  env.props.set('TEST_CLEANUP_APPROVED', p.approvalCode); env.ctx.cleanupTestData();
+  assert.deepStrictEqual(ids(env, 'Pharmacies'), []);
+  assert.deepStrictEqual(ids(env, 'Facilities').sort(), ['FAC-0002', 'FAC-0003', 'FAC-PH2']);
+});
 test('warning when no product would be left', () => {
   const s = SEED(); s.Products = s.Products.slice(0, 3);
   assert.ok(setup(s).env.ctx.previewTestDataCleanup().warnings.some(w => w.type === 'noProductLeft'));
