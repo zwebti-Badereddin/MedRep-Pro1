@@ -33,6 +33,7 @@ function api(token, action, p) {
     const route = routes_()[action];
     if (!route) throw new Error('عملية غير معروفة');
     if (route.role !== 'any' && route.role !== s.role) throw new Error('غير مصرح');
+    licenseGuard_(action);
     const result = ok(route.fn(s, p));
     outcome = 'ok';
     return result;

@@ -56,7 +56,7 @@ function lookupsBuild_() {
 }
 function clearCache_() {
   _ST = null;
-  const keys = ['st', 'lk', LOOKUPS_KEY, 'dwp_ok', REP_NAMES_KEY];
+  const keys = ['st', 'lk', LOOKUPS_KEY, 'dwp_ok', REP_NAMES_KEY, LICENSE_KEY];
   for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i, LOOKUPS_KEY + '_' + i, REP_NAMES_KEY + '_' + i);
   VALIDATION_TABLES.forEach(n => { keys.push(TABLE_CACHE + n); for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(TABLE_CACHE + n + '_' + i); });
   CacheService.getScriptCache().removeAll(keys);
@@ -68,7 +68,8 @@ function bootstrap_(s) {
     reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
     doctors: lk.doctors,
     facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products, specialties: lk.specialties || [],
-    rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null
+    rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null,
+    license: licenseForClient_(s)
   };
 }
 // Filters: repId, from, to, no, status, q (doctor / pharmacy / product text search)

@@ -305,6 +305,14 @@ function pilotHealthCheck() {
     );
   }
 
+  // 6ب. الترخيص: تاريخ الانتهاء في خصائص السكربت (اختياري).
+  const lic = licenseState_(props.getProperty('LICENSE_UNTIL'), Utilities.formatDate(new Date(), config.timezone || Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    props.getProperty('LICENSE_WARN_DAYS'), props.getProperty('LICENSE_GRACE_DAYS'));
+  add(lic.state === 'ok' ? 'PASS' : lic.state === 'expired' || lic.state === 'invalid' ? 'FAIL' : 'WARN', 'الترخيص',
+    lic.state === 'none' ? 'لا يوجد تاريخ انتهاء (LICENSE_UNTIL غير محدد).'
+      : lic.state === 'invalid' ? 'قيمة LICENSE_UNTIL غير صالحة: ' + lic.until + ' (الصيغة YYYY-MM-DD).'
+      : 'ينتهي الترخيص في ' + lic.until + ' (متبقٍ ' + lic.days + ' يوم، والسماح حتى ' + lic.graceEnd + ').');
+
   // 7. إصدار النسخة: خاصية اختيارية لتوثيق إصدار كل شركة.
   const version = props.getProperty('APP_VERSION');
 

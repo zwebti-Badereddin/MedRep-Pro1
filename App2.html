@@ -201,11 +201,11 @@ async function loadDay(d){
  }catch(e){if(seq===reportContextSeq)toast(e.message)}
 }
 function banner(){
- let h="";const bx=(t,b,id,cls)=>`<div class="notice${cls?" "+cls:""}"><div class="tx">${t}</div><button type="button" id="${id}">${b}</button></div>`;
+ let h=licNotice();const bx=(t,b,id,cls)=>`<div class="notice${cls?" "+cls:""}"><div class="tx">${t}</div><button type="button" id="${id}">${b}</button></div>`;
  if(S.date!==TD)h+=bx(`أنت تحرر تقرير يوم <b>${esc(S.date)}</b>`,"العودة لتقرير اليوم","bk","info");
  else if(PREV&&PREV.open&&PREV.work&&(!PREV.status||["مسودة","معاد للمندوب"].indexOf(PREV.status)>=0))h+=bx(`تقرير الأمس (${esc(PREV.date.split("-").reverse().join("/"))}) لم يُرسل بعد`,"كتابته الآن","py");
  if(PREV&&PREV.returned>0&&S.date===TD)h+=bx(`أعادت الإدارة ${PREV.returned} تقرير إليك للتعديل.`,"عرض تقاريري","rh");
- if(S.status==="مرسل")h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.","إعادة فتح للتعديل","ro","info");
+ if(S.status==="مرسل"&&!licOff())h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.","إعادة فتح للتعديل","ro","info");
  return h
 }
 /* Long Arabic date for the header: "الثلاثاء · 13 أكتوبر 2026" */

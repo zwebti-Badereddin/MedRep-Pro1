@@ -39,8 +39,15 @@ function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)==
  CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
  CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.facilities=b.facilities||[];CFG.phs=b.pharmacies;CFG.specialties=u((b.specialties||[]).concat(b.doctors.map(d=>d.specialty)));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
- CFG.st=st;document.documentElement.style.setProperty("--brand",CFG.company.color)}
-const locked=()=>S&&["مسودة","معاد للمندوب"].indexOf(S.status)<0;
+ CFG.st=st;CFG.lic=b.license||null;document.documentElement.style.setProperty("--brand",CFG.company.color)}
+/* License: after the grace period the rep's report is read-only (the server refuses writes too). */
+const licOff=()=>!!(CFG.lic&&CFG.lic.state==="expired");
+const locked=()=>S&&(licOff()||["مسودة","معاد للمندوب"].indexOf(S.status)<0);
+function licNotice(){const l=CFG.lic;if(!l)return"";const d=x=>esc(String(x||"").split("-").reverse().join("/"));
+ const t=l.state==="expired"?(l.until?"انتهى ترخيص النظام في "+d(l.until)+". توقف إنشاء التقارير وتعديلها، ويمكنك عرض التقارير السابقة وتصديرها. للتجديد تواصل مع مزوّد النظام.":"انتهى ترخيص النظام، ولا يمكن إنشاء التقارير أو تعديلها حتى التجديد. راجع الإدارة.")
+  :l.state==="grace"?"انتهى ترخيص النظام في "+d(l.until)+". يستمر العمل حتى "+d(l.graceEnd)+" ثم يتوقف إنشاء التقارير. للتجديد تواصل مع مزوّد النظام."
+  :l.state==="warn"?"ينتهي ترخيص النظام في "+d(l.until)+(l.days>0?" (بعد "+l.days+" يوم)":" (اليوم)")+". للتجديد تواصل مع مزوّد النظام.":"";
+ return t?'<div class="notice'+(l.state==="warn"?"":" stop")+'" id="licn"><div class="tx">'+t+'</div></div>':""}
 // Each save belongs to the report context in which it was created.
 let saveChain=Promise.resolve(),reportContextSeq=0;
 function saveNow(){
@@ -97,7 +104,7 @@ function adminHome(){
  const n=new Date();
  $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
  <div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
- <div class="wrap"><div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
+ <div class="wrap">${licNotice()}<div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
  const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("d");
