@@ -9,8 +9,11 @@ const T = {
   Reps: ['id', 'name', 'codeHash', 'phone', 'active', 'email'],
   Admins: ['id', 'username', 'name', 'passwordHash', 'active', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Doctors: ['id', 'name', 'specialty', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
-  DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
-  Facilities: ['id', 'name', 'type', 'region', 'address', 'status', 'legacyEntity', 'legacyId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
+  // Facility model V2: the last four DoctorWorkplaces columns and the last nine Facilities columns are appended by migrateFacilityModelV2.
+  DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed',
+    'facilityId', 'linkState', 'linkedBy', 'linkedAt'],
+  Facilities: ['id', 'name', 'type', 'region', 'address', 'status', 'legacyEntity', 'legacyId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy',
+    'lat', 'lng', 'radius', 'geoState', 'geoSource', 'geoBy', 'geoAt', 'geoVersion', 'mergedInto'],
   FacilityLocations: ['id', 'facilityId', 'lat', 'lng', 'radius', 'source', 'state', 'proposedBy', 'proposedAt', 'approvedBy', 'approvedAt', 'version', 'active', 'note'],
   DoctorPlaces: ['id', 'doctorId', 'facilityId', 'workDays', 'notes', 'active', 'legacyWorkplaceId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Pharmacies: ['id', 'name', 'location', 'nearFacility', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
@@ -86,10 +89,12 @@ const ROUTES = {
   bootstrap:     { role: 'any',   fn: bootstrap_ },
   masterList:    { role: 'admin', fn: masterList_ },
   masterAct:     { role: 'admin', fn: masterAct_ },
-  workplacesList:{ role: 'admin', fn: workplacesList_ },
+  facilitiesList:{ role: 'admin', fn: facilitiesList_ },
   gpsReference:  { role: 'admin', fn: gpsReference_ },
-  workplaceAct:  { role: 'admin', fn: workplaceAct_ },
-  addDoctorWorkplace: { role: 'rep', fn: (s, p) => addDoctorWorkplace_(s, p) },
+  facilityAct:   { role: 'admin', fn: facilityAct_ },
+  linkAct:       { role: 'admin', fn: linkAct_ },
+  proposeFacility: { role: 'rep', fn: proposeFacility_ },
+  requestDoctorLink: { role: 'rep', fn: requestDoctorLink_ },
   reopenReport:  { role: 'rep',   fn: reopenReport_ },
   prevInfo:      { role: 'rep',   fn: prevInfo_ },
   trend:         { role: 'admin', fn: trend_ },
@@ -119,7 +124,8 @@ const ROUTES = {
   reviewReport:  { role: 'admin', fn: reviewReport_ },
   gpsReviewSummary:{ role: 'admin', fn: gpsReviewSummary_ },
   list:          { role: 'admin', fn: (s, p) => dbAll_(entity_(p.entity)) },
-  save:          { role: 'admin', fn: saveEntity_ },
+  // Generic save is for Products only: reps go through repSave_, doctors/pharmacies through masterAct_ (their validated paths).
+  save:          { role: 'admin', fn: (s, p) => { if (p.entity !== 'Products') throw new Error('كيان غير مسموح'); return saveEntity_(s, p); } },
   saveKpi:       { role: 'admin', fn: saveKpi_ },
   saveSettings:  { role: 'admin', fn: saveSettings_ },
   saveLogo:      { role: 'admin', fn: saveCompanyLogo_ },
@@ -381,33 +387,41 @@ function cachePutLarge_(key, str, sec) {
   all[key] = String(n);
   try { CacheService.getScriptCache().putAll(all, sec); return true; } catch (e) { return false; }
 }
+// V2 lookups use their own cache key: a value cached by the previous (workplace-based) deployment can never be served as V2.
+const LOOKUPS_KEY = 'lk2';
 function lookups_() {
-  const hit = cacheGetLarge_('lk'); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
-  ensureDoctorWorkplaces_();
+  const hit = cacheGetLarge_(LOOKUPS_KEY); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  requireFacilityV2_();
   const act = r => String(r.active) !== 'false';
-  const allWorkplaces = dbAll_('DoctorWorkplaces').filter(act).map(w => ({ id: w.id, doctorId: w.doctorId, workplace: w.workplace, sector: w.sector, active: w.active, reviewed: String(w.reviewed) === 'true', refState: w.refState || '' }));
-  // Facility choices are shared across all doctors. Keep one stable entry per normalized facility name.
-  const byFacilityName = new Map();
-  allWorkplaces.forEach(w => { const key = normName_(w.workplace), prior = byFacilityName.get(key); if (!prior || (w.reviewed && !prior.reviewed)) byFacilityName.set(key, w); });
-  const workplaces = Array.from(byFacilityName.values());
-  // Each doctor carries only his own workplaces (id + name). The shared facility list is sent once, in `facilities`.
+  // Facility choices come straight from Facilities (one row per facility, shared by all doctors). Pharmacy facilities are separate.
+  const allFacilities = dbAll_('Facilities');
+  const facilities = allFacilities.filter(f => f.legacyEntity !== 'Pharmacies' && !f.mergedInto && f.status !== 'معطل')
+    .map(f => ({ id: f.id, workplace: f.name, type: f.type, active: true, reviewed: facilityApproved_(f) }));
+  const live = {}; facilities.forEach(f => { live[f.id] = f; });
+  // Each doctor carries the facilities he is linked to (approved or awaiting approval). GPS coordinates stay server-side.
   const byDoctor = {};
-  allWorkplaces.forEach(w => { if (w.doctorId) (byDoctor[w.doctorId] = byDoctor[w.doctorId] || []).push({ id: w.id, workplace: w.workplace }); });
-  // GPS coordinates and internal review metadata remain server-side.
+  dbAll_('DoctorWorkplaces').forEach(w => {
+    if (!act(w) || !w.doctorId || w.linkState === LINK_REJECTED) return;
+    const f = facilityById_(w.facilityId, allFacilities), item = f && live[f.id];
+    if (!item) return;
+    const seen = (byDoctor[w.doctorId] || []).find(x => x.id === item.id);
+    if (seen) { seen.linked = seen.linked || linkApproved_(w); return; }
+    (byDoctor[w.doctorId] = byDoctor[w.doctorId] || []).push({ id: item.id, workplace: item.workplace, reviewed: item.reviewed, linked: linkApproved_(w) });
+  });
   const v = {
-    facilities: workplaces,
+    facilities: facilities,
     doctors: dbAll_('Doctors').filter(act).map(r => ({ id: r.id, name: r.name, specialty: r.specialty, workplace: r.workplace, sector: r.sector, active: r.active, workplaces: byDoctor[r.id] || [] })),
     pharmacies: dbAll_('Pharmacies').filter(act).map(r => ({ id: r.id, name: r.name, location: r.location, nearFacility: r.nearFacility, active: r.active })),
     products: dbAll_('Products').filter(r => r.status !== 'متوقف').map(r => ({ id: r.id, name: r.name, category: r.category, status: r.status })),
     specialties: specialtyList_()
   };
-  cachePutLarge_('lk', JSON.stringify(v), 300);
+  cachePutLarge_(LOOKUPS_KEY, JSON.stringify(v), 300);
   return v;
 }
 function clearCache_() {
   _ST = null;
-  const keys = ['st', 'lk', 'dwp_ok']; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i);
-  VALIDATION_TABLES.forEach(n => { keys.push('m_' + n); for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('m_' + n + '_' + i); });
+  const keys = ['st', 'lk', LOOKUPS_KEY, 'dwp_ok']; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('lk_' + i, LOOKUPS_KEY + '_' + i);
+  VALIDATION_TABLES.forEach(n => { keys.push(TABLE_CACHE + n); for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(TABLE_CACHE + n + '_' + i); });
   CacheService.getScriptCache().removeAll(keys);
 }
 function bootstrap_(s) {
@@ -486,7 +500,7 @@ function prepareReport_(s, p) {
   const hit = findReportRow_(x => x.repId === s.uid && x.date === date), r = hit ? hit.r : null;
   if (r && ['مسودة', 'معاد للمندوب'].indexOf(r.status) < 0) throw new Error('لا يمكن تعديل تقرير بعد إرساله. أعد فتحه أولًا.');
   if (!editable_(date, r)) throw new Error('انتهت مهلة كتابة هذا التقرير. اطلب من الإدارة إعادته إليك.');
-  ensureDoctorWorkplaces_(); // may write, so it runs before the read scope starts
+  requireFacilityV2_();
   return readScope_(() => {
     const tM = Date.now();
     VALIDATION_TABLES.forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
@@ -495,7 +509,7 @@ function prepareReport_(s, p) {
     const prevD = r ? JSON.parse(r.doctors || '[]') : [], prevP = r ? JSON.parse(r.pharmacies || '[]') : [];
     const clean = (list, prev) => (list || []).map((v, i) => {
       const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
-      delete o._v; // internal server-only flag; never accept it from the client
+      delete o._v; delete o._needLink; delete o.linkPending; // server-only flags; never accepted from the client
       const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
       if (pv) o.gps = pv.gps;
       else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }
@@ -504,7 +518,8 @@ function prepareReport_(s, p) {
     });
     const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
     // Validate explicit master IDs even when GPS is unavailable; IDs are not trusted merely because the client sent them.
-    const masterDoctors = dbAll_('Doctors'), masterWorkplaces = dbAll_('DoctorWorkplaces'), masterPharmacies = dbAll_('Pharmacies');
+    const masterDoctors = dbAll_('Doctors'), masterPharmacies = dbAll_('Pharmacies');
+    const fx = { facilities: dbAll_('Facilities'), workplaces: dbAll_('DoctorWorkplaces') }, policy = workplacePolicy_();
     docs.forEach(v => {
       const namedDoctors = masterDoctors.filter(d => normName_(d.name) === normName_(v.name));
       const doctor = v.doctorId
@@ -512,12 +527,13 @@ function prepareReport_(s, p) {
         : (namedDoctors.length === 1 ? namedDoctors[0] : null);
       if (v.doctorId && (!doctor || normName_(doctor.name) !== normName_(v.name))) throw new Error('معرّف الطبيب لا يطابق اسم الزيارة. أعد اختيار الطبيب.');
       if (v.doctorId && String(doctor.active) === 'false') throw new Error('هذا الطبيب معطّل أو مدموج في سجل آخر. أعد اختيار الطبيب.');
-      if (v.workplaceId) {
-        const place = masterWorkplaces.find(w => String(w.id) === String(v.workplaceId));
-        if (!place || String(place.active) === 'false' || (v.place && normName_(place.workplace) !== normName_(v.place))) {
-          throw new Error('مكان المنشأة غير صالح أو معطّل. أعد اختيار المنشأة.');
-        }
-      }
+      // The facility is the reference; the doctor ↔ facility link is checked per policy (soft: saved and flagged; strict: refused).
+      const res = resolveVisitLink_(v, doctor, fx, policy);
+      if (res.error) throw new Error(res.error);
+      if (res.facility) { v.facilityId = res.facility.id; v.place = res.facility.name; v.workplaceId = res.link ? res.link.id : ''; }
+      else delete v.facilityId;
+      if (res.pending) v.linkPending = true;
+      if (res.needLink) v._needLink = doctor.id; // the link row is written under the lock in persistReport_
     });
     phs.forEach(v => {
       if (!v.pharmacyId) return;
@@ -525,58 +541,19 @@ function prepareReport_(s, p) {
       if (!pharmacy || String(pharmacy.active) === 'false' || normName_(pharmacy.name) !== normName_(v.name)) throw new Error('معرّف الصيدلية غير صالح أو أن الصيدلية معطّلة. أعد اختيار الصيدلية.');
     });
     if (docs.concat(phs).some(v => v._v)) {
-      const st = settings_(), D = masterDoctors, W = masterWorkplaces, P = masterPharmacies;
-      docs.forEach(v => { if (v._v) {
-        const namedDoctors = D.filter(x => normName_(x.name) === normName_(v.name)); const doctor = v.doctorId ? D.find(x => String(x.id) === String(v.doctorId)) : (namedDoctors.length === 1 ? namedDoctors[0] : null);
-        const doctorMatches = !!doctor && normName_(doctor.name) === normName_(v.name);
-        let place = v.workplaceId ? W.find(x => x.id === v.workplaceId) : null;
-        // Never accept a workplace ID belonging to another doctor or a stale/missing ID.
-        if (v.workplaceId && (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place))) {
-          geo_(v, null, 'DoctorWorkplaces', s, st); return;
-        }
-        if (!place && !v.workplaceId) {
-          const matches = W.filter(x => String(x.active) !== 'false' && normName_(x.workplace) === normName_(v.place));
-          if (matches.length) place = matches.find(x => facilityForLegacy_('DoctorWorkplaces', x.id)) || matches[0];
-        }
-        if (!place || String(place.active) === 'false' || normName_(place.workplace) !== normName_(v.place)) {
-          geo_(v, null, 'DoctorWorkplaces', s, st); return;
-        }
-        v.workplaceId = place.id;
-        const facilityGeo = facilityGeoEntity_('DoctorWorkplaces', place.id);
-        geo_(v, facilityGeo || place, 'DoctorWorkplaces', s, st);
-      }});
+      const st = settings_(), P = masterPharmacies;
+      // One read: the visit's facility row carries the approved coordinates.
+      docs.forEach(v => { if (v._v) geo_(v, facilityRef_(v.facilityId ? facilityById_(v.facilityId, fx.facilities) : null), 'DoctorWorkplaces', s, st); });
       phs.forEach(v => { if (v._v) {
         const pharmacyMatches = v.pharmacyId ? P.filter(x => String(x.id) === String(v.pharmacyId)) : P.filter(x => normName_(x.name) === normName_(v.name)); const pharmacy = pharmacyMatches.length === 1 ? pharmacyMatches[0] : null;
         if (!pharmacy || normName_(pharmacy.name) !== normName_(v.name)) geo_(v, null, 'Pharmacies', s, st);
         else { const facilityGeo = facilityGeoEntity_('Pharmacies', pharmacy.id); geo_(v, facilityGeo || pharmacy, 'Pharmacies', s, st); }
       }});
     }
-    // facilityId is server-derived metadata; never trust a client-supplied facilityId.
-    const hasFacilitySchema = !!sheet_('Facilities') && !!sheet_('DoctorPlaces');
-    docs.concat(phs).forEach(v => { delete v.facilityId; });
-    if (hasFacilitySchema) {
-      const readMaster = name => sheet_(name) ? dbAll_(name) : [];
-      const facilityRows = readMaster('Facilities'), relationRows = readMaster('DoctorPlaces');
-      const doctorRows = readMaster('Doctors'), workplaceRows = readMaster('DoctorWorkplaces');
-      const findDoctor = v => v.doctorId
-        ? doctorRows.find(d => String(d.id) === String(v.doctorId))
-        : doctorRows.filter(d => normName_(d.name) === normName_(v.name)).length === 1
-          ? doctorRows.find(d => normName_(d.name) === normName_(v.name)) : null;
-      docs.forEach(v => {
-        const doctor = findDoctor(v);
-        if (!doctor || normName_(doctor.name) !== normName_(v.name)) return;
-        let candidates = [];
-        if (v.workplaceId) {
-          const w = workplaceRows.find(x => String(x.id) === String(v.workplaceId));
-          if (w && String(w.doctorId) === String(doctor.id) && (!v.place || normName_(w.workplace) === normName_(v.place))) candidates = [w];
-        } else {
-          candidates = workplaceRows.filter(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(v.place));
-        }
-        const mapped = candidates.flatMap(w => relationRows.filter(rel => String(rel.legacyWorkplaceId) === String(w.id)));
-        const mappedIds = Array.from(new Set(mapped.map(rel => String(rel.facilityId)).filter(id => facilityRows.some(f => String(f.id) === id))));
-        if (mappedIds.length === 1) v.facilityId = mappedIds[0];
-      });
-      const pharmacyFacilities = facilityRows.filter(f => f.legacyEntity === 'Pharmacies');
+    // Pharmacy facilityId is server-derived metadata; never trust a client-supplied one. (Doctor visits were resolved above.)
+    phs.forEach(v => { delete v.facilityId; });
+    if (sheet_('Facilities')) {
+      const pharmacyFacilities = fx.facilities.filter(f => f.legacyEntity === 'Pharmacies');
       phs.forEach(v => {
         const candidates = v.pharmacyId
           ? pharmacyFacilities.filter(f => String(f.legacyId) === String(v.pharmacyId))
@@ -602,6 +579,7 @@ function persistReport_(s, p, lockHeld, pre, dry) {
     } else curStamp = reportStamp_(reportsLight_().find(x => x.repId === s.uid && x.date === pre.date) || null);
     if (curStamp !== pre.stamp) pre = prepareReport_(s, p); // the row changed since validation: redo it under the lock
     const r = pre.existing, date = pre.date, docs = pre.docs, phs = pre.phs;
+    if (docs.some(v => v._needLink)) createPendingLinks_(s, docs); // soft policy: first visit of a doctor at a facility
     const now = new Date().toISOString();
     const row = {
       id: r ? r.id : 'REPORT-' + Utilities.getUuid(), no: r ? r.no : nextReportNo_(), repId: s.uid, date,
@@ -715,18 +693,8 @@ function reportVisitGpsCheck_(v, kind, st) {
   if (!gpsPointValidServer_(g.lat, g.lng)) return { status:'غير متاح', distance:null, reference:null };
   let ent = null;
   if (kind === 'doctor') {
-    const rows = dbAll_('DoctorWorkplaces');
-    let w = v.workplaceId ? rows.find(x => String(x.id) === String(v.workplaceId) &&
-      (!v.doctorId || String(x.doctorId) === String(v.doctorId))) : null;
-    if (!w) {
-      const matches = rows.filter(x => String(x.active) !== 'false' &&
-        normName_(x.workplace) === normName_(v.place || '') &&
-        (!v.doctorId || String(x.doctorId) === String(v.doctorId)));
-      // A name-only fallback is safe only when it resolves to exactly one workplace for this doctor.
-      if (matches.length === 1) w = matches[0];
-    }
-    if (w && v.workplaceId && !sameWorkplaceSite_(rows.find(x => String(x.id) === String(v.workplaceId)), w)) w = null;
-    if (w && String(w.active) !== 'false') ent = facilityGeoEntity_('DoctorWorkplaces', w.id) || w;
+    const fx = { facilities: dbAll_('Facilities'), workplaces: dbAll_('DoctorWorkplaces') };
+    ent = facilityRef_(visitFacility_(v, visitDoctor_(v, dbAll_('Doctors')), fx).facility);
   } else {
     const rows = dbAll_('Pharmacies');
     const p = v.pharmacyId ? rows.find(x => String(x.id) === String(v.pharmacyId)) : rows.filter(x => normName_(x.name) === normName_(v.name)).length === 1 ? rows.find(x => normName_(x.name) === normName_(v.name)) : null;
@@ -748,6 +716,104 @@ function sameWorkplaceSite_(ref, w) {
   const approved = e => e.refBy === 'ADMIN_MAP' && e.refState === 'مؤكد' && String(e.reviewed) === 'true' && gpsPointValidServer_(e.lat, e.lng);
   return approved(a) && approved(b) && dist_(+a.lat, +a.lng, +b.lat, +b.lng) <= 25;
 }
+/* ---------- Facility model V2: the facility (with its coordinates) is the single reference; a doctor only links to it ---------- */
+const LINK_OK = 'معتمد', LINK_PENDING = 'بانتظار', LINK_REJECTED = 'مرفوض';
+// Refuses to run on sheets the V2 migration has not prepared yet (the new columns would otherwise be written without headers).
+function requireFacilityV2_() {
+  const c = CacheService.getScriptCache(); if (c.get('v2_ok')) return;
+  const head = n => { const sh = sheet_(n); return sh && sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : []; };
+  if (['Facilities', 'DoctorWorkplaces'].some(n => { const h = head(n); return T[n].some((col, i) => h[i] !== col); }))
+    throw new Error('لم يكتمل تحديث بنية المنشآت. يجب أن يشغّل مالك المشروع migrateFacilityModelV2 أولًا.');
+  try { c.put('v2_ok', '1', 600); } catch (e) {}
+}
+function workplacePolicy_() { return String(settings_().workplacePolicy || '') === 'strict' ? 'strict' : 'soft'; }
+// Follows merges (a few hops at most) so references to a merged facility reach the surviving one.
+function facilityById_(id, facilities) {
+  let f = null, k = String(id == null ? '' : id), hops = 0;
+  while (k && hops++ < 6) { f = facilities.find(x => String(x.id) === k) || null; if (!f || !f.mergedInto) break; k = String(f.mergedInto); }
+  return f;
+}
+function facilityApproved_(f) {
+  return !!f && f.geoState === 'مؤكد' && f.geoSource === 'ADMIN_MAP' && !!f.geoBy && !!f.geoAt && gpsPointValidServer_(f.lat, f.lng);
+}
+// The GPS reference handed to geo_ / reportVisitGpsCheck_ (same shape as the legacy entities they accept).
+function facilityRef_(f) {
+  if (!f) return null;
+  return { id: f.id, name: f.name, lat: f.lat, lng: f.lng, radius: f.radius, refBy: f.geoSource, refState: f.geoState,
+    reviewed: facilityApproved_(f) ? 'true' : 'false', active: f.status !== 'معطل' && !f.mergedInto };
+}
+function linkApproved_(w) { return !!w && String(w.active) !== 'false' && (w.linkState || LINK_OK) === LINK_OK; }
+function visitDoctor_(v, doctors) {
+  if (v.doctorId) return doctors.find(d => String(d.id) === String(v.doctorId)) || null;
+  const named = doctors.filter(d => normName_(d.name) === normName_(v.name));
+  return named.length === 1 ? named[0] : null;
+}
+// Which facility a doctor visit refers to: its facilityId; else (older visits) its workplace row's facility; else, for a
+// name-only visit, the one facility with that name the doctor is linked to. Never a facility merely because names match.
+function visitFacility_(v, doctor, fx) {
+  if (v.facilityId) return { facility: facilityById_(v.facilityId, fx.facilities), by: 'facilityId' };
+  if (v.workplaceId) {
+    const w = fx.workplaces.find(x => String(x.id) === String(v.workplaceId));
+    return { facility: w ? facilityById_(w.facilityId, fx.facilities) : null, by: 'workplaceId' };
+  }
+  const key = normName_(v.place || '');
+  if (!key || !doctor) return { facility: null, by: 'none' };
+  const ids = Array.from(new Set(fx.workplaces.filter(w => String(w.doctorId) === String(doctor.id) && String(w.active) !== 'false')
+    .map(w => facilityById_(w.facilityId, fx.facilities)).filter(f => f && normName_(f.name) === key).map(f => String(f.id))));
+  return { facility: ids.length === 1 ? facilityById_(ids[0], fx.facilities) : null, by: 'name' };
+}
+// Save/submit rule. Returns { facility, link, pending, needLink } or { error }.
+function resolveVisitLink_(v, doctor, fx, policy) {
+  const r = visitFacility_(v, doctor, fx), f = r.facility;
+  if (!f) return r.by === 'facilityId' || r.by === 'workplaceId' ? { error: 'مكان المنشأة غير صالح أو معطّل. أعد اختيار المنشأة.' } : { facility: null };
+  if (f.status === 'معطل') return { error: 'المنشأة معطّلة. أعد اختيار المنشأة.' };
+  if (!doctor) return { error: 'تعذّر تحديد الطبيب لهذه الزيارة. أعد اختيار الطبيب.' };
+  const links = fx.workplaces.filter(w => String(w.doctorId) === String(doctor.id) && (facilityById_(w.facilityId, fx.facilities) || {}).id === f.id);
+  const link = links.find(linkApproved_) || links[0] || null;
+  if (linkApproved_(link)) return { facility: f, link: link };
+  if (policy === 'strict') return { error: link && link.linkState === LINK_REJECTED ? 'رفضت الإدارة ربط هذا الطبيب بهذه المنشأة.'
+    : 'هذا الطبيب غير مرتبط بهذه المنشأة بعد. أرسل طلب ربط وانتظر اعتماد الإدارة.' };
+  return { facility: f, link: link, pending: true, needLink: !link };
+}
+function newLinkRow_(s, rows, doctorId, doctorName, f, sector) {
+  const now = new Date().toISOString();
+  return { id: nextWorkplaceId_(rows), doctorId: doctorId, doctorName: doctorName, workplace: f.name, sector: String(sector || '').slice(0, 30),
+    active: true, addedBy: s.uid, reviewed: 'false', facilityId: f.id, linkState: LINK_PENDING, linkedBy: s.uid, linkedAt: now };
+}
+// Called by persistReport_ under the script lock: re-reads the links so concurrent saves never create two rows.
+function createPendingLinks_(s, docs) {
+  const rows = dbAll_('DoctorWorkplaces'), facilities = dbAll_('Facilities'), doctors = dbAll_('Doctors');
+  docs.forEach(v => {
+    if (!v._needLink) return;
+    const doctorId = String(v._needLink); delete v._needLink;
+    let w = rows.find(x => String(x.doctorId) === doctorId && String(x.facilityId) === String(v.facilityId));
+    if (!w) {
+      const f = facilityById_(v.facilityId, facilities), d = doctors.find(x => String(x.id) === doctorId);
+      if (!f) return;
+      w = newLinkRow_(s, rows, doctorId, d ? d.name : v.name, f, v.sector);
+      dbAppend_('DoctorWorkplaces', w); rows.push(w);
+      audit_(s, 'propose_doctor_link', w.id, (d ? d.name : v.name) + ' · ' + f.name + ' · facility=' + f.id);
+    }
+    v.workplaceId = w.id;
+  });
+  clearCache_();
+}
+// Strict policy: the rep asks the administration to link a doctor to a facility (no visit is needed).
+function requestDoctorLink_(s, p) {
+  requireFacilityV2_();
+  const lock = acquireLock_(10000);
+  try {
+    const doctor = dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false');
+    const f = facilityById_(p.facilityId, dbAll_('Facilities'));
+    if (!doctor || !f || f.status === 'معطل') throw new Error('الطبيب أو المنشأة غير متاح.');
+    const rows = dbAll_('DoctorWorkplaces'), existing = rows.find(w => String(w.doctorId) === String(doctor.id) && String(w.facilityId) === String(f.id));
+    if (existing) return { id: existing.id, linkState: existing.linkState || LINK_OK, existing: true };
+    const w = newLinkRow_(s, rows, doctor.id, doctor.name, f, p.sector);
+    dbAppend_('DoctorWorkplaces', w); clearCache_();
+    audit_(s, 'request_doctor_link', w.id, doctor.name + ' · ' + f.name + ' · facility=' + f.id);
+    return { id: w.id, linkState: w.linkState, existing: false };
+  } finally { lock.releaseLock(); }
+}
 function gpsPointValidServer_(lat, lng) {
   return lat !== '' && lat != null && lng !== '' && lng != null && isFinite(+lat) && isFinite(+lng) && +lat >= -90 && +lat <= 90 && +lng >= -180 && +lng <= 180;
 }
@@ -758,7 +824,24 @@ function gpsReviewSummary_(s, p) {
   const visits = readScope_(() => doctors.map(v => Object.assign({kind:'طبيب',name:v.name||'',place:v.place||''}, reportVisitGpsCheck_(v, 'doctor', st)))
     .concat(pharmacies.map(v => Object.assign({kind:'صيدلية',name:v.name||'',place:v.loc||''}, reportVisitGpsCheck_(v, 'pharmacy', st)))));
   return { reportId:r.id, status:r.status, matched:visits.filter(v=>v.status==='تم التحقق').length,
-    exceptions:visits.filter(v=>v.status!=='تم التحقق').length, visits:visits };
+    exceptions:visits.filter(v=>v.status!=='تم التحقق').length, visits:visits,
+    pendingLinks:doctors.filter(v => v.linkPending).map(v => ({ name:v.name||'', place:v.place||'' })) };
+}
+// Approving a report also approves the doctor ↔ facility links its visits created (the admin confirms this explicitly).
+function approveVisitLinks_(s, doctors) {
+  const rows = dbAll_('DoctorWorkplaces'), now = new Date().toISOString();
+  let n = 0;
+  doctors.forEach(v => {
+    if (!v.linkPending) return;
+    const w = rows.find(x => String(x.id) === String(v.workplaceId));
+    if (w && !linkApproved_(w)) {
+      w.active = true; w.linkState = LINK_OK; w.reviewed = 'true'; w.linkedBy = s.uid; w.linkedAt = now;
+      dbUpsert_('DoctorWorkplaces', 'id', w); audit_(s, 'approve_doctor_link', w.id, String(v.name || '') + ' · ' + String(v.place || '')); n++;
+    }
+    delete v.linkPending;
+  });
+  if (n) clearCache_();
+  return n;
 }
 function reviewReport_(s, p) {
   const r = findReport_(x => x.id === p.id);
@@ -769,7 +852,9 @@ function reviewReport_(s, p) {
     const checks = readScope_(() => doctors.map(v => reportVisitGpsCheck_(v, 'doctor', st)).concat(pharmacies.map(v => reportVisitGpsCheck_(v, 'pharmacy', st))));
     const exceptions = checks.filter(x => x.status !== 'تم التحقق');
     if (exceptions.length && note.length < 5) throw new Error('توجد زيارة لم يثبت تطابق موقعها. اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل)، أو أعد التقرير للمندوب.');
+    if (doctors.some(v => v.linkPending) && !p.approveLinks) throw new Error('يتضمن التقرير ارتباطات أطباء بمنشآت بانتظار الاعتماد. أكّد اعتمادها مع التقرير.');
     if (exceptions.length) audit_(s, 'gps_exception_approval', r.no, JSON.stringify(exceptions.map(x => ({status:x.status,distance:x.distance,reference:x.reference}))) + ' · ' + note);
+    if (doctors.some(v => v.linkPending)) { approveVisitLinks_(s, doctors); r.doctors = JSON.stringify(doctors); } // operational copy only; snapshots stay frozen
   }
   r.status = p.approve ? 'معتمد' : 'معاد للمندوب'; r.reviewNote = note;
   dbUpsert_('Reports', 'id', r); audit_(s, p.approve ? 'approve_report' : 'return_report', r.no, r.reviewNote);
@@ -811,7 +896,6 @@ function normName_(t) {
     .replace(/^\s*(?:د\s*\.?\s+|د\s*\.|dr\.\s+)/i, '').replace(/\s+/g, ' ').trim();
 }
 function addMaster_(s, sheet, p) {
-  if (sheet === 'Doctors') ensureDoctorWorkplaces_();
   const name = String(p.name || '').trim().slice(0, 80);
   if (name.length < 3) throw new Error('الاسم قصير جدًا');
   const lock = acquireLock_(10000);
@@ -825,10 +909,7 @@ function addMaster_(s, sheet, p) {
     const mx = rows.reduce((a, r) => Math.max(a, +String(r.id).split('-')[1] || 0), 0);
     row.id = PREFIX[sheet === 'Doctors' ? 'Doctors' : 'Pharmacies'] + '-' + ('0000' + (mx + 1)).slice(-4);
     dbAppend_(sheet, row);
-    if (sheet === 'Doctors' && cut(p.workplace)) {
-      const wp = addDoctorWorkplaceRow_(s, row, cut(p.workplace), cut(p.sector), false);
-      row.workplaceId = wp.id;
-    }
+    // Facility model V2: a new doctor gets his facility links from his visits (or a link request), never from free text.
     clearCache_();
     audit_(s, 'add_' + sheet.toLowerCase(), row.id, name);
     return row;
@@ -869,7 +950,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
   const allW = dbAll_('DoctorWorkplaces').filter(w => normName_(w.workplace) === key);
   let facilities = dbAll_('Facilities');
   let locations = dbAll_('FacilityLocations');
-  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key);
+  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key), created = false;
 
   // Preserve a previously approved legacy reference when the first shared relation is created.
   // Reuse only an unambiguous approved coordinate; conflicting approved points require admin review.
@@ -904,7 +985,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
     const id = 'FAC-SH-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
     facility = { id:id, name:name, type:'منشأة طبية', region:'', address:'',
       status:'نشط', legacyEntity:'SHARED_DOCTOR_FACILITY', legacyId:id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
-    dbAppend_('Facilities', facility);
+    dbAppend_('Facilities', facility); created = true;
   }
 
   const relations = dbAll_('DoctorPlaces');
@@ -931,16 +1012,19 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
       radius:'',source:'REP_PROPOSAL',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,
       approvedBy:'',approvedAt:'',version:version,active:true,note:'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا'});
   }
-  facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility);
+  if (!created) { facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility); } // a facility appended above already carries these values
   return { facilityId:facility.id, alreadyApproved:!!approvedReference };
 }
 function addDoctorWorkplace_(s, p) {
-  ensureDoctorWorkplaces_();
-  return readScope_(() => addDoctorWorkplaceCore_(s, p)); // each sheet is read once; writes invalidate only their own sheet
+  const lock = acquireLock_(10000); // new DWP IDs and DoctorPlaces links must not interleave with another rep's addition
+  try {
+    return readScope_(() => { ensureDoctorWorkplaces_(); return addDoctorWorkplaceCore_(s, p); }); // each sheet is read once; writes invalidate only their own sheet
+  } finally { lock.releaseLock(); }
 }
 function addDoctorWorkplaceCore_(s, p) {
   const doctor = dbAll_('Doctors').find(d => d.id === p.doctorId && String(d.active) !== 'false');
   if (!doctor) throw new Error('اختر طبيبًا مسجلًا أولًا.');
+  if (p.sourceWorkplaceId) return linkDoctorToFacility_(s, doctor, p.sourceWorkplaceId);
   const name = String(p.workplace || '').trim();
   if (name.length < 2) throw new Error('أدخل اسم مكان العمل.');
   const existing = dbAll_('DoctorWorkplaces').find(w => String(w.active) !== 'false' && String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(name));
@@ -967,24 +1051,39 @@ function addDoctorWorkplaceCore_(s, p) {
     sector: row.sector, reviewed: !!proposal.alreadyApproved, refState: proposal.alreadyApproved ? 'مؤكد' : 'مراجعة مطلوبة',
     lat:lat, lng:lng, existing:false };
 }
+// The doctor works at a facility that is already registered (chosen through any of its workplace rows): give him his own
+// workplace row linked to that same Facilities.id. No coordinates are proposed and no GPS reference is created or changed.
+function linkDoctorToFacility_(s, doctor, sourceWorkplaceId) {
+  const source = dbAll_('DoctorWorkplaces').find(w => String(w.id) === String(sourceWorkplaceId) && String(w.active) !== 'false');
+  if (!source) throw new Error('المنشأة المختارة غير متاحة. أعد اختيارها.');
+  const existing = dbAll_('DoctorWorkplaces').find(w => String(w.doctorId) === String(doctor.id) && normName_(w.workplace) === normName_(source.workplace));
+  let row = existing, facility = null;
+  if (!existing) {
+    facility = facilityForLegacy_('DoctorWorkplaces', source.id);
+    row = addDoctorWorkplaceRow_(s, doctor, source.workplace, source.sector, false);
+    if (facility && sheet_('DoctorPlaces')) {
+      const now = new Date().toISOString();
+      dbAppend_('DoctorPlaces', { id:'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase(), doctorId:doctor.id,
+        facilityId:facility.id, workDays:'', notes:'', active:true, legacyWorkplaceId:row.id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid });
+    }
+  } else if (String(existing.active) === 'false') throw new Error('مكان العمل معطّل لهذا الطبيب؛ اطلب من الإدارة تفعيله.');
+  const geo = facilityGeoEntity_('DoctorWorkplaces', row.id), approved = !!geo && String(geo.reviewed) === 'true';
+  if (!existing && approved) { row.reviewed = 'true'; dbUpsert_('DoctorWorkplaces', 'id', row); }
+  if (!existing) {
+    clearCache_();
+    audit_(s, 'link_doctor_workplace', row.id, doctor.name + ' · ' + row.workplace + ' · facility=' + (facility ? facility.id : '') + ' · source=' + source.id);
+  }
+  return { id:row.id, doctorId:row.doctorId, doctorName:row.doctorName, workplace:row.workplace, sector:row.sector,
+    reviewed:approved || String(row.reviewed) === 'true', refState:geo ? geo.refState : (row.refState || ''), existing:!!existing };
+}
 function gpsReference_(s, p) {
   // Admin-only lookup for the comparison window. It returns only an approved current reference.
   const kind = String(p.kind || '');
   let geo = null;
   if (kind === 'doctor') {
-    ensureDoctorWorkplaces_();
-    const doctorId = String(p.doctorId || '');
-    const workplaceId = String(p.workplaceId || '');
-    const doctorName = normName_(p.doctorName || p.name || '');
-    const placeName = normName_(p.place || '');
-    let workplace = workplaceId ? dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId && String(w.active) !== 'false' && (!doctorId || String(w.doctorId) === doctorId) && (!placeName || normName_(w.workplace) === placeName)) : null;
-    if (!workplace && placeName) {
-      const matches = dbAll_('DoctorWorkplaces').filter(w => String(w.active) !== 'false' &&
-        normName_(w.workplace) === placeName && (!doctorId || String(w.doctorId) === doctorId));
-      if (matches.length === 1) workplace = matches[0];
-    }
-    if (workplace && workplaceId && !sameWorkplaceSite_(dbAll_('DoctorWorkplaces').find(w => String(w.id) === workplaceId), workplace)) workplace = null;
-    if (workplace) geo = facilityGeoEntity_('DoctorWorkplaces', workplace.id);
+    const v = { facilityId: String(p.facilityId || ''), doctorId: String(p.doctorId || ''), name: p.doctorName || p.name || '', workplaceId: String(p.workplaceId || ''), place: p.place || '' };
+    geo = readScope_(() => facilityRef_(visitFacility_(v, visitDoctor_(v, dbAll_('Doctors')),
+      { facilities: dbAll_('Facilities'), workplaces: dbAll_('DoctorWorkplaces') }).facility));
   } else if (kind === 'pharmacy') {
     const pharmacyId = String(p.pharmacyId || '');
     const name = normName_(p.name || '');
@@ -1005,12 +1104,163 @@ function gpsReference_(s, p) {
     source: geo.refBy, state: geo.refState };
 }
 
-function workplacesList_(s, p) {
-  ensureDoctorWorkplaces_();
+/* ---------- Facility model V2: administration ---------- */
+function facilitiesList_(s, p) {
+  requireFacilityV2_();
   return readScope_(() => {
+    const facilities = dbAll_('Facilities').filter(f => f.legacyEntity !== 'Pharmacies'), links = dbAll_('DoctorWorkplaces'), doctors = dbAll_('Doctors');
+    const counts = usageCounts_('fac'), wpFac = {}, uses = {};
+    links.forEach(w => { wpFac[w.id] = w.facilityId; });
+    Object.keys(counts).forEach(k => { const f = facilityById_(k.indexOf('wp:') === 0 ? wpFac[k.slice(3)] : k, facilities); if (f) uses[f.id] = (uses[f.id] || 0) + counts[k]; });
+    const doctorName = id => (doctors.find(d => String(d.id) === String(id)) || {}).name || '';
+    return facilities.map(f => Object.assign({}, f, { approved: facilityApproved_(f), uses: uses[f.id] || 0,
+      links: links.filter(w => String(w.facilityId) === String(f.id)).map(w => ({ id: w.id, doctorId: w.doctorId, doctorName: doctorName(w.doctorId) || w.doctorName,
+        linkState: w.linkState || LINK_OK, active: String(w.active) !== 'false' })) }));
+  });
+}
+// FacilityLocations is now only a write-only history of each facility's coordinates (same row shape as before).
+function facilityLocationHistory_(s, f, note) {
+  if (!sheet_('FacilityLocations')) return;
+  const rows = dbAll_('FacilityLocations'), mine = rows.filter(l => String(l.facilityId) === String(f.id)), now = new Date().toISOString();
+  mine.filter(l => String(l.active) !== 'false').forEach(l => { l.active = false; dbUpsert_('FacilityLocations', 'id', l); });
+  if (!gpsPointValidServer_(f.lat, f.lng)) return;
+  const version = mine.reduce((m, l) => Math.max(m, +l.version || 0), 0) + 1;
+  dbAppend_('FacilityLocations', { id: 'LOC-' + f.id + '-V' + version, facilityId: f.id, lat: f.lat, lng: f.lng, radius: f.radius, source: f.geoSource,
+    state: f.geoState, proposedBy: s.uid, proposedAt: now, approvedBy: f.geoBy, approvedAt: f.geoAt, version: version, active: true, note: note || '' });
+}
+// After a facility's reference changes: ONE read of the Reports doctors column, then only the affected cells are written.
+// Operational visit data only; snapshot/snapshot1 are immutable historical copies.
+function reverifyFacility_(facilityId) {
+  const fx = { facilities: dbAll_('Facilities'), workplaces: dbAll_('DoctorWorkplaces') }, doctors = dbAll_('Doctors');
+  const f = facilityById_(facilityId, fx.facilities), ent = facilityRef_(f);
+  const rs = sheet_('Reports'), last = rs ? rs.getLastRow() : 0;
+  if (!ent || ent.reviewed !== 'true' || last < 2) return 0;
+  const st = settings_(), rad = Math.max(20, +ent.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50);
+  const col = T.Reports.indexOf('doctors') + 1, vals = rs.getRange(2, col, last - 1, 1).getValues();
+  let n = 0;
+  vals.forEach((row, i) => {
+    let arr; try { arr = JSON.parse(row[0] || '[]'); } catch (e) { return; }
+    if (!Array.isArray(arr)) return;
+    let changed = false;
+    arr.forEach(v => {
+      const g = v && v.gps;
+      if (!g || g.rawLocationReducedAt || typeof g.lat !== 'number' || typeof g.lng !== 'number' || !isFinite(g.lat) || !isFinite(g.lng)) return;
+      const vf = visitFacility_(v, visitDoctor_(v, doctors), fx).facility;
+      if (vf && String(vf.id) === String(f.id)) { recordGpsReverification_(g, ent, rad, refAcc); changed = true; n++; }
+    });
+    if (changed) rs.getRange(i + 2, col).setValue(JSON.stringify(arr));
+  });
+  return n;
+}
+// A new facility, proposed by a rep (coordinates required, awaiting review) or created by an administrator.
+// Similar facilities (same normalized name or closer than FACILITY_V2_NEAR_M) are returned first unless confirmNew is set.
+function proposeFacility_(s, p) {
+  requireFacilityV2_();
+  const name = String(p.name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+  if (name.length < 2) throw new Error('أدخل اسم المنشأة.');
+  const isAdmin = s.role === 'admin', has = p.lat !== '' && p.lat != null && p.lng !== '' && p.lng != null, lat = Number(p.lat), lng = Number(p.lng);
+  if ((has || !isAdmin) && !gpsPointValidServer_(has ? lat : '', has ? lng : '')) throw new Error('أدخل خط العرض وخط الطول الصحيحين للمنشأة الجديدة.');
+  const lock = acquireLock_(10000);
+  try {
+    const live = dbAll_('Facilities').filter(f => f.legacyEntity !== 'Pharmacies' && !f.mergedInto && f.status !== 'معطل');
+    const similar = live.map(f => ({ f: f, d: has && gpsPointValidServer_(f.lat, f.lng) ? dist_(+f.lat, +f.lng, lat, lng) : null }))
+      .filter(x => normName_(x.f.name) === normName_(name) || (x.d != null && x.d < FACILITY_V2_NEAR_M))
+      .map(x => ({ id: x.f.id, name: x.f.name, distance: x.d, approved: facilityApproved_(x.f) }));
+    if (similar.length && !p.confirmNew) return { similar: similar };
+    const now = new Date().toISOString(), id = 'FAC-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
+    const f = { id: id, name: name, type: String(p.type || 'منشأة طبية').trim().slice(0, 40), region: '', address: String(p.address || '').trim().slice(0, 180),
+      status: 'نشط', legacyEntity: 'DOCTOR_FACILITY', legacyId: id, createdAt: now, createdBy: s.uid, updatedAt: now, updatedBy: s.uid,
+      lat: has ? lat : '', lng: has ? lng : '', radius: '', geoState: has ? (isAdmin ? 'مؤكد' : 'مراجعة مطلوبة') : '',
+      geoSource: has ? (isAdmin ? 'ADMIN_MAP' : 'REP_PROPOSAL') : '', geoBy: has && isAdmin ? s.uid : '', geoAt: has && isAdmin ? now : '',
+      geoVersion: has ? 1 : '', mergedInto: '' };
+    dbAppend_('Facilities', f);
+    if (has) facilityLocationHistory_(s, f, isAdmin ? 'منشأة أنشأتها الإدارة' : 'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا');
+    let linkId = '';
+    const doctor = p.doctorId ? dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false') : null;
+    if (doctor) { const rows = dbAll_('DoctorWorkplaces'), w = newLinkRow_(s, rows, doctor.id, doctor.name, f, p.sector); dbAppend_('DoctorWorkplaces', w); linkId = w.id; }
+    clearCache_();
+    audit_(s, 'propose_facility', id, name + (has ? ' · lat=' + lat + ' · lng=' + lng : '') + (doctor ? ' · doctor=' + doctor.id : '') + (similar.length ? ' · similarConfirmed=' + similar.map(x => x.id).join(',') : ''));
+    return { facility: { id: id, workplace: name, reviewed: facilityApproved_(f), linked: false }, linkId: linkId };
+  } finally { lock.releaseLock(); }
+}
+function facilityAct_(s, p) {
+  if (p.op === 'create') return proposeFacility_(s, Object.assign({}, p.row || {}, { confirmNew: !!p.confirmNew })); // takes its own lock
+  requireFacilityV2_();
+  const lock = acquireLock_(10000);
+  try { return facilityActLocked_(s, p); } finally { lock.releaseLock(); }
+}
+function facilityActLocked_(s, p) {
+  const now = new Date().toISOString(), all = dbAll_('Facilities');
+  const f = all.find(x => String(x.id) === String(p.id) && x.legacyEntity !== 'Pharmacies');
+  if (!f) throw new Error('المنشأة غير موجودة');
+  const save = x => { x.updatedAt = now; x.updatedBy = s.uid; dbUpsert_('Facilities', 'id', x); };
+  let note = '';
+  if (p.op === 'setLoc') {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (p.lat === '' || p.lng === '' || p.lat == null || p.lng == null || !gpsPointValidServer_(lat, lng)) throw new Error('أدخل إحداثيات صحيحة من الخريطة.');
+    // The administrator's map pin is the approved reference (unchanged policy); every doctor at the facility shares it.
+    Object.assign(f, { lat: lat, lng: lng, geoState: 'مؤكد', geoSource: 'ADMIN_MAP', geoBy: s.uid, geoAt: now, geoVersion: (+f.geoVersion || 0) + 1 });
+    save(f); facilityLocationHistory_(s, f, 'موقع المنشأة من خريطة الإدارة');
+    note = 'version=' + f.geoVersion + '; reverified visits: ' + reverifyFacility_(f.id);
+  } else if (p.op === 'clearLoc') {
+    Object.assign(f, { lat: '', lng: '', geoState: '', geoSource: '', geoBy: '', geoAt: '', geoVersion: (+f.geoVersion || 0) + 1 });
+    save(f); facilityLocationHistory_(s, f, '');
+  } else if (p.op === 'edit') {
+    const row = p.row || {}, name = String(row.name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (name.length < 2) throw new Error('اسم المنشأة قصير جدًا');
+    f.name = name; // renaming keeps the coordinates: the name is not the location
+    if (row.type !== undefined) f.type = String(row.type || '').trim().slice(0, 40);
+    if (row.address !== undefined) f.address = String(row.address || '').trim().slice(0, 180);
+    save(f); note = 'name=' + name;
+  } else if (p.op === 'toggle') {
+    if (f.mergedInto) throw new Error('هذه المنشأة مدموجة في منشأة أخرى ولا يمكن تفعيلها.');
+    f.status = f.status === 'معطل' ? 'نشط' : 'معطل'; save(f); note = 'status=' + f.status; // doctors' links are left untouched
+  } else if (p.op === 'merge') {
+    const target = all.find(x => String(x.id) === String(p.into));
+    if (!target || target.id === f.id || target.status === 'معطل' || target.mergedInto || f.mergedInto || target.legacyEntity === 'Pharmacies') throw new Error('اختر منشأة نشطة صحيحة للدمج');
+    const links = dbAll_('DoctorWorkplaces');
+    let moved = 0;
+    links.filter(w => String(w.facilityId) === String(f.id)).forEach(w => {
+      const dup = links.find(x => x !== w && String(x.doctorId) === String(w.doctorId) && String(x.facilityId) === String(target.id));
+      if (dup) {
+        if (linkApproved_(w) && !linkApproved_(dup)) { dup.active = true; dup.linkState = LINK_OK; dbUpsert_('DoctorWorkplaces', 'id', dup); }
+        w.active = false;
+      } else { w.facilityId = target.id; w.workplace = target.name; moved++; }
+      dbUpsert_('DoctorWorkplaces', 'id', w);
+    });
+    if (!gpsPointValidServer_(target.lat, target.lng) && gpsPointValidServer_(f.lat, f.lng)) {
+      ['lat', 'lng', 'radius', 'geoState', 'geoSource', 'geoBy', 'geoAt'].forEach(k => { target[k] = f[k]; });
+      target.geoVersion = (+target.geoVersion || 0) + 1; save(target); facilityLocationHistory_(s, target, 'منقول عند دمج ' + f.id);
+    }
+    f.mergedInto = target.id; f.status = 'معطل'; save(f);
+    // Old visits keep their facilityId; facilityById_ follows mergedInto, so they now resolve to the target.
+    note = 'into ' + target.id + '; links moved: ' + moved + '; reverified visits: ' + reverifyFacility_(target.id);
+  } else throw new Error('عملية غير معروفة');
+  clearCache_(); audit_(s, 'facility_' + p.op, f.id, note);
+  return true;
+}
+function linkAct_(s, p) {
+  requireFacilityV2_();
+  const lock = acquireLock_(10000);
+  try {
+    const w = dbAll_('DoctorWorkplaces').find(x => String(x.id) === String(p.id));
+    if (!w) throw new Error('الارتباط غير موجود');
+    if (p.op === 'approve') { w.active = true; w.linkState = LINK_OK; w.reviewed = 'true'; }
+    else if (p.op === 'reject') w.linkState = LINK_REJECTED;
+    else if (p.op === 'toggle') w.active = String(w.active) === 'false';
+    else throw new Error('عملية غير معروفة');
+    w.linkedBy = s.uid; w.linkedAt = new Date().toISOString();
+    dbUpsert_('DoctorWorkplaces', 'id', w); clearCache_();
+    audit_(s, 'link_' + p.op, w.id, String(w.doctorName || w.doctorId) + ' · facility=' + w.facilityId);
+    return true;
+  } finally { lock.releaseLock(); }
+}
+function workplacesList_(s, p) {
+  return readScope_(() => {
+  ensureDoctorWorkplaces_();
   let t = Date.now();
-  // Same write-through-invalidated table cache as report saving: any admin edit drops it at once.
-  VALIDATION_TABLES.forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
+  // Same write-through-invalidated table cache as report saving: any admin edit drops it at once. Only the tables this list reads.
+  ['DoctorWorkplaces', 'DoctorPlaces', 'Facilities', 'FacilityLocations'].forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
   phase_('tables', t); t = Date.now();
   const counts = usageCounts_('wp');
   phase_('usage', t); t = Date.now();
@@ -1234,11 +1484,15 @@ function reverify_(sheet, ent) {
   return n;
 }
 
+// Doctor merge: links move by facility ID (never by name). A link the target doctor already has is kept; the old one is disabled.
 function mergeDoctorWorkplaces_(fromDoctor, toDoctor) {
-  ensureDoctorWorkplaces_(); const rows = dbAll_('DoctorWorkplaces'), moved = {};
+  const rows = dbAll_('DoctorWorkplaces'), moved = {};
   rows.filter(w => w.doctorId === fromDoctor.id).forEach(w => {
-    const duplicate = rows.find(x => x.doctorId === toDoctor.id && normName_(x.workplace) === normName_(w.workplace) && String(x.active) !== 'false');
-    if (duplicate) { w.active = false; w.reviewed = 'true'; const fa = facilityForLegacy_('DoctorWorkplaces', w.id), fb = facilityForLegacy_('DoctorWorkplaces', duplicate.id); if (fa && fb && String(fa.id) === String(fb.id)) moved[w.id] = duplicate.id; }
+    const duplicate = rows.find(x => x.doctorId === toDoctor.id && w.facilityId && String(x.facilityId) === String(w.facilityId) && String(x.active) !== 'false');
+    if (duplicate) {
+      if (linkApproved_(w) && !linkApproved_(duplicate)) { duplicate.linkState = LINK_OK; dbUpsert_('DoctorWorkplaces', 'id', duplicate); }
+      w.active = false; moved[w.id] = duplicate.id;
+    }
     else { w.doctorId = toDoctor.id; w.doctorName = toDoctor.name; }
     dbUpsert_('DoctorWorkplaces', 'id', w);
   });
@@ -1263,7 +1517,7 @@ function masterAct_(s, p) {
     if (nm !== r.name) {
       note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm;
       if (sh === 'Pharmacies') invalidateFacilityLocations_('Pharmacies', r.id);
-      if (sh === 'Doctors') { ensureDoctorWorkplaces_(); dbAll_('DoctorWorkplaces').filter(w => w.doctorId === r.id).forEach(w => { w.doctorName = nm; dbUpsert_('DoctorWorkplaces', 'id', w); }); }
+      if (sh === 'Doctors') { dbAll_('DoctorWorkplaces').filter(w => w.doctorId === r.id).forEach(w => { w.doctorName = nm; dbUpsert_('DoctorWorkplaces', 'id', w); }); }
     }
     (sh === 'Doctors' ? ['specialty', 'sector'] : ['location', 'nearFacility']).forEach(k => { r[k] = cut(row[k]); });
     r.reviewed = 'true';
@@ -1288,6 +1542,10 @@ function masterAct_(s, p) {
 /* ---------- admin: master data, settings, KPI ---------- */
 function entity_(n) { if (!PREFIX[n]) throw new Error('كيان غير مسموح'); return n; }
 function saveEntity_(s, p) {
+  const lock = acquireLock_(10000); // the new ID and the write must not interleave with another save
+  try { return saveEntityLocked_(s, p); } finally { lock.releaseLock(); }
+}
+function saveEntityLocked_(s, p) {
   const sheet = entity_(p.entity); let row = Object.assign({}, p.row);
   if (sheet === 'Products') {
     if (!row.id && !row.name) throw new Error('أدخل اسم المنتج');
@@ -1307,9 +1565,13 @@ function saveEntity_(s, p) {
       row.codeHash = hash_(row.code); }
     delete row.code;
   }
-  if (!row.id) row.id = PREFIX[sheet] + '-' + ('0000' + (dbAll_(sheet).length + 1)).slice(-4);
-  else { const old = dbAll_(sheet).find(r => r.id === row.id); row = Object.assign({}, old, row); }
-  dbUpsert_(sheet, 'id', row); clearCache_(); audit_(s, 'save_' + sheet.toLowerCase(), row.id);
+  // New rows take max+1 (row count + 1 can repeat an existing ID) and are appended, so they can never overwrite a record.
+  // An edit must name an existing record; an unknown ID is refused instead of being created with a client-chosen ID.
+  const isNew = !row.id;
+  if (isNew) row.id = nextId_(sheet, PREFIX[sheet]);
+  else { const old = dbAll_(sheet).find(r => String(r.id) === String(row.id)); if (!old) throw new Error('السجل غير موجود'); row = Object.assign({}, old, row); }
+  if (isNew) dbAppend_(sheet, row); else dbUpsert_(sheet, 'id', row);
+  clearCache_(); audit_(s, 'save_' + sheet.toLowerCase(), row.id);
   return row.id;
 }
 function settings_() {
@@ -1348,7 +1610,7 @@ function saveCompanyLogo_(s, p) {
   audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
   return next;
 }
-const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc', 'repPerformanceEnabled'];
+const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc', 'repPerformanceEnabled', 'workplacePolicy'];
 function saveSettings_(s, p) {
   const v = p.values || {};
   Object.keys(v).forEach(k => {
@@ -1357,6 +1619,7 @@ function saveSettings_(s, p) {
     if (k === 'brandColor' && !/^#[0-9a-fA-F]{6}$/.test(x)) throw new Error('لون غير صالح');
     if (k === 'gpsRadius' && (!/^\d+(?:\.\d+)?$/.test(x) || +x < 20 || +x > 5000)) throw new Error('نطاق الموقع يجب أن يكون بين 20 و5000 متر.');
     if (k === 'gpsRefAcc' && (!/^\d+(?:\.\d+)?$/.test(x) || +x < 1 || +x > 500)) throw new Error('أقصى دقة GPS يجب أن تكون بين 1 و500 متر.');
+    if (k === 'workplacePolicy' && ['soft', 'strict'].indexOf(x) < 0) throw new Error('سياسة ربط الأطباء بالمنشآت غير صالحة.');
     x = x.slice(0, 200);
     dbUpsert_('Settings', 'key', { key: k, value: x });
   });
@@ -2046,6 +2309,247 @@ function linkLegacyVisitFacilitiesV1() {
   }
 }
 
+/*
+ * Facility model V2 — the facility (with its coordinates) is the single reference; DoctorWorkplaces only links doctor ↔ facility.
+ * This section is READ-ONLY: it plans the migration and reports blockers, duplicates and visit coverage. Nothing is written.
+ * The same planner will drive the (separately approved) execution, so preview and execution cannot disagree.
+ */
+const FACILITY_V2_COLUMNS = {
+  Facilities: ['lat', 'lng', 'radius', 'geoState', 'geoSource', 'geoBy', 'geoAt', 'geoVersion', 'mergedInto'],
+  DoctorWorkplaces: ['facilityId', 'linkState', 'linkedBy', 'linkedAt']
+};
+const FACILITY_V2_NEAR_M = 100; // "similar facility": same normalized name OR closer than this
+
+// Reads a sheet by its header row (not by T position), so columns appended by the V2 migration are visible too.
+function readByHeader_(name) {
+  const sh = sheet_(name);
+  if (!sh || sh.getLastRow() < 1) return { exists: !!sh, header: [], rows: [] };
+  const v = sh.getDataRange().getValues(), header = v[0].map(h => String(h).trim());
+  return { exists: true, header: header, rows: v.slice(1).filter(r => r[0] !== '').map(r => {
+    const o = {}; header.forEach((h, i) => { if (h) o[h] = cellVal_(h, r[i]); }); return o;
+  }) };
+}
+
+// Pure planner: t = { headers, doctors, workplaces, facilities, locations, places, reports:[{id, doctors:[visits]|null}] }.
+function facilityModelV2Plan_(t, now) {
+  const S = x => String(x == null ? '' : x).trim(), on = r => S(r.active) !== 'false';
+  const validPt = r => !!r && gpsPointValidServer_(r.lat, r.lng);
+  const uniq = a => Array.from(new Set(a));
+  const blockers = [], warnings = [];
+
+  // 1. Schema: the new columns may only be appended after the current T columns.
+  const schema = {};
+  ['Facilities', 'DoctorWorkplaces'].forEach(n => {
+    const extra = FACILITY_V2_COLUMNS[n], h = (t.headers && t.headers[n]) || [], base = T[n].slice(0, T[n].length - extra.length);
+    if (h.length && base.some((c, i) => h[i] !== c)) blockers.push({ type: 'unexpectedHeader', sheet: n });
+    const tail = h.slice(base.length).filter(Boolean);
+    if (tail.some((c, i) => c !== extra[i])) blockers.push({ type: 'unexpectedExtraColumns', sheet: n, found: tail });
+    schema[n] = { present: !!h.length, columnsToAppend: extra.filter(c => tail.indexOf(c) < 0) };
+  });
+
+  // 2. Identity integrity: duplicate IDs make any upsert ambiguous.
+  [['Doctors', t.doctors], ['DoctorWorkplaces', t.workplaces], ['Facilities', t.facilities], ['FacilityLocations', t.locations], ['DoctorPlaces', t.places]].forEach(([n, rows]) => {
+    const seen = {}, dup = [];
+    rows.forEach(r => { const k = S(r.id); if (!k) return; if (seen[k]) dup.push(k); seen[k] = 1; });
+    if (dup.length) blockers.push({ type: 'duplicateIds', sheet: n, ids: uniq(dup) });
+  });
+
+  const doctorsById = new Map(t.doctors.map(d => [S(d.id), d]));
+  const facById = new Map(); t.facilities.forEach(f => { if (!facById.has(S(f.id))) facById.set(S(f.id), f); });
+  const activeRel = {}; t.places.forEach(p => { const k = S(p.legacyWorkplaceId); if (k && on(p)) (activeRel[k] = activeRel[k] || []).push(p); });
+  const legacyFac = {}; t.facilities.forEach(f => { if (f.legacyEntity === 'DoctorWorkplaces' && !legacyFac[S(f.legacyId)]) legacyFac[S(f.legacyId)] = f; });
+  const latestLoc = {};
+  t.locations.forEach(l => { if (!on(l)) return; const k = S(l.facilityId), p = latestLoc[k]; if (!p || (+l.version || 0) > (+p.version || 0)) latestLoc[k] = l; });
+  const usedIds = new Set(t.facilities.map(f => S(f.id)));
+  const newId = base => { let id = base, n = 2; while (usedIds.has(id)) id = base + '-' + n++; usedIds.add(id); return id; };
+
+  // 3. Doctors that still have only the legacy text workplace (ensureDoctorWorkplaces_ would seed a row for them).
+  const withRows = new Set(t.workplaces.map(w => S(w.doctorId)));
+  const seedDoctors = t.doctors.filter(d => S(d.workplace) && !withRows.has(S(d.id))).map(d => ({ doctorId: S(d.id), workplace: S(d.workplace) }));
+
+  // 4. Facility of every workplace row — the same resolution the current code uses (facilityForLegacy_), so no verdict changes.
+  const created = [], workplaces = [];
+  t.workplaces.forEach(w => {
+    const wid = S(w.id); if (!wid) return;
+    if (!S(w.doctorId) || !doctorsById.has(S(w.doctorId))) warnings.push({ type: 'orphanWorkplace', workplaceId: wid, doctorId: S(w.doctorId) });
+    const rels = activeRel[wid] || [], current = S(w.facilityId);
+    let fac = null, how = '';
+    // Once migrated, a row's facilityId is authoritative (it may have moved by a merge or come from a V2 link).
+    if (current) { fac = facById.get(current) || null; how = 'existing'; if (!fac) blockers.push({ type: 'facilityIdMissing', workplaceId: wid, facilityId: current }); }
+    if (!fac && rels.length > 1) warnings.push({ type: 'multipleActiveRelations', workplaceId: wid, facilityIds: uniq(rels.map(r => S(r.facilityId))) });
+    if (!fac && rels.length) {
+      fac = facById.get(S(rels[0].facilityId)) || null; how = 'relation';
+      if (!fac) warnings.push({ type: 'relationToMissingFacility', workplaceId: wid, facilityId: S(rels[0].facilityId) });
+    }
+    if (!fac && legacyFac[wid]) { fac = legacyFac[wid]; how = 'legacyFacility'; }
+    if (!fac) {
+      fac = { id: newId('FAC-V2-' + wid), name: S(w.workplace), status: on(w) ? 'نشط' : 'معطل', legacyEntity: 'DoctorWorkplaces', legacyId: wid, _new: true, _row: w };
+      facById.set(fac.id, fac); legacyFac[wid] = fac; created.push(fac.id); how = 'create';
+    }
+    workplaces.push({ workplaceId: wid, doctorId: S(w.doctorId), active: on(w), facilityId: S(fac.id), how: how, unchanged: current === S(fac.id) });
+  });
+
+  // 5. Current coordinates copied onto the facility row (latest active version; legacy row only when no facility existed).
+  const facilities = uniq(workplaces.map(x => x.facilityId)).map(id => {
+    const f = facById.get(id), loc = latestLoc[id];
+    let geo = { lat: '', lng: '', radius: '', geoState: '', geoSource: '', geoBy: '', geoAt: '', geoVersion: '', from: 'none' };
+    if (S(f.geoVersion) || S(f.geoState)) { // already migrated: the facility row is the reference
+      geo = { lat: f.lat, lng: f.lng, radius: f.radius, geoState: S(f.geoState), geoSource: S(f.geoSource), geoBy: S(f.geoBy), geoAt: S(f.geoAt),
+        geoVersion: f.geoVersion, from: validPt(f) ? 'facility' : 'none' };
+    } else if (validPt(loc)) {
+      geo = { lat: +loc.lat, lng: +loc.lng, radius: loc.radius === '' || loc.radius == null ? '' : +loc.radius, geoState: S(loc.state), geoSource: S(loc.source),
+        geoBy: S(loc.approvedBy), geoAt: S(loc.approvedAt), geoVersion: +loc.version || 1, from: 'FacilityLocations' };
+    } else if (f._new && validPt(f._row)) {
+      const w = f._row, approved = w.refBy === 'ADMIN_MAP' && w.refState === 'مؤكد' && S(w.reviewed) === 'true';
+      geo = { lat: +w.lat, lng: +w.lng, radius: w.radius === '' || w.radius == null ? '' : +w.radius, geoState: approved ? 'مؤكد' : 'مراجعة مطلوبة',
+        geoSource: approved ? 'ADMIN_MAP' : 'LEGACY', geoBy: approved ? 'MIGRATION_V2' : '', geoAt: approved ? now : '', geoVersion: 1, from: 'legacyWorkplaceRow' };
+    }
+    const approved = geo.geoState === 'مؤكد' && geo.geoSource === 'ADMIN_MAP' && !!geo.geoBy && !!geo.geoAt && validPt(geo);
+    return { id: id, name: S(f.name), status: S(f.status) || 'نشط', isNew: !!f._new, mergedInto: S(f.mergedInto), approved: approved, geo: geo,
+      doctors: uniq(workplaces.filter(x => x.facilityId === id).map(x => x.doctorId)).length };
+  });
+
+  // 6. Possible duplicates among active facilities: reported for an admin decision, never merged automatically.
+  const live = facilities.filter(f => f.status !== 'معطل' && !f.mergedInto), duplicates = [];
+  for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+    const a = live[i], b = live[j], sameName = !!normName_(a.name) && normName_(a.name) === normName_(b.name);
+    const d = validPt(a.geo) && validPt(b.geo) ? dist_(+a.geo.lat, +a.geo.lng, +b.geo.lat, +b.geo.lng) : null;
+    if (sameName || (d != null && d < FACILITY_V2_NEAR_M)) duplicates.push({ a: a.id, b: b.id, nameA: a.name, nameB: b.name, sameName: sameName, distance: d });
+  }
+
+  // 7. Visit coverage: every historical doctor visit must still reach a facility (Reports are never rewritten).
+  const wpById = new Map(t.workplaces.map(w => [S(w.id), w])), facOfWp = new Map(workplaces.map(x => [x.workplaceId, x.facilityId]));
+  const visits = { total: 0, viaOwnWorkplace: 0, viaColleagueWorkplace: 0, missingWorkplace: 0, nameOnly: 0, noPlace: 0, malformedReports: 0 };
+  (t.reports || []).forEach(r => {
+    if (!Array.isArray(r.doctors)) { visits.malformedReports++; return; }
+    r.doctors.forEach(v => {
+      visits.total++;
+      const wid = S(v && v.workplaceId);
+      if (wid) {
+        const w = wpById.get(wid);
+        if (!w || !facOfWp.has(wid)) visits.missingWorkplace++;
+        else if (S(v.doctorId) && S(w.doctorId) !== S(v.doctorId)) visits.viaColleagueWorkplace++; // V2 resolves these to the right facility
+        else visits.viaOwnWorkplace++;
+      } else if (S(v && v.place)) visits.nameOnly++;
+      else visits.noPlace++;
+    });
+  });
+
+  // 8. Facilities nobody points to any more (e.g. per-doctor copies left behind by shared facilities, or ADMIN_FACILITY rows).
+  const referenced = new Set(facilities.map(f => f.id));
+  const unreferenced = t.facilities.filter(f => !referenced.has(S(f.id)) && f.legacyEntity !== 'Pharmacies')
+    .map(f => ({ id: S(f.id), name: S(f.name), legacyEntity: S(f.legacyEntity) }));
+  if (unreferenced.some(f => f.legacyEntity === 'ADMIN_FACILITY')) warnings.push({ type: 'adminFacilityRows', count: unreferenced.filter(f => f.legacyEntity === 'ADMIN_FACILITY').length });
+
+  return {
+    readOnly: true, plannedAt: now, ready: !blockers.length, blockers: blockers, warnings: warnings, schema: schema,
+    counts: {
+      workplaces: workplaces.length, activeWorkplaces: workplaces.filter(x => x.active).length, workplacesAlreadyMigrated: workplaces.filter(x => x.unchanged).length,
+      facilities: facilities.length, facilitiesToCreate: created.length, approvedFacilities: facilities.filter(f => f.approved).length,
+      facilitiesWithoutCoordinates: facilities.filter(f => f.geo.from === 'none').length, possibleDuplicatePairs: duplicates.length,
+      seedDoctors: seedDoctors.length, unreferencedFacilities: unreferenced.length
+    },
+    visits: visits, facilities: facilities, workplaces: workplaces, duplicates: duplicates, seedDoctors: seedDoctors, unreferenced: unreferenced
+  };
+}
+
+function previewFacilityModelV2_(now) {
+  const read = n => readByHeader_(n), D = read('Doctors'), W = read('DoctorWorkplaces'), F = read('Facilities'), L = read('FacilityLocations'), P = read('DoctorPlaces');
+  // Only the id and doctors columns of Reports are read (snapshots are the bulk of each row and are not needed).
+  const sh = sheet_('Reports'), last = sh ? sh.getLastRow() : 0, reports = [];
+  if (last >= 2) {
+    const ids = sh.getRange(2, 1, last - 1, 1).getValues(), docs = sh.getRange(2, T.Reports.indexOf('doctors') + 1, last - 1, 1).getValues();
+    ids.forEach((r, i) => { if (r[0] === '') return; let a = null; try { a = JSON.parse(docs[i][0] || '[]'); } catch (e) {} reports.push({ id: String(r[0]), doctors: Array.isArray(a) ? a : null }); });
+  }
+  return facilityModelV2Plan_({ headers: { Facilities: F.header, DoctorWorkplaces: W.header }, doctors: D.rows, workplaces: W.rows,
+    facilities: F.rows, locations: L.rows, places: P.rows, reports: reports }, now);
+}
+// Owner-only, read-only. Run from the Apps Script editor; the summary is written to the execution log only.
+function previewFacilityModelV2() {
+  ownerOnly_();
+  const plan = previewFacilityModelV2_(new Date().toISOString()), cap = (a, n) => a.slice(0, n);
+  Logger.log('MEDREP_FACILITY_V2_PREVIEW\n' + JSON.stringify({ readOnly: true, ready: plan.ready, counts: plan.counts, visits: plan.visits, schema: plan.schema,
+    blockers: plan.blockers, warnings: cap(plan.warnings, 100), duplicates: cap(plan.duplicates, 100), seedDoctors: cap(plan.seedDoctors, 100),
+    unreferenced: cap(plan.unreferenced, 100) }, null, 2));
+  return plan;
+}
+
+/*
+ * Execution of the facility model V2 migration. Owner-only, run once from the Apps Script editor (no dialog needed).
+ * Driven by the SAME planner as previewFacilityModelV2, refuses to run on any blocker, and is idempotent (a rerun changes nothing).
+ * Writes: header cells appended to Facilities / DoctorWorkplaces, facility rows (new + coordinates copied), facilityId on each
+ * DoctorWorkplaces row, left-over per-workplace facilities disabled, Settings.workplacePolicy=soft if missing.
+ * Never writes Reports, snapshots, DoctorPlaces or FacilityLocations.
+ */
+function appendFacilityV2Columns_(n) {
+  if (!sheet_(n)) ensureSheet_(n); // a missing sheet is created with the full V2 header
+  const sh = sheet_(n), extra = FACILITY_V2_COLUMNS[n], base = T[n].length - extra.length;
+  if (sh.getLastRow() === 0) { sh.getRange(1, 1, 1, T[n].length).setValues([T[n]]); return extra.length; }
+  const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String);
+  if (extra.every((c, i) => head[base + i] === c)) return 0;
+  if (sh.getMaxColumns() < T[n].length) sh.insertColumnsAfter(sh.getMaxColumns(), T[n].length - sh.getMaxColumns());
+  sh.getRange(1, base + 1, 1, extra.length).setValues([extra]);
+  sh.getRange(1, base + 1, sh.getMaxRows(), extra.length).setNumberFormat('@'); // IDs and ISO timestamps stay text
+  return extra.length;
+}
+function migrateFacilityModelV2() {
+  ownerOnly_();
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const now = new Date().toISOString(), sys = { uid: 'MIGRATION_V2', role: 'system' };
+    let plan = previewFacilityModelV2_(now);
+    if (!plan.ready) throw new Error('توقف الترحيل دون أي كتابة. الموانع: ' + JSON.stringify(plan.blockers).slice(0, 1500));
+    const out = { columnsAdded: 0, seededWorkplaces: 0, facilitiesCreated: 0, facilityLocationsCopied: 0, workplacesLinked: 0, facilitiesDisabled: 0, policySet: false };
+    out.columnsAdded = appendFacilityV2Columns_('Facilities') + appendFacilityV2Columns_('DoctorWorkplaces');
+    _SHEETS = {}; clearCache_();
+    // Doctors that only have the legacy text workplace get their row first (same rule as ensureDoctorWorkplaces_), then re-plan.
+    if (plan.seedDoctors.length) {
+      const rows = dbAll_('DoctorWorkplaces'), doctors = dbAll_('Doctors');
+      plan.seedDoctors.forEach(sd => {
+        const d = doctors.find(x => String(x.id) === sd.doctorId); if (!d) return;
+        const w = { id: nextWorkplaceId_(rows), doctorId: d.id, doctorName: d.name, workplace: sd.workplace, sector: d.sector || '', lat: '', lng: '', radius: '',
+          active: String(d.active) === 'false' ? false : true, refState: '', refBy: '', addedBy: d.addedBy || '', reviewed: String(d.reviewed) === 'true' || !d.addedBy ? 'true' : 'false' };
+        dbAppend_('DoctorWorkplaces', w); rows.push(w); out.seededWorkplaces++;
+      });
+      plan = previewFacilityModelV2_(now);
+      if (!plan.ready) throw new Error('توقف الترحيل بعد إضافة أماكن العمل القديمة. الموانع: ' + JSON.stringify(plan.blockers).slice(0, 1500));
+    }
+    const current = new Map(readByHeader_('Facilities').rows.map(f => [String(f.id), f]));
+    const geoKeys = ['lat', 'lng', 'radius', 'geoState', 'geoSource', 'geoBy', 'geoAt', 'geoVersion'];
+    plan.facilities.forEach(f => {
+      const geo = {}; geoKeys.forEach(k => { geo[k] = f.geo[k]; });
+      if (f.isNew) {
+        const wp = plan.workplaces.find(x => x.facilityId === f.id);
+        dbAppend_('Facilities', Object.assign({ id: f.id, name: f.name, type: 'منشأة طبية', region: '', address: '', status: f.status, legacyEntity: 'DoctorWorkplaces',
+          legacyId: wp ? wp.workplaceId : '', createdAt: now, createdBy: sys.uid, updatedAt: now, updatedBy: sys.uid, mergedInto: '' }, geo));
+        out.facilitiesCreated++;
+        return;
+      }
+      const row = current.get(f.id);
+      if (!row || String(row.geoState || '') || String(row.geoVersion || '') || f.geo.from === 'none') return; // already migrated, or nothing to copy
+      dbUpsert_('Facilities', 'id', Object.assign({ id: f.id, updatedAt: now, updatedBy: sys.uid }, geo)); out.facilityLocationsCopied++;
+    });
+    const wrows = new Map(readByHeader_('DoctorWorkplaces').rows.map(w => [String(w.id), w]));
+    plan.workplaces.forEach(x => {
+      if (x.unchanged) return;
+      const w = wrows.get(x.workplaceId);
+      dbUpsert_('DoctorWorkplaces', 'id', { id: x.workplaceId, facilityId: x.facilityId, linkState: (w && w.linkState) || LINK_OK, linkedBy: sys.uid, linkedAt: now });
+      out.workplacesLinked++;
+    });
+    plan.unreferenced.filter(f => f.legacyEntity === 'DoctorWorkplaces').forEach(f => {
+      const row = current.get(f.id); if (!row || row.status === 'معطل') return;
+      dbUpsert_('Facilities', 'id', { id: f.id, status: 'معطل', updatedAt: now, updatedBy: sys.uid }); out.facilitiesDisabled++;
+    });
+    if (settings_().workplacePolicy === undefined) { dbAppend_('Settings', { key: 'workplacePolicy', value: 'soft' }); out.policySet = true; }
+    clearCache_(); CacheService.getScriptCache().remove('v2_ok');
+    const after = previewFacilityModelV2_(new Date().toISOString());
+    out.after = { ready: after.ready, counts: after.counts, blockers: after.blockers };
+    audit_(sys, 'migrate_facility_model_v2', 'Facilities', JSON.stringify(Object.assign({}, out, { after: after.counts })));
+    Logger.log('MEDREP_FACILITY_V2_MIGRATION\n' + JSON.stringify(out, null, 2));
+    return out;
+  } finally { lock.releaseLock(); }
+}
+
 function offData_() {
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
   const hol = {}, lv = {};
@@ -2253,7 +2757,10 @@ function usageCounts_(kind) {
   const sh = sheet_('Reports'), last = sh.getLastRow();
   if (last >= 2) sh.getRange(2, T.Reports.indexOf(col) + 1, last - 1, 1).getValues().forEach(row => {
     let visits; try { visits = JSON.parse(row[0] || '[]'); } catch (e) { return; }
-    visits.forEach(v => { const key = kind === 'wp' ? (v.workplaceId || (v.name + '|' + (v.place || ''))) : v.name; counts[key] = (counts[key] || 0) + 1; });
+    visits.forEach(v => {
+      const key = kind === 'fac' ? (v.facilityId || (v.workplaceId ? 'wp:' + v.workplaceId : '')) : kind === 'wp' ? (v.workplaceId || (v.name + '|' + (v.place || ''))) : v.name;
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    });
   });
   cachePutLarge_('uc_' + kind, JSON.stringify(counts), 1800);
   return counts;
@@ -2268,17 +2775,21 @@ function findReport_(match) { const x = findReportRow_(match); return x && x.r; 
 // Reference tables used to validate a visit and judge its GPS. Cached for 2 minutes, but ONLY the report save/submit path
 // reads them from the cache (ID generation and admin screens always read the sheet), and every write through
 // dbAppend_/dbUpsert_ drops the table's cache at once.
-const VALIDATION_TABLES = ['Doctors', 'DoctorWorkplaces', 'Pharmacies', 'Facilities', 'FacilityLocations', 'DoctorPlaces'];
+// Facility model V2: doctor visits need only Doctors + DoctorWorkplaces + Facilities. FacilityLocations stays for pharmacy
+// references (unchanged), DoctorPlaces is no longer read.
+// Versioned key: rows cached by the previous deployment (old column layout) are never read by this one.
+const TABLE_CACHE = 'm2_';
+const VALIDATION_TABLES = ['Doctors', 'DoctorWorkplaces', 'Pharmacies', 'Facilities', 'FacilityLocations'];
 function dropTableCache_(n) {
   if (VALIDATION_TABLES.indexOf(n) < 0) return;
-  const keys = ['m_' + n]; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push('m_' + n + '_' + i);
+  const keys = [TABLE_CACHE + n]; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(TABLE_CACHE + n + '_' + i);
   try { CacheService.getScriptCache().removeAll(keys); } catch (e) {}
 }
 function cachedTable_(n) {
-  const hit = cacheGetLarge_('m_' + n);
+  const hit = cacheGetLarge_(TABLE_CACHE + n);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   const rows = dbAllRaw_(n);
-  cachePutLarge_('m_' + n, JSON.stringify(rows), 120);
+  cachePutLarge_(TABLE_CACHE + n, JSON.stringify(rows), 120);
   return rows;
 }
 function dbAppend_(n, o) { dropTableCache_(n); if (_RM) delete _RM[n]; sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }

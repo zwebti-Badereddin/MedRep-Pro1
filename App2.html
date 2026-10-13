@@ -6,14 +6,15 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="DoctorWorkplaces">أماكن عمل الأطباء</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
+ if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
-async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="DoctorWorkplaces"?"workplacesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
-function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent==="DoctorWorkplaces")return drawWorkplaces();
+async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="Facilities"?"facilitiesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
+function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent==="Facilities")return drawFacilities();
  const f=$("#mf").value,q=norm($("#mq").value),dr=MS.ent==="Doctors",isOff=r=>String(r.active)==="false",isNew=r=>!!r.addedBy&&String(r.reviewed)!=="true"&&!isOff(r);
  const a=MS.rows.filter(r=>(f==="new"?isNew(r):f==="off"?isOff(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
  $("#ml").innerHTML=a.length?a.map(r=>{const hasL=r.lat!==""&&r.lat!=null&&isFinite(+r.lat)&&r.lng!==""&&r.lng!=null&&isFinite(+r.lng),pend=hasL&&(r.refBy!=="ADMIN_MAP"||r.refState!=="مؤكد"),ls=dr?"مرجع الزيارة من مكان العمل":!hasL?"لا موقع مسجّل":pend?"الموقع غير معتمد":"الموقع مؤكد ✓",by=isNew(r)?((REPS.find(x=>x.id===r.addedBy)||{}).name||""):"",sub=dr?[r.specialty,r.workplace].filter(Boolean).join(" · "):[r.location,r.nearFacility].filter(Boolean).join(" · ");
@@ -24,32 +25,51 @@ function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent
   if(o==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
   if(o==="edit")mEdit(r);else if(o==="merge")mMerge(r);else if(o==="map")openWorkplaceMap(r);else mAct(id,o)});
 }
-function drawWorkplaces(){
+/* Facility model V2: one row per facility (the shared GPS reference) with the doctors linked to it. */
+function drawFacilities(){
  if(!$("#mf"))return;
- const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false",pending=r=>String(r.reviewed)!=="true"&&!off(r);
- const a=MS.rows.filter(r=>(f==="new"?pending(r):f==="off"?off(r):true)&&(!q||norm(r.doctorName+" "+r.workplace).includes(q)));
- $("#ml").innerHTML=a.length?a.map(w=>{
-  const has=w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng);
-  const gps=!has?"لا إحداثيات":w.refBy==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":w.refState==="مؤكد"?"الموقع مؤكد ✓":w.refState==="متعارض"?"الموقع متعارض":"الموقع قيد التأكيد";
-  const coords=has?"الإحداثيات: "+(+w.lat).toFixed(6)+", "+(+w.lng).toFixed(6):"لم تُسجل إحداثيات للمنشأة بعد.";
-  return '<div class="row" data-id="'+esc(w.id)+'" style="display:block;'+(off(w)?"opacity:.65":"")+'"><b>'+esc(w.workplace)+'</b> '+(pending(w)?'<span class="st s1">بانتظار الاعتماد</span>':'')+
-  '<div style="color:var(--mut);font-size:13px">المنشأة: مستقلة عن الطبيب · '+esc(w.sector||"—")+' · '+w.uses+' زيارة · '+gps+'</div>'+
-  '<div style="font-size:12px;color:var(--mut);margin-top:4px">'+esc(coords)+'</div>'+
-  '<div style="font-size:12px;color:var(--mut);margin-top:5px">يُحفظ الموقع كمرجع مشترك للمنشأة، ويُستخدم تلقائيًا للتحقق من زيارات جميع الأطباء العاملين فيها.</div>'+
-  '<div class="acts"><button class="mini" data-a="map">'+(w.refBy==="REP_PROPOSAL"?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
-  (has?'<a class="mini" href="https://www.openstreetmap.org/?mlat='+encodeURIComponent(w.lat)+'&mlon='+encodeURIComponent(w.lng)+'#map=18/'+encodeURIComponent(w.lat)+'/'+encodeURIComponent(w.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a>':'')+
-  '<button class="mini" data-a="edit">تعديل</button>'+
-  (has?'<button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
-  '<button class="mini" data-a="toggle">'+(off(w)?"تفعيل":"تعطيل")+'</button></div></div>';
- }).join(""):'<div class="empty">لا توجد أماكن عمل مطابقة.</div>';
- document.querySelectorAll("#ml button.mini").forEach(b=>b.onclick=()=>{
-  const id=b.closest(".row").dataset.id,w=MS.rows.find(x=>x.id===id),op=b.dataset.a;
+ const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.status)==="معطل"||!!r.mergedInto;
+ const has=r=>r.lat!==""&&r.lat!=null&&isFinite(+r.lat)&&r.lng!==""&&r.lng!=null&&isFinite(+r.lng);
+ const pend=r=>(r.links||[]).filter(l=>l.active&&l.linkState==="بانتظار");
+ const needs=r=>!off(r)&&(!r.approved||pend(r).length>0);
+ const a=MS.rows.filter(r=>(f==="new"?needs(r):f==="links"?pend(r).length>0:f==="off"?off(r):!r.mergedInto)&&(!q||norm(r.name+" "+(r.links||[]).map(l=>l.doctorName).join(" ")).includes(q)));
+ const geo=r=>!has(r)?"لا إحداثيات":r.approved?"الموقع معتمد ✓":r.geoSource==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":"الموقع بانتظار الاعتماد";
+ $("#ml").innerHTML='<button class="btn dash" id="facAdd">＋ إضافة منشأة</button><div style="height:10px"></div>'+(a.length?a.map(r=>{
+  const docs=(r.links||[]).filter(l=>l.active&&l.linkState!=="مرفوض");
+  return '<div class="row" data-id="'+esc(r.id)+'" style="display:block;'+(off(r)?"opacity:.65":"")+'"><b>'+esc(r.name)+'</b> '+
+  (r.mergedInto?'<span class="st s4">مدموجة</span>':off(r)?'<span class="st s4">معطّلة</span>':!r.approved?'<span class="st s1">الموقع بانتظار الاعتماد</span>':'')+
+  '<div style="color:var(--mut);font-size:13px">'+esc(r.type||"—")+' · '+r.uses+' زيارة · '+docs.length+' طبيب · '+geo(r)+'</div>'+
+  (has(r)?'<div style="font-size:12px;color:var(--mut);margin-top:4px">الإحداثيات: '+(+r.lat).toFixed(6)+', '+(+r.lng).toFixed(6)+'</div>':'')+
+  (docs.length?'<div style="font-size:12px;margin-top:6px">الأطباء: '+docs.map(l=>'<span style="display:inline-flex;gap:4px;align-items:center;margin:2px 8px 2px 0">'+esc(l.doctorName)+
+   (l.linkState==="بانتظار"?' <span class="st s1">ربط جديد</span><button class="mini" type="button" data-l="approve" data-lid="'+esc(l.id)+'">اعتماد</button><button class="mini" type="button" data-l="reject" data-lid="'+esc(l.id)+'">رفض</button>':'')+'</span>').join("")+'</div>':'')+
+  (r.mergedInto?'':'<div class="acts"><button class="mini" data-a="map">'+(r.geoSource==="REP_PROPOSAL"&&!r.approved?"مراجعة الموقع واعتماده من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+
+   (has(r)?'<a class="mini" href="https://www.openstreetmap.org/?mlat='+encodeURIComponent(r.lat)+'&mlon='+encodeURIComponent(r.lng)+'#map=18/'+encodeURIComponent(r.lat)+'/'+encodeURIComponent(r.lng)+'" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none">عرض الموقع</a><button class="mini" data-a="clearLoc">مسح GPS</button>':'')+
+   '<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="merge">دمج</button><button class="mini" data-a="toggle">'+(off(r)?"تفعيل":"تعطيل")+'</button></div>')+'</div>';
+ }).join(""):'<div class="empty">لا توجد منشآت مطابقة.</div>');
+ $("#facAdd").onclick=async()=>{
+  const name=prompt("اسم المنشأة:");if(name==null||!name.trim())return;
+  const type=prompt("نوع المنشأة (مستشفى / مصحة / عيادة / مركز):","منشأة طبية");if(type==null)return;
+  const row={name:name.trim(),type:type.trim()};
+  try{let out=await srv("facilityAct",{op:"create",row});
+   if(out.similar){if(!confirm("توجد منشأة مشابهة:\n"+out.similar.map(x=>"• "+x.name+(x.distance!=null?" ("+x.distance+" م)":"")).join("\n")+"\n\nهل تنشئ منشأة جديدة رغم ذلك؟"))return;out=await srv("facilityAct",{op:"create",confirmNew:true,row})}
+   toast("تمت إضافة المنشأة. حدّد موقعها من الخريطة.");await loadM()}catch(e){toast(e.message)}};
+ document.querySelectorAll("#ml button[data-l]").forEach(b=>b.onclick=async()=>{try{await srv("linkAct",{id:b.dataset.lid,op:b.dataset.l});toast("تم");await loadM()}catch(e){toast(e.message)}});
+ document.querySelectorAll("#ml button[data-a]").forEach(b=>b.onclick=()=>{
+  const id=b.closest(".row").dataset.id,r=MS.rows.find(x=>x.id===id),op=b.dataset.a;
   if(op==="clearLoc"&&!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد المسح؟";return}
-  if(op==="map")openWorkplaceMap(w);
-  else if(op==="edit"){const workplace=prompt("اسم مكان العمل:",w.workplace);if(workplace==null)return;const sector=prompt("القطاع (خاص/عام):",w.sector||"خاص");if(sector==null)return;mAct(id,"edit",{row:{workplace,sector}})}
+  if(op==="map")openWorkplaceMap({id:r.id,workplace:r.name,doctorName:"",lat:r.lat,lng:r.lng});
+  else if(op==="edit"){const name=prompt("اسم المنشأة (الإحداثيات لا تتغير):",r.name);if(name==null)return;const type=prompt("نوع المنشأة:",r.type||"");if(type==null)return;mAct(id,"edit",{row:{name,type}})}
+  else if(op==="merge")fMerge(r);
   else mAct(id,op)
  });
 }
+function fMerge(r){const oth=MS.rows.filter(x=>x.id!==r.id&&!x.mergedInto&&String(x.status)!=="معطل").sort((a,b)=>a.name.localeCompare(b.name,"ar"));
+ $("#modal").innerHTML=`<h3>دمج «${esc(r.name)}»</h3><p style="color:var(--mut);font-size:14px;line-height:1.7">تُنقل ارتباطات الأطباء إلى المنشأة التي تختارها وتُعطَّل هذه المنشأة. التقارير القديمة تبقى كما هي وتُحتسب على المنشأة الجديدة تلقائيًا.</p>
+ <label>دمج داخل</label><input id="m_q" placeholder="ابحث"><select id="m_s" size="6" style="height:auto;margin-top:8px"></select><div class="err" id="ferr"></div>
+ <div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">دمج</button></div>`;
+ const fill=()=>{const q=norm($("#m_q").value);$("#m_s").innerHTML=oth.filter(x=>!q||norm(x.name).indexOf(q)>=0).slice(0,50).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")};fill();$("#m_q").oninput=fill;
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#sv").onclick=()=>{const v=$("#m_s").value;if(!v){$("#ferr").textContent="اختر المنشأة المراد الدمج داخلها.";return}mAct(r.id,"merge",{into:v})};}
 let workplaceMapInstance=null,workplaceMapMarker=null,workplaceMapPoint=null,workplaceMapLibPromise=null;
 function loadWorkplaceMapLib(){
  if(workplaceMapLibPromise)return workplaceMapLibPromise;
@@ -69,11 +89,14 @@ function openWorkplaceMap(w){
  '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc((w.workplace ? w.workplace : (w.location ? w.location : w.name))+" "+(w.doctorName ? w.doctorName : ""))+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
  '<div id="wpSearchStatus" style="font-size:12px;color:var(--mut);min-height:20px"></div><div id="wpMap" style="height:350px;min-height:300px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
  '<div id="wpCoords" style="font-size:13px;color:var(--mut);margin:8px 0">انقر على الخريطة لتحديد الموقع الدقيق.</div>'+
+ '<div class="two" style="margin:4px 0"><input id="wpLat" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط العرض Latitude" aria-label="خط العرض"><input id="wpLng" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط الطول Longitude" aria-label="خط الطول"></div><button class="btn" id="wpGo" type="button">تحديد على الخريطة</button><div class="err" id="wpCoordErr"></div>'+
  '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ موقع المنشأة</button></div>'+
  '<div style="font-size:11px;color:var(--mut);margin-top:8px">الخريطة والبحث الجغرافي من OpenStreetMap/Nominatim. تحقق بصريًا من موقع المنشأة قبل الحفظ.</div>';
  $("#ov").classList.add("on");
  $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null};
  $("#wpSave").onclick=()=>{if(!workplaceMapPoint)return;const point={lat:workplaceMapPoint.lat,lng:workplaceMapPoint.lng};if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null;mAct(w.id,"setLoc",point)};
+ $("#wpGo").onclick=()=>{const la=$("#wpLat").value.trim(),ln=$("#wpLng").value.trim(),num=/^-?\d+(\.\d+)?$/,err=$("#wpCoordErr");err.textContent="";if(/[٠-٬۰-۹]/.test(la+ln)){err.textContent="استخدم الأرقام الإنجليزية (0–9) والنقطة العشرية فقط؛ الأرقام العربية-الهندية غير مقبولة.";return}if(!num.test(la)||!num.test(ln)){err.textContent="أدخل خط العرض وخط الطول أرقامًا عشرية صحيحة، مثل 32.8872 و13.1913.";return}const lat=+la,lng=+ln;if(lat<-90||lat>90||lng<-180||lng>180){err.textContent="خط العرض يجب أن يكون بين -90 و90، وخط الطول بين -180 و180.";return}if(!workplaceMapInstance||workplaceMapInstance.getContainer()!==$("#wpMap")){err.textContent="انتظر اكتمال تحميل الخريطة";return}setWorkplaceMapPoint(lat,lng,true)};
+ $("#wpLat").oninput=$("#wpLng").oninput=()=>{$("#wpSave").disabled=true}; // typed values are not saved until applied to the marker
  $("#wpSearch").onsubmit=async e=>{
   e.preventDefault();const query=$("#wpQuery").value.trim();if(!query)return;
   $("#wpSearchStatus").textContent="جارٍ البحث عن المكان…";
@@ -107,6 +130,7 @@ function setWorkplaceMapPoint(lat,lng,zoom){
 function showWorkplaceMapCoords(){
  if(!workplaceMapPoint)return;
  $("#wpCoords").textContent="الإحداثيات المحددة: "+workplaceMapPoint.lat.toFixed(6)+", "+workplaceMapPoint.lng.toFixed(6);
+ if($("#wpLat")){$("#wpLat").value=workplaceMapPoint.lat.toFixed(6);$("#wpLng").value=workplaceMapPoint.lng.toFixed(6);$("#wpCoordErr").textContent=""}
  $("#wpSave").disabled=false;
 }
 function drawR(){if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false";
@@ -124,7 +148,7 @@ function rForm(r){const fl=(i,l,v,x)=>`<label>${l}</label><input id="${i}" value
  $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{5}$/.test(c)){$("#ferr").textContent="رمز الدخول الجديد يجب أن يكون 5 أرقام.";return}
   rSave({id:r?r.id:undefined,name:$("#r_n").value,phone:$("#r_p").value,email:$("#r_e").value,code:c||undefined})};}
 async function rSave(row){try{await srv("repSave",{row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
-async function mAct(id,op,x){try{await srv(MS.ent==="DoctorWorkplaces"?"workplaceAct":"masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+async function mAct(id,op,x){try{await srv(MS.ent==="Facilities"?"facilityAct":"masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
 function mEdit(r){const d=MS.ent==="Doctors",fl=(i,l,v)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}">`;
  $("#modal").innerHTML=`<h3>تعديل السجل</h3>${fl("e_n","الاسم *",r.name)}${d?fl("e_s","التخصص",r.specialty)+`<div class="empty">أماكن عمل الطبيب تُدار من قسم «أماكن عمل الأطباء».</div>`+`<label>القطاع</label><select id="e_c"><option ${r.sector==="خاص"?"selected":""}>خاص</option><option ${r.sector==="عام"?"selected":""}>عام</option></select>`:fl("e_l","الموقع",r.location)+fl("e_f","أقرب منشأة",r.nearFacility)}
  <div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>`;

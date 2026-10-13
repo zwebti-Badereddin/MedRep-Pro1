@@ -53,7 +53,7 @@ function saveNow(){
   // A delayed response may update UI state only if its original report is still active.
   if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
    S.no=r.no;S.status=r.status;
-   (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name)S.docs[i].gps=v.gps});
+   (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name){S.docs[i].gps=v.gps;["workplaceId","facilityId","place"].forEach(k=>{if(v[k])S.docs[i][k]=v[k]})}}); // the server resolves the facility and the doctor's link
    (r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});
   }
   return r
@@ -163,7 +163,7 @@ function installGpsCompareButton(report){
 }
 function collectGpsCompareVisits(report){
  const doctors=(report&&report.doctors)||[],pharmacies=(report&&report.pharmacies)||[];
- return doctors.map((v,i)=>({kind:"زيارة طبيب",type:"doctor",name:v.name||"طبيب غير محدد",doctorName:v.name||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",place:v.place||"",gps:v.gps||{},seq:i+1}))
+ return doctors.map((v,i)=>({kind:"زيارة طبيب",type:"doctor",name:v.name||"طبيب غير محدد",doctorName:v.name||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",facilityId:v.facilityId||"",place:v.place||"",gps:v.gps||{},seq:i+1}))
   .concat(pharmacies.map((v,i)=>({kind:"زيارة صيدلية",type:"pharmacy",name:v.name||"صيدلية غير محددة",pharmacyId:v.pharmacyId||"",place:v.loc||"",gps:v.gps||{},seq:i+1})));
 }
 let visitCompareMapInstance=null,visitGpsDrawSeq=0;
@@ -206,7 +206,7 @@ function drawGpsComparisonVisit(v){
  const repOk=gpsPointValid(g.lat,g.lng);
  if(!validRef(rawRef)&&!v._refRequested){
   v._refRequested=true;
-  const request={kind:v.type,name:v.name,doctorName:v.doctorName||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",place:v.place||"",pharmacyId:v.pharmacyId||""};
+  const request={kind:v.type,name:v.name,doctorName:v.doctorName||"",doctorId:v.doctorId||"",workplaceId:v.workplaceId||"",facilityId:v.facilityId||"",place:v.place||"",pharmacyId:v.pharmacyId||""};
   srv("gpsReference",request).then(ref=>{
    v.currentReference=ref||null;
    v.currentReferenceError=ref?"": "لم يُرجع الخادم موقعًا معتمدًا لهذه الزيارة. تحقق من ربط الطبيب بمكان العمل ومن اعتماد موقع المنشأة في الإدارة.";
@@ -247,9 +247,15 @@ function drawGpsComparisonVisit(v){
 
 async function review(ok,note){
  if(!ok&&!note){$("#ferr").textContent="اكتب ملاحظة للمندوب.";return}
+ let approveLinks=false;
  if(ok){
   let summary;
   try{summary=await srv("gpsReviewSummary",{id:CUR.id})}catch(e){toast("تعذر التحقق من المواقع الحالية: "+e.message);return}
+  const links=summary.pendingLinks||[];
+  if(links.length){ // doctors visited at a facility they were not linked to yet: approving the report approves these links too
+   if(!confirm("يتضمن التقرير "+links.length+" ربطًا جديدًا لطبيب بمنشأة:\n"+links.slice(0,8).map(x=>"• "+x.name+" ← "+x.place).join("\n")+"\n\nهل تعتمد هذه الارتباطات مع التقرير؟"))return;
+   approveLinks=true;
+  }
   const exceptions=(summary.visits||[]).filter(v=>v.status!=="تم التحقق");
   if(exceptions.length){
    const detail=exceptions.slice(0,5).map(v=>v.kind+" "+v.name+": "+v.status+(v.distance!=null?" ("+v.distance+" م)":"")).join("\n");
@@ -259,12 +265,12 @@ async function review(ok,note){
    note=reason.trim();
   }
  }
- try{await srv("reviewReport",{id:CUR.id,approve:ok,note});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){
+ try{await srv("reviewReport",{id:CUR.id,approve:ok,note,approveLinks});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast(ok?"تم اعتماد التقرير":"أُعيد التقرير للمندوب");const g=$("#fgo");if(g)g.click()}catch(e){
   if(ok&&String(e.message||e).includes("سبب الاعتماد الاستثنائي")){
    const reason=prompt("يتطلب اعتماد التقرير استثنائيًا سببًا مسجلًا من المدير:");
    if(reason==null)return;
    if(reason.trim().length<5){toast("سبب الاعتماد الاستثنائي يجب ألا يقل عن 5 أحرف.");return}
-   try{await srv("reviewReport",{id:CUR.id,approve:true,note:reason.trim()});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast("تم اعتماد التقرير استثنائيًا وتسجيل السبب");const g=$("#fgo");if(g)g.click()}catch(err){toast(err.message)}
+   try{await srv("reviewReport",{id:CUR.id,approve:true,note:reason.trim(),approveLinks});$("#ov").classList.remove("on");$("#pv").classList.remove("on");toast("تم اعتماد التقرير استثنائيًا وتسجيل السبب");const g=$("#fgo");if(g)g.click()}catch(err){toast(err.message)}
   }else toast(e.message)
  }
 }

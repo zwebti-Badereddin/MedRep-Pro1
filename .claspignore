@@ -1,0 +1,4 @@
+# Local-only files that must never be pushed to Apps Script.
+tests/**
+**/node_modules/**
+.git/**
