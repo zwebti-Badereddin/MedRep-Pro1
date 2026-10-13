@@ -52,6 +52,6 @@ node tools/verify-deploy.js
 
 `tests/` و`tools/` وملفات `.md` مستثناة في `.claspignore`.
 
-## قرار مفتوح
+## فرع الإنتاج
 
-`releaseBranch` في `tools/release.config.json` فارغ حاليًا (يُسمح بالنشر من أي فرع). يُنصح بتحديد فرع واحد للإنتاج بعد توحيد الفروع.
+فرع الإنتاج هو `master` (`releaseBranch` في `tools/release.config.json`). أداة الإصدار ترفض النشر من أي فرع آخر.
