@@ -11,6 +11,7 @@ function tabM(){
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
+ if(MS.ent==="Doctors"||MS.ent==="Pharmacies"){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+(MS.ent==="Doctors"?"أطباء":"صيدليات")+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
 async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="Facilities"?"facilitiesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
@@ -70,6 +71,33 @@ function facilityFormHtml(r){
 }
 function similarFacilitiesHtml(list){
  return '<div class="ap-sec"><b>توجد منشأة مسجلة مشابهة — تأكد أنها ليست نفسها:</b>'+list.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'</div>'+(x.distance!=null?'<span class="st">'+x.distance+' م</span>':'')+'</div>').join("")+'</div>';
+}
+/* Bulk import: paste columns copied from Excel (tab-separated), preview, then add. Existing names are never duplicated. */
+const IMPORT_COLS={Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة"};
+const parsePasted=t=>String(t||"").split(/\r?\n/).map(l=>l.split("\t"));
+function importResultHtml(r,committed){
+ const li=(a,f)=>a.length?'<ul>'+a.slice(0,50).map(f).join("")+(a.length>50?'<li>… و'+(a.length-50)+' غيرها</li>':"")+'</ul>':"";
+ return '<div class="imres"><div class="ims"><span>'+(committed?"أُضيف ":"سيُضاف ")+(committed?r.added:r.add.length)+'</span><span>موجود مسبقًا '+r.dup.length+'</span><span>غير صالح '+r.invalid.length+'</span></div>'+
+  (committed?"":li(r.add,x=>'<li>'+esc(x.name)+(x.specialty||x.location?' · '+esc(x.specialty||x.location):"")+'</li>'))+
+  (r.dup.length?'<b>لن يُضاف لأنه موجود:</b>'+li(r.dup,x=>'<li>سطر '+x.line+': '+esc(x.name)+' ← '+esc(x.existing)+'</li>'):"")+
+  (r.invalid.length?'<b>أسطر غير صالحة:</b>'+li(r.invalid,x=>'<li>سطر '+x.line+': '+esc(x.reason)+'</li>'):"")+'</div>'}
+function openImport(ent){
+ $("#modal").innerHTML='<h3>استيراد '+(ent==="Doctors"?"أطباء":"صيدليات")+' من Excel</h3>'+
+  '<div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب: <b>'+IMPORT_COLS[ent]+'</b> ثم الصقها هنا. يكفي عمود الاسم وحده. أقصى عدد 1000 سطر.</div>'+
+  '<textarea id="im_t" rows="8" dir="auto"></textarea><div id="im_r"></div><div class="err" id="im_e"></div>'+
+  '<div class="mfoot"><button type="button" class="btn" id="cx">إغلاق</button><button type="button" class="btn pri" id="sv">معاينة</button></div>';
+ $("#ov").classList.add("on");$("#im_t").focus();
+ let ready=false;
+ $("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#im_t").oninput=()=>{ready=false;$("#sv").textContent="معاينة";$("#im_r").innerHTML=""};
+ $("#sv").onclick=async()=>{const b=$("#sv"),rows=parsePasted($("#im_t").value);$("#im_e").textContent="";
+  if(!rows.some(r=>r.join("").trim())){$("#im_e").textContent="الصق الأسماء أولًا.";return}
+  b.disabled=true;
+  try{const out=await srv("importMaster",{entity:ent,rows:rows,commit:ready});
+   $("#im_r").innerHTML=importResultHtml(out,ready);
+   if(ready){toast("تمت إضافة "+out.added);b.style.display="none";$("#im_t").disabled=true;await loadM();return}
+   if(out.add.length){ready=true;b.textContent="إضافة "+out.add.length}else $("#im_e").textContent="لا يوجد جديد لإضافته."}
+  catch(e){$("#im_e").textContent=e.message}finally{b.disabled=false}};
 }
 function facilityForm(r){
  $("#modal").innerHTML=facilityFormHtml(r);$("#ov").classList.add("on");

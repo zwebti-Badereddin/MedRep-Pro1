@@ -39,14 +39,17 @@ function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)==
  CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
  CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.facilities=b.facilities||[];CFG.phs=b.pharmacies;CFG.specialties=u((b.specialties||[]).concat(b.doctors.map(d=>d.specialty)));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
  CFG.products=b.products.map(p=>p.name);CFG.samples=["—"].concat(CFG.products);
- CFG.st=st;CFG.lic=b.license||null;document.documentElement.style.setProperty("--brand",CFG.company.color)}
+ CFG.st=st;CFG.lic=b.license||null;CFG.support=b.support||"";document.documentElement.style.setProperty("--brand",CFG.company.color)}
 /* License: after the grace period the rep's report is read-only (the server refuses writes too). */
 const licOff=()=>!!(CFG.lic&&CFG.lic.state==="expired");
+/* Vendor support line: from the boot after login, else from the page (set by doGet). */
+function support(){if(CFG.support)return CFG.support;const m=document.querySelector('meta[name="medrep-support"]'),v=m?String(m.content||"").trim():"";return v.indexOf("<?")===0?"":v}
+const renewTx=()=>"للتجديد تواصل مع مزوّد النظام"+(support()?" ("+esc(support())+")":"")+".";
 const locked=()=>S&&(licOff()||["مسودة","معاد للمندوب"].indexOf(S.status)<0);
 function licNotice(){const l=CFG.lic;if(!l)return"";const d=x=>esc(String(x||"").split("-").reverse().join("/"));
- const t=l.state==="expired"?(l.until?"انتهى ترخيص النظام في "+d(l.until)+". توقف إنشاء التقارير وتعديلها، ويمكنك عرض التقارير السابقة وتصديرها. للتجديد تواصل مع مزوّد النظام.":"انتهى ترخيص النظام، ولا يمكن إنشاء التقارير أو تعديلها حتى التجديد. راجع الإدارة.")
-  :l.state==="grace"?"انتهى ترخيص النظام في "+d(l.until)+". يستمر العمل حتى "+d(l.graceEnd)+" ثم يتوقف إنشاء التقارير. للتجديد تواصل مع مزوّد النظام."
-  :l.state==="warn"?"ينتهي ترخيص النظام في "+d(l.until)+(l.days>0?" (بعد "+l.days+" يوم)":" (اليوم)")+". للتجديد تواصل مع مزوّد النظام.":"";
+ const t=l.state==="expired"?(l.until?"انتهى ترخيص النظام في "+d(l.until)+". توقف إنشاء التقارير وتعديلها، ويمكنك عرض التقارير السابقة وتصديرها. "+renewTx():"انتهى ترخيص النظام، ولا يمكن إنشاء التقارير أو تعديلها حتى التجديد. راجع الإدارة.")
+  :l.state==="grace"?"انتهى ترخيص النظام في "+d(l.until)+". يستمر العمل حتى "+d(l.graceEnd)+" ثم يتوقف إنشاء التقارير. "+renewTx()
+  :l.state==="warn"?"ينتهي ترخيص النظام في "+d(l.until)+(l.days>0?" (بعد "+l.days+" يوم)":" (اليوم)")+". "+renewTx():"";
  return t?'<div class="notice'+(l.state==="warn"?"":" stop")+'" id="licn"><div class="tx">'+t+'</div></div>':""}
 // Each save belongs to the report context in which it was created.
 let saveChain=Promise.resolve(),reportContextSeq=0;
@@ -89,7 +92,7 @@ function login(adm){
  $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 5 أرقام"}</div>
  ${adm?'<input id="admin_user" autocomplete="username" style="font-size:16px" aria-label="اسم المستخدم" placeholder="اسم المستخدم"><input id="code" type="password" autocomplete="current-password" style="letter-spacing:0;font-size:18px;margin-top:8px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
  <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
- <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a></div></div>`;
+ <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a>${support()?'<div class="supl">'+esc(support())+'</div>':""}</div></div>`;
  $("#sw").onclick=e=>{e.preventDefault();login(!adm)};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
   try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
@@ -109,10 +112,20 @@ function adminHome(){
  const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("d");
 }
+/* CSV for Excel: UTF-8 with BOM (Arabic opens correctly), cells quoted when needed, formula-like cells neutralised. */
+function csvCell(v){let s=v==null?"":String(v);if(/^[=+\-@]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
+function csvText(rows){return "﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n")}
+function downloadCsv(name,rows){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csvText(rows)],{type:"text/csv;charset=utf-8"}));
+ a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
 function tabR(){
  $("#av").innerHTML=`<div class="two"><div><label>المندوب</label><select id="fr"><option value="">الكل</option>${REPS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
  <div><label>الحالة</label><select id="fs"><option value="">الكل</option>${STAT.map(x=>`<option>${x}</option>`).join("")}</select></div></div>
- <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div>`;
+ <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div><button class="btn full" id="fexp" style="margin-top:12px">تصدير زيارات الفترة إلى Excel</button>`;
+ $("#fexp").onclick=async()=>{const b=$("#fexp"),from=$("#fa").value,to=$("#fb").value;b.disabled=true;
+  try{const out=await srv("exportVisits",{from:from,to:to,repId:$("#fr").value,status:$("#fs").value});
+   if(!out.visits){toast("لا توجد زيارات في هذه الفترة.");return}
+   downloadCsv("زيارات_"+from+"_"+to+".csv",out.rows);toast("تم تصدير "+out.visits+" زيارة من "+out.reports+" تقرير")}
+  catch(e){toast(e.message)}finally{b.disabled=false}};
  $("#fgo").onclick=async()=>{const nav=adminNavSeq,q=$("#fq").value.trim(),isNo=/^[A-Za-z]+-|^\d{4,}$/.test(q);
   try{const a=await srv("listReports",{from:$("#fa").value,to:$("#fb").value,repId:$("#fr").value,status:$("#fs").value,no:isNo?q:"",q:isNo?"":q});
    if(nav!==adminNavSeq||!$("#rl"))return;$("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span><div class="acts">${r.status==="مرسل"?`<button class="mini" type="button" data-a="gps" data-id="${esc(r.id)}">مطابقة الموقع</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';

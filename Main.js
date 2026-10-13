@@ -7,7 +7,9 @@ function include(name) { return HtmlService.createHtmlOutputFromFile(name).getCo
 function doGet(e) {
   // Diagnostic: open <web-app-url>?ping=1 -> plain text 'OK' proves the deployment itself works.
   if (e && e.parameter && e.parameter.ping) return ContentService.createTextOutput('OK ' + new Date().toISOString());
-  return HtmlService.createTemplateFromFile('Index').evaluate()
+  const page = HtmlService.createTemplateFromFile('Index');
+  try { page.support = supportContact_(); } catch (err) { page.support = ''; } // shown on the login screen; never blocks the page
+  return page.evaluate()
     .setTitle('MedRep Pro').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -104,6 +106,9 @@ function routes_() {
   saveLogo:      { role: 'admin', fn: saveCompanyLogo_ },
   performance:   { role: 'admin', fn: performance_ },
   dashboard:     { role: 'admin', fn: dashboard_ },
+  setupStatus:   { role: 'admin', fn: setupStatus_ },
+  exportVisits:  { role: 'admin', fn: exportVisits_ },
+  importMaster:  { role: 'admin', fn: importMaster_ },
   audit:         { role: 'admin', fn: (s, p) => dbAll_('Audit').slice(-(p.limit || 200)).reverse() }
   });
 }

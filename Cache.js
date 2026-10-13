@@ -69,7 +69,7 @@ function bootstrap_(s) {
     doctors: lk.doctors,
     facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products, specialties: lk.specialties || [],
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null,
-    license: licenseForClient_(s)
+    license: licenseForClient_(s), support: supportContact_()
   };
 }
 // Filters: repId, from, to, no, status, q (doctor / pharmacy / product text search)

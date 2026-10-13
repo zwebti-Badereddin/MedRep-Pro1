@@ -28,7 +28,8 @@ function licenseProps_() {
   const cache = CacheService.getScriptCache(), hit = cache.get(LICENSE_KEY);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   const sp = PropertiesService.getScriptProperties();
-  const o = { until: sp.getProperty('LICENSE_UNTIL') || '', warn: sp.getProperty('LICENSE_WARN_DAYS') || '', grace: sp.getProperty('LICENSE_GRACE_DAYS') || '' };
+  const o = { until: sp.getProperty('LICENSE_UNTIL') || '', warn: sp.getProperty('LICENSE_WARN_DAYS') || '', grace: sp.getProperty('LICENSE_GRACE_DAYS') || '',
+    support: sp.getProperty('SUPPORT_CONTACT') || '' };
   cache.put(LICENSE_KEY, JSON.stringify(o), LICENSE_CACHE_SEC);
   return o;
 }

@@ -77,7 +77,7 @@ const app1 = fs.readFileSync(path.join(__dirname, '..', 'App1.html'), 'utf8');
 const client = (() => {
   const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
   const m = app1.match(/const licOff=[\s\S]*?\r?\n\}/); assert.ok(m, 'licOff..licNotice block');
-  const c = vm.createContext({ CFG: {}, S: null });
+  const c = vm.createContext({ CFG: { support: '0912345678' }, S: null, document: { querySelector: () => null } });
   vm.runInContext('const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, '') + ';\n' + m[0] + '\n;this.api={licOff,locked,licNotice}', c);
   return { api: c.api, set: (lic, s) => { c.CFG.lic = lic; vm.runInContext('S=' + JSON.stringify(s), c); } };
 })();
@@ -87,7 +87,7 @@ test('client notice: warn (amber, days), grace (red, end of grace), expired admi
   let h = api.licNotice(); assert.ok(h.includes('31/01/2027') && h.includes('بعد 10 يوم') && !h.includes(' stop'));
   set({ state: 'grace', until: '2027-01-31', days: -1, graceEnd: '2027-02-03' }, null);
   h = api.licNotice(); assert.ok(h.includes('03/02/2027') && h.includes('notice stop'));
-  set({ state: 'expired', until: '2027-01-31' }, null); assert.ok(api.licNotice().includes('عرض التقارير السابقة وتصديرها'));
+  set({ state: 'expired', until: '2027-01-31' }, null); assert.ok(api.licNotice().includes('عرض التقارير السابقة وتصديرها') && api.licNotice().includes('(0912345678)'));
   set({ state: 'expired' }, null); assert.ok(api.licNotice().includes('راجع الإدارة'));
   set(null, null); assert.strictEqual(api.licNotice(), '');
 });

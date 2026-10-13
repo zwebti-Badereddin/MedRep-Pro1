@@ -204,12 +204,26 @@ function dashHtml(d){
   '<div class="empty" style="margin-top:8px">الفترة '+esc(d.from)+' — '+esc(d.to)+' مقارنة بالفترة السابقة '+esc(d.prevFrom)+' — '+esc(d.prevTo)+'. تُحتسب التقارير المرسلة والمعتمدة فقط، وتتحدث الأرقام كل 5 دقائق.</div>';
 }
 let dashSeq=0;
+/* "System setup" card: shown on the dashboard until company, e-mail, products, KPI targets, reps and facility locations are set. */
+let SETUP_OK=false;
+function setupCardHtml(st){
+ if(!st||st.complete)return"";const done=st.items.filter(i=>i.done).length;
+ return '<div class="setupc" id="setupc"><div class="sh"><b>تجهيز النظام</b><span>'+done+' من '+st.items.length+'</span></div>'+
+  '<div class="sb">أكمل هذه البنود قبل أن يبدأ المندوبون. اضغط أي بند لفتح شاشته.</div>'+
+  st.items.map(i=>'<button type="button" class="si'+(i.done?" ok":"")+'" data-go="'+esc(i.go)+'"><i>'+(i.done?"✓":"")+'</i><span><b>'+esc(i.label)+'</b><small>'+esc(i.detail)+'</small></span></button>').join("")+'</div>'}
+function goSetup(g){const tab=t=>{const b=document.querySelector('.tabs .btn[data-t="'+t+'"]');if(b)b.click()};
+ if(["co","prod","kpi"].indexOf(g)>=0){SS=g;tab("s")}else{MS.ent=g;tab("m")}}
+async function loadSetupCard(nav,seq){
+ if(SETUP_OK)return;
+ try{const st=await srv("setupStatus");if(nav!==adminNavSeq||seq!==dashSeq||!$("#av")||$("#setupc"))return;
+  if(st.complete){SETUP_OK=true;return}
+  $("#av").insertAdjacentHTML("afterbegin",setupCardHtml(st));document.querySelectorAll("#setupc [data-go]").forEach(b=>b.onclick=()=>goSetup(b.dataset.go))}catch(e){}}
 async function tabD(){
  const nav=adminNavSeq,seq=++dashSeq;
  $("#av").innerHTML='<div class="empty">جارٍ تحميل لوحة المتابعة…</div>';
  $("#fa").onchange=$("#fb").onchange=()=>{const on=document.querySelector(".tabs .btn.on");if(on&&on.dataset.t==="d")tabD()};
  try{const d=await srv("dashboard",{from:$("#fa").value,to:$("#fb").value});if(nav!==adminNavSeq||seq!==dashSeq||!$("#av"))return;
-  $("#av").innerHTML=dashHtml(d);document.querySelectorAll("#av tr.dr").forEach(tr=>tr.onclick=()=>openRep(tr.dataset.id))}
+  $("#av").innerHTML=dashHtml(d);document.querySelectorAll("#av tr.dr").forEach(tr=>tr.onclick=()=>openRep(tr.dataset.id));loadSetupCard(nav,seq)}
  catch(e){if(nav===adminNavSeq&&seq===dashSeq){toast(e.message);const av=$("#av");if(av)av.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
 }
 </script>
