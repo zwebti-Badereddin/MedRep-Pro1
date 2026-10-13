@@ -8,7 +8,8 @@ const fs = require('fs'), path = require('path'), { execSync, spawnSync } = requ
 const root = path.join(__dirname, '..'), cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'release.config.json'), 'utf8'));
 const args = process.argv.slice(2), deploy = args.includes('--deploy'), rbAt = args.indexOf('--rollback');
 const sh = cmd => execSync(cmd, { cwd: root, encoding: 'utf8' }).trim();
-const run = (cmd, a) => { const r = spawnSync(cmd, a, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' }); return r.status === 0; };
+// clasp is a .cmd shim on Windows and needs a shell; node is run directly (its path may contain spaces, e.g. C:\Program Files).
+const run = (cmd, a) => { const r = spawnSync(cmd, a, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' && cmd === 'clasp' }); return r.status === 0; };
 const q = v => (process.platform === 'win32' ? '"' + v + '"' : v); // spawn with shell on Windows needs quotes
 const stop = msg => { console.log('\n✖ ' + msg + '\nNothing was published.'); process.exit(1); };
 const step = msg => console.log('\n▶ ' + msg);
