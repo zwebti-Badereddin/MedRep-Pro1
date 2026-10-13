@@ -48,15 +48,17 @@ function saveNow(){
  if(typeof cancelAuto==="function")cancelAuto();
  const target=S,context=reportContextSeq,targetId=target.id||null,targetDate=target.date;
  const payload=JSON.parse(JSON.stringify({date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs}));
- const task=saveChain.catch(()=>{}).then(()=>srv("saveReport",payload)).then(r=>{
+ const mark=st=>{if(typeof setSave==="function"&&reportContextSeq===context&&S===target)setSave(st)}; // header save state
+ const task=saveChain.catch(()=>{}).then(()=>{mark("saving");return srv("saveReport",payload)}).then(r=>{
   // A delayed response may update UI state only if its original report is still active.
   if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
    S.no=r.no;S.status=r.status;
    (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name){S.docs[i].gps=v.gps;["workplaceId","facilityId","place"].forEach(k=>{if(v[k])S.docs[i][k]=v[k]})}}); // the server resolves the facility and the doctor's link
    (r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});
   }
+  mark(t0?"dirty":"ok"); // a newer edit may already be waiting for its own save
   return r
- });
+ },e=>{mark("err");throw e});
  saveChain=task;
  return task
 }
@@ -64,7 +66,7 @@ function saveNow(){
 let GEO=null,GW=null,GEO_FAILED=false;
 function startGeo(){GEO=null;GEO_FAILED=false;stopGeo();if(!navigator.geolocation){GEO_FAILED=true;showGeo();return}try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};GEO_FAILED=false;showGeo()},()=>{GEO_FAILED=true;showGeo()},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){GEO_FAILED=true;showGeo()}}
 function stopGeo(){try{if(GW!=null)navigator.geolocation.clearWatch(GW)}catch(e){}GW=null}
-function showGeo(){const e=$("#geo");if(e)e.textContent=GEO?"✓ تم تحديد موقعك":GEO_FAILED?"لم يتم التحقق من الموقع":"… جارٍ تحديد الموقع"}
+function showGeo(){const e=$("#geo");if(!e)return;e.className="gpspill"+(GEO?" ok":"");e.textContent=GEO?"موقعك محدّد ±"+GEO.acc+" م":GEO_FAILED?"تعذّر تحديد الموقع":"جارٍ تحديد الموقع…"}
 function consent(){try{if(localStorage.getItem("mr_gps_ok"))return}catch(e){}
  $("#modal").innerHTML='<h3>تسجيل الموقع</h3><p style="line-height:1.8">يسجّل النظام موقعك عند إضافة كل زيارة للتحقق من وجودك في مكانها، ولا يطّلع عليه إلا المدير. سيطلب الهاتف إذن الموقع، فاختر «السماح». لا يمنع غياب الموقع حفظ الزيارة.</p><button class="btn pri full" id="okc">موافق</button>';
  $("#ov").classList.add("on");$("#okc").onclick=()=>{try{localStorage.setItem("mr_gps_ok","1")}catch(e){}$("#ov").classList.remove("on");startGeo();setTimeout(stopGeo,4000)}}

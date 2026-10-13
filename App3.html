@@ -33,27 +33,50 @@ function setupPicker(recs,fill,lbl){
   else{const r=box._m[+it.dataset.i];PK={rec:r,isNew:false};inp.value=r.name;hint.textContent="";fill(r)}
   box.style.display="none"};
 }
+/* Free samples: a list of {product, qty}. Older visits stored up to two names in s1/s2 (one sample each). */
+function normSamples(v){
+ if(v&&Array.isArray(v.samples))return v.samples.filter(x=>x&&x.product&&x.product!=="—").map(x=>({product:String(x.product),qty:Math.max(1,Math.min(99,Math.round(+x.qty)||1))}));
+ return [v&&v.s1,v&&v.s2].filter(x=>x&&x!=="—").map(p=>({product:String(p),qty:1}));
+}
+function mergeSamples(list){
+ const m=new Map();
+ (list||[]).forEach(x=>{if(!x||!x.product||x.product==="—")return;m.set(x.product,Math.min(99,(m.get(x.product)||0)+Math.max(1,Math.round(+x.qty)||1)))});
+ return Array.from(m,([product,qty])=>({product,qty}));
+}
+function sampleText(v){
+ return mergeSamples(normSamples(v)).map(x=>x.product+(x.qty>1?" ×"+x.qty:"")).join(" · ");
+}
 function form(k,idx){
  const cur=idx!=null?(k==="d"?S.docs[idx]:S.phs[idx]):{};
  const f=n=>esc(cur[n]||"");
- const html=k==="d"?`<h3>${idx!=null?"تعديل":"إضافة"} زيارة طبيب</h3><div id="geo" class="geo"></div>
- <label>اسم الطبيب *</label><div class="pk"><input id="f_name" autocomplete="off" placeholder="اكتب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
- <label>التخصص *</label><div class="two"><select id="f_spec">${opts(CFG.specialties,cur.specialty)}</select><button class="mini" type="button" id="f_spec_toggle">＋ تخصص جديد</button></div><div id="f_spec_new_wrap" style="display:none;margin-top:6px"><input id="f_spec_new" maxlength="80" placeholder="اكتب اسم التخصص الجديد"><div class="two" style="margin-top:6px"><button class="mini" type="button" id="f_spec_save">حفظ التخصص</button><button class="mini" type="button" id="f_spec_cancel">إلغاء</button></div><small id="f_spec_msg" class="geo"></small></div>
- <div class="two"><div><label>للتعريف *</label><select id="f_intro">${opts(CFG.products,cur.intro)}</select></div><div><label>للتذكير</label><select id="f_remind">${opts(CFG.samples,cur.remind)}</select></div></div>
-  <label>مكان العمل *</label><select id="f_workplace"><option value="">اختر الطبيب أولًا</option></select><div id="f_newplace_wrap" style="display:none"><label>اقتراح منشأة جديدة للإدارة</label><input id="f_newplace" placeholder="اسم المستشفى أو العيادة" value=""><div class="two"><div><label>خط العرض Latitude *</label><input id="f_newlat" inputmode="decimal" placeholder="32.8872"></div><div><label>خط الطول Longitude *</label><input id="f_newlng" inputmode="decimal" placeholder="13.1913"></div></div><small class="geo">الإحداثيات التي تدخلها اقتراح للمراجعة فقط، ولا تصبح مرجعًا معتمدًا حتى تتحقق الإدارة من الموقع.</small></div><div id="f_place_status" class="geo"></div>
- <label>وقت الزيارة</label>${seg("time",cur.time||"صباحًا")}
- <label>القطاع</label><div class="seg">${["خاص","عام"].map(x=>`<label><input type="radio" name="sector" value="${x}" ${x===(cur.sector||"خاص")?"checked":""}><span>${x}</span></label>`).join("")}</div>
- <div class="two"><div><label>عينة مجانية 1</label><select id="f_s1">${opts(CFG.samples,cur.s1)}</select></div><div><label>عينة مجانية 2</label><select id="f_s2">${opts(CFG.samples,cur.s2)}</select></div></div>`
- :`<h3>${idx!=null?"تعديل":"إضافة"} زيارة صيدلية</h3><div id="geo" class="geo"></div>
- <label>اسم الصيدلية *</label><div class="pk"><input id="f_name" autocomplete="off" placeholder="اكتب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
- <label>موقع الصيدلية</label><input id="f_loc" value="${f("loc")}">
- <label>أقرب عيادة / مستشفى</label><input id="f_near" value="${f("near")}">
- <label>وقت الزيارة</label>${seg("time",cur.time||"صباحًا")}
- <label>المنتج المراد التعريف به</label><select id="f_product">${opts(CFG.products,cur.product)}</select>
- <label>النشاط داخل الصيدلية</label><input id="f_act" value="${f("act")}">
- <label>الطلبية</label><input id="f_order" value="${f("order")}">`;
- $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="two" style="margin-top:14px"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ الزيارة</button></div>`;
+ const html=k==="d"?`<div class="vf-head"><h3>${idx!=null?"تعديل":"إضافة"} زيارة طبيب</h3><span id="geo" class="gpspill"></span></div>
+ <div class="step"><span>1</span>الطبيب</div>
+ <div id="f_doc_card" class="docard" style="display:none"><span class="num">${IC.doc}</span><div class="t"><b id="f_doc_nm"></b><small id="f_doc_sp"></small></div><button class="mini" type="button" id="f_doc_chg">تغيير</button></div>
+ <div id="f_doc_pick"><div class="pk"><input id="f_name" autocomplete="off" aria-label="اسم الطبيب" placeholder="اكتب اسم الطبيب للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div></div>
+ <label for="f_spec">التخصص *</label><div class="two"><select id="f_spec">${opts(CFG.specialties,cur.specialty)}</select><button class="mini" type="button" id="f_spec_toggle">＋ تخصص جديد</button></div><div id="f_spec_new_wrap" style="display:none;margin-top:6px"><input id="f_spec_new" maxlength="80" placeholder="اكتب اسم التخصص الجديد"><div class="two" style="margin-top:6px"><button class="mini" type="button" id="f_spec_save">حفظ التخصص</button><button class="mini" type="button" id="f_spec_cancel">إلغاء</button></div><small id="f_spec_msg" class="geo"></small></div>
+ <div class="step"><span>2</span>مكان الزيارة</div>
+ <div class="fchips" id="f_fchips"><span class="geo">اختر الطبيب أولًا</span></div>
+ <div id="f_wp_wrap" style="display:none;margin-top:8px"><label for="f_workplace">منشأة أخرى أو اقتراح منشأة جديدة</label><select id="f_workplace"><option value="">اختر الطبيب أولًا</option></select></div>
+ <div id="f_newplace_wrap" style="display:none"><label>اقتراح منشأة جديدة للإدارة</label><input id="f_newplace" placeholder="اسم المستشفى أو العيادة" value=""><div class="two"><div><label>خط العرض Latitude *</label><input id="f_newlat" inputmode="decimal" placeholder="32.8872"></div><div><label>خط الطول Longitude *</label><input id="f_newlng" inputmode="decimal" placeholder="13.1913"></div></div><small class="geo">الإحداثيات التي تدخلها اقتراح للمراجعة فقط، ولا تصبح مرجعًا معتمدًا حتى تتحقق الإدارة من الموقع.</small></div><div id="f_place_status" class="geo"></div>
+ <div class="step"><span>3</span>الزيارة</div>
+ ${seg("time",cur.time||"صباحًا")}
+ <div class="seg" style="margin-top:8px" role="group" aria-label="القطاع">${["خاص","عام"].map(x=>`<label><input type="radio" name="sector" value="${x}" ${x===(cur.sector||"خاص")?"checked":""}><span>قطاع ${x}</span></label>`).join("")}</div>
+ <div class="two"><div><label for="f_intro">المنتج للتعريف *</label><select id="f_intro">${opts(CFG.products,cur.intro)}</select></div><div><label for="f_remind">للتذكير</label><select id="f_remind">${opts(CFG.samples,cur.remind)}</select></div></div>
+ <div class="step"><span>4</span>العينات المجانية <small>(اختياري)</small></div>
+ <div id="f_samples"></div><button class="fchip add" type="button" id="f_sample_add">+ إضافة عينة</button>`
+ :`<div class="vf-head"><h3>${idx!=null?"تعديل":"إضافة"} زيارة صيدلية</h3><span id="geo" class="gpspill"></span></div>
+ <div class="step"><span>1</span>الصيدلية</div>
+ <div class="pk"><input id="f_name" autocomplete="off" aria-label="اسم الصيدلية" placeholder="اكتب اسم الصيدلية للبحث ثم اختر" value="${f("name")}"><div class="pl" id="f_name_l"></div></div><div id="f_name_h" class="geo"></div>
+ <label for="f_loc">موقع الصيدلية</label><input id="f_loc" value="${f("loc")}">
+ <label for="f_near">أقرب عيادة / مستشفى</label><input id="f_near" value="${f("near")}">
+ <div class="step"><span>2</span>الزيارة</div>
+ ${seg("time",cur.time||"صباحًا")}
+ <label for="f_product">المنتج المراد التعريف به</label><select id="f_product">${opts(CFG.products,cur.product)}</select>
+ <label for="f_act">النشاط داخل الصيدلية</label><input id="f_act" value="${f("act")}">
+ <label for="f_order">الطلبية</label><input id="f_order" value="${f("order")}">`;
+ $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="mfoot"><button class="btn" type="button" id="cx">إلغاء</button><button class="btn pri" type="button" id="sv">حفظ الزيارة</button></div>`;
  $("#ov").classList.add("on");startGeo();
+ let smp=k==="d"?mergeSamples(normSamples(cur)):[];
  if(k==="d"){
  const specWrap=$("#f_spec_new_wrap"),specInput=$("#f_spec_new"),specMsg=$("#f_spec_msg"),specToggle=$("#f_spec_toggle"),specSave=$("#f_spec_save");
  specToggle.onclick=()=>{specWrap.style.display=specWrap.style.display==="none"?"block":"none";specMsg.textContent="";if(specWrap.style.display==="block")specInput.focus()};
@@ -72,16 +95,42 @@ function form(k,idx){
   }catch(e){specMsg.textContent=e.message||"تعذر حفظ التخصص."}
   finally{specSave.disabled=false}
  };
+ // Step 4: one row per sample product with a quantity stepper.
+ const drawSamples=()=>{
+  const prods=CFG.products||[];
+  $("#f_samples").innerHTML=smp.map((x,i)=>`<div class="srow"><select data-sp="${i}" aria-label="صنف العينة ${i+1}">${opts(prods.indexOf(x.product)>=0?prods:prods.concat([x.product]),x.product)}</select><div class="stepper"><button type="button" data-sm="${i}" aria-label="إنقاص العدد">−</button><output aria-label="العدد">${x.qty}</output><button type="button" class="plus" data-sa="${i}" aria-label="زيادة العدد">+</button></div></div>`).join("");
+  document.querySelectorAll("#f_samples [data-sp]").forEach(s=>s.onchange=()=>{smp[+s.dataset.sp].product=s.value});
+  document.querySelectorAll("#f_samples [data-sm]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sm;if(smp[i].qty>1)smp[i].qty--;else smp.splice(i,1);drawSamples()});
+  document.querySelectorAll("#f_samples [data-sa]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sa;smp[i].qty=Math.min(99,smp[i].qty+1);drawSamples()});
+ };
+ $("#f_sample_add").onclick=()=>{const prods=CFG.products||[];if(!prods.length)return;const used=smp.map(x=>x.product),p=prods.find(x=>used.indexOf(x)<0)||prods[0];smp.push({product:p,qty:1});drawSamples()};
+ drawSamples();
  }
   {const recs=k==="d"?CFG.docs:CFG.phs;PK={rec:idx!=null?(recs.find(x=>x.name===cur.name)||null):null,isNew:false};
-   const fillDoctor=r=>{if(r.isNew){$("#f_workplace").innerHTML=workplaceOptions(workplaceChoices(null,CFG.facilities));$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";return}
+   // Step 1: a picked doctor shows as a card; "تغيير" goes back to the search field.
+   const showDoc=r=>{if(k!=="d")return;const card=$("#f_doc_card"),pick=$("#f_doc_pick");if(r&&!r.isNew){$("#f_doc_nm").textContent=r.name;$("#f_doc_sp").textContent=r.specialty||"";card.style.display="flex";pick.style.display="none"}else{card.style.display="none";pick.style.display="block"}};
+   // Step 2: the doctor's facilities as buttons; "+ منشأة أخرى" opens the full list (other facilities and a new proposal).
+   let FCH={own:[],other:[]};
+   const drawFChips=()=>{
+    if(k!=="d")return;const sel=$("#f_workplace"),val=sel.value,ownSel=FCH.own.some(w=>String(w.id)===String(val));
+    $("#f_fchips").innerHTML=FCH.own.map(w=>`<button type="button" class="fchip${String(w.id)===String(val)?" on":""}" data-fc="${esc(w.id)}" aria-pressed="${String(w.id)===String(val)}">${String(w.id)===String(val)?IC.check+" ":""}${esc(w.workplace)}</button>`).join("")+`<button type="button" class="fchip add${ownSel?"":" on"}" id="f_fc_other">+ منشأة أخرى</button>`;
+    $("#f_wp_wrap").style.display=ownSel?"none":"block";
+    document.querySelectorAll("#f_fchips [data-fc]").forEach(b=>b.onclick=()=>{sel.value=b.dataset.fc;sel.onchange()});
+    // Never pre-select another facility for the rep: an empty choice must be replaced explicitly (saving refuses it).
+    $("#f_fc_other").onclick=()=>{if(ownSel){if(![].some.call(sel.options,o=>o.value===""))sel.insertBefore(new Option("— اختر منشأة —",""),sel.firstChild);sel.value="";sel.onchange()}$("#f_wp_wrap").style.display="block";sel.focus()};
+   };
+   const fillDoctor=r=>{showDoc(r);if(r.isNew){FCH=workplaceChoices(null,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";drawFChips();return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
-    const choices=workplaceChoices(r,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(choices);
-    const selected=pickWorkplace(choices,cur);
-    if(selected){$("#f_workplace").value=selected.value;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.link?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":selected.w.reviewed?"منشأة مسجلة":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
+    FCH=workplaceChoices(r,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);
+    const selected=pickWorkplace(FCH,cur);
+    if(selected){$("#f_workplace").value=selected.value;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.link?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":selected.w.reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
+    else if(FCH.own.length&&!cur.place){$("#f_workplace").value=String(FCH.own[0].id);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=FCH.own[0].reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
     else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل منشأة؛ أدخل إحداثياته ليُراجع من الإدارة.":"اختر منشأة مسجلة أو اقترح منشأة جديدة."}
-    const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true};
-   if(k==="d") $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة وخط العرض وخط الطول. ستبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"منشأة مسجلة")};
+    const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true;drawFChips()};
+   if(k==="d"){
+    $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة وخط العرض وخط الطول. ستبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"");drawFChips()};
+    $("#f_doc_chg").onclick=()=>{showDoc(null);$("#f_name").focus()};
+   }
    setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on")};
  let confirmNew=false; // set only by the explicit "create a new facility anyway" button
@@ -114,7 +163,7 @@ function form(k,idx){
      if(chosen!=="__new__"){try{await srv("requestDoctorLink",{doctorId:rec.id,facilityId:placeId,sector:r("sector")})}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
      $("#ferr").textContent="أُرسل طلب ربط الطبيب بالمنشأة إلى الإدارة. يمكن حفظ الزيارة بعد الاعتماد.";$("#sv").disabled=false;return}
    }
-   const v=k==="d"?{name:rec.name,doctorId:rec.id,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,facilityId:placeId,time:r("time"),sector:r("sector"),s1:g("f_s1"),s2:g("f_s2")}
+   const v=k==="d"?{name:rec.name,doctorId:rec.id,specialty:g("f_spec"),intro:g("f_intro"),remind:g("f_remind")==="—"?"":g("f_remind"),place:placeName,facilityId:placeId,time:r("time"),sector:r("sector"),samples:mergeSamples(smp)}
     :{name:rec.name,pharmacyId:rec.id,loc:g("f_loc"),near:g("f_near"),time:r("time"),product:g("f_product"),act:g("f_act"),order:g("f_order")};
   const arr=k==="d"?S.docs:S.phs;let ref;
   const freshGps=GEO&&Date.now()-GEO.ts<600000?{lat:GEO.lat,lng:GEO.lng,acc:GEO.acc,ts:GEO.ts}:null;
@@ -133,7 +182,7 @@ function grabGps(v){
 function render(d,printable){
   const c=d.company,p2=n=>String(n).padStart(2,"0"),F=(l,t)=>t?`<div class="c"><small>${l}</small>${esc(t)}</div>`:"";
   const gpt=v=>{const g=v.gps||{},status=(!g.status||g.status==="غير متاح")?"غير متاح":g.status,labels={"تم التحقق":"تم التحقق","خارج النطاق":"خارج النطاق","غير حاسم":"غير حاسم — دقة الموقع لا تسمح بالجزم","مرجع غير مؤكد":"المرجع الجغرافي غير معتمد","غير متاح":"غير متاح"};if(printable)return labels[status]||"غير محسوم";if(!d.adm)return typeof g.lat==="number"&&typeof g.lng==="number"?"تم حفظ موقعك":"";return (labels[status]||status)+(g.dist!=null?" ("+g.dist+" م)":"")};
-  const docs=d.docs.map((v,i)=>{const sm=[...new Set([v.s1,v.s2].filter(x=>x&&x!=="—"))].join(" + "),rm=v.remind&&v.remind!=="—"?v.remind:"",pu=v.intro&&rm?"تعريف وتذكير":v.intro?"تعريف":rm?"تذكير":"";
+  const docs=d.docs.map((v,i)=>{const sm=sampleText(v),rm=v.remind&&v.remind!=="—"?v.remind:"",pu=v.intro&&rm?"تعريف وتذكير":v.intro?"تعريف":rm?"تذكير":"";
    return `<div class="v"><div class="h"><i>${p2(i+1)}</i><span><b>اسم الطبيب:</b> ${esc(v.name)}</span></div><div class="g">${F("التخصص",v.specialty)}${F("مكان العمل",v.place)}${F("القطاع",v.sector)}${F("وقت الزيارة",v.time)}${F("الغرض من الزيارة",pu)}${F("المنتج المعرَّف به",v.intro)}${F("المنتج المذكَّر به",rm)}${F("العينات المجانية",sm)}${F("التحقق من الموقع",gpt(v))}</div></div>`}).join("");
   const phs=d.phs.map((v,i)=>`<div class="v"><div class="h"><i>${p2(i+1)}</i><span><b>اسم الصيدلية:</b> ${esc(v.name)}</span></div><div class="g">${F("العنوان",v.loc)}${F("أقرب عيادة / مستشفى",v.near)}${F("وقت الزيارة",v.time)}${F("المنتج المعرَّف به",v.product)}${F("النشاط داخل الصيدلية",v.act)}${F("الطلبية",v.order)}${F("التحقق من الموقع",gpt(v))}</div></div>`).join("");
  return `<div class="report" style="--brand:${esc(c.color)}"><div class="rh">${c.logo?`<img src="${esc(c.logo)}" alt="شعار الشركة" style="height:68px;max-width:180px;object-fit:contain">`:`<div class="logo">${esc(c.short)}</div>`}<div><div class="co">${esc(c.name)}</div><div class="ti">${esc(c.title)}</div>${c.phone||c.address?`<div class="ti" style="font-size:10px">${esc([c.address,c.phone].filter(Boolean).join(" · "))}</div>`:""}</div></div>

@@ -85,6 +85,10 @@ function prepareReport_(s, p) {
     const clean = (list, prev) => (list || []).map((v, i) => {
       const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
       delete o._v; delete o._needLink; delete o.linkPending; // server-only flags; never accepted from the client
+      // Free samples [{product, qty}]: at most 20 rows, product text up to 80 chars, quantity 1–99; anything else is dropped.
+      if (Array.isArray(v.samples)) o.samples = v.samples.slice(0, 20).map(x => ({ product: String((x && x.product) || '').trim().slice(0, 80),
+        qty: Math.max(1, Math.min(99, Math.round(+(x && x.qty)) || 1)) })).filter(x => x.product && x.product !== '—');
+      else delete o.samples;
       const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
       if (pv) o.gps = pv.gps;
       else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }

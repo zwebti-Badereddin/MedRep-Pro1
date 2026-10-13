@@ -3,13 +3,35 @@
 /* ===== Rep screens: my reports, my performance ===== */
 const SC={"مسودة":"s0","جاهز للمراجعة":"s1","مرسل":"s2","معتمد":"s3","معاد للمندوب":"s4"};
 let repScreenSeq=0;
-function repTop(t){return `<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:12px">${t}</h2></div>`}
-function repNav(a){const items=[["t","اليوم"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);return `<div class="tabs">${items.map(x=>`<button class="btn rn${x[0]===a?" on":""}" data-n="${x[0]}">${x[1]}</button>`).join("")}</div>`}
+/* Rep screens: white header (logo, company, rep, optional save state), stat cards, bottom dock with the navigation. */
+const svgI=(d,s)=>'<svg width="'+(s||18)+'" height="'+(s||18)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const IC={
+ doc:svgI('<circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>'),
+ ph:svgI('<rect x="4" y="7" width="16" height="13" rx="2"></rect><path d="M9 7V4h6v3M12 11v5M9.5 13.5h5"></path>'),
+ ok:svgI('<path d="M4 12l5 5L20 6"></path>'),
+ check:svgI('<path d="M20 6 9 17l-5-5"></path>',14),
+ pin:svgI('<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"></path><circle cx="12" cy="10" r="2"></circle>',13),
+ nopin:svgI('<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"></path><path d="M4 4l16 16"></path>',13),
+ plus:svgI('<path d="M12 5v14M5 12h14"></path>'),
+ more:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>',
+ t:svgI('<rect x="3" y="4" width="18" height="17" rx="3"></rect><path d="M3 9h18M8 2v4M16 2v4"></path>',22),
+ h:svgI('<path d="M8 6h13M8 12h13M8 18h13"></path><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle>',22),
+ p:svgI('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path>',22)
+};
+function repTop(t,o){
+ o=o||{};const logo=CFG.company.logo?'<span class="lg"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="lg">'+esc(CFG.company.short)+'</span>';
+ return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+'<button type="button" class="out" id="lo">خروج</button></div>'+
+  '<div class="r2"><div style="flex:1;min-width:0"><h1>'+t+'</h1>'+(o.sub?'<div class="dt">'+esc(o.sub)+'</div>':'')+'</div>'+(o.chip?'<span class="stchip">'+esc(o.chip)+'</span>':'')+'</div></header>';
+}
+function repNav(a){
+ const items=[["t","اليوم"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);
+ return '<nav class="bnav" aria-label="التنقل">'+items.map(x=>'<button type="button" class="rn'+(x[0]===a?' on" aria-current="page':'')+'" data-n="'+x[0]+'">'+IC[x[0]]+x[1]+'</button>').join("")+'</nav>';
+}
 function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
 async function screenHistory(){
  const seq=++repScreenSeq;
- $("#app").innerHTML=repTop("تقاريري")+repNav("h")+'<div class="wrap"><div id="hl" class="empty">جارٍ التحميل…</div></div>';bindNav();
+ $("#app").innerHTML=repTop("تقاريري")+'<div class="wrap rwrap"><div id="hl" class="empty">جارٍ التحميل…</div></div><div class="rdock">'+repNav("h")+'</div>';bindNav();
  try{const a=await srv("myReports"),h=$("#hl");if(seq!==repScreenSeq||!h)return;h.className="";
   h.innerHTML=a.length?a.map(r=>`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.date)}</b><span class="st ${SC[r.status]||"s0"}">${esc(r.status)}</span></div>
    <div style="color:var(--mut);font-size:13px">${esc(r.no||"")} · ${r.visits} زيارة${r.reopens?" · عُدّل بعد الإرسال":""}</div>
@@ -25,7 +47,7 @@ async function screenPerf(ym){
  const seq=++repScreenSeq;
  const n=new Date(),op=[];for(let i=0;i<6;i++){const d=new Date(n.getFullYear(),n.getMonth()-i,1);op.push(d.getFullYear()+"-"+pad(d.getMonth()+1))}
  ym=ym||op[0];
- $("#app").innerHTML=repTop("أدائي")+repNav("p")+`<div class="wrap"><label>الشهر</label><select id="pm">${op.map(o=>`<option value="${o}" ${o===ym?"selected":""}>${MN[+o.slice(5)-1]} ${o.slice(0,4)}</option>`).join("")}</select><div id="pb2" style="margin-top:14px"><div class="empty">جارٍ الحساب…</div></div></div>`;
+ $("#app").innerHTML=repTop("أدائي")+`<div class="rdock">${repNav("p")}</div><div class="wrap rwrap"><label>الشهر</label><select id="pm">${op.map(o=>`<option value="${o}" ${o===ym?"selected":""}>${MN[+o.slice(5)-1]} ${o.slice(0,4)}</option>`).join("")}</select><div id="pb2" style="margin-top:14px"><div class="empty">جارٍ الحساب…</div></div></div>`;
  bindNav();$("#pm").onchange=()=>screenPerf($("#pm").value);
  try{const r=await srv("myPerformance",{ym}),pb=$("#pb2");if(seq!==repScreenSeq||!pb)return;
   pb.innerHTML=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>الدرجة النهائية</b><span class="sc">${r.score}%</span></div><div class="pb"><i style="width:${Math.min(100,r.score)}%"></i></div>

@@ -175,43 +175,88 @@ async function loadDay(d){
   S=next;PREV=prev;home()
  }catch(e){if(seq===reportContextSeq)toast(e.message)}
 }
-function banner(){let h="";const bx=(t,b)=>`<div class="row" style="display:block;background:var(--soft);border-color:var(--brand)"><div>${t}</div><div class="acts">${b}</div></div>`;
- if(S.date!==TD)h+=bx(`أنت تحرر تقرير يوم <b>${esc(S.date)}</b>`,'<button class="mini" id="bk">العودة لتقرير اليوم</button>');
- else if(PREV&&PREV.open&&PREV.work&&(!PREV.status||["مسودة","معاد للمندوب"].indexOf(PREV.status)>=0))h+=bx(`لديك تقرير الأمس (${esc(PREV.date)}) لم يُرسل بعد.`,'<button class="mini" id="py">كتابته الآن</button>');
- if(PREV&&PREV.returned>0&&S.date===TD)h+=bx(`أعادت الإدارة ${PREV.returned} تقرير إليك للتعديل.`,'<button class="mini" id="rh">عرض تقاريري</button>');
- if(S.status==="مرسل")h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.",'<button class="mini" id="ro">إعادة فتح للتعديل</button>');
- return h}
+function banner(){
+ let h="";const bx=(t,b,id,cls)=>`<div class="notice${cls?" "+cls:""}"><div class="tx">${t}</div><button type="button" id="${id}">${b}</button></div>`;
+ if(S.date!==TD)h+=bx(`أنت تحرر تقرير يوم <b>${esc(S.date)}</b>`,"العودة لتقرير اليوم","bk","info");
+ else if(PREV&&PREV.open&&PREV.work&&(!PREV.status||["مسودة","معاد للمندوب"].indexOf(PREV.status)>=0))h+=bx(`تقرير الأمس (${esc(PREV.date.split("-").reverse().join("/"))}) لم يُرسل بعد`,"كتابته الآن","py");
+ if(PREV&&PREV.returned>0&&S.date===TD)h+=bx(`أعادت الإدارة ${PREV.returned} تقرير إليك للتعديل.`,"عرض تقاريري","rh");
+ if(S.status==="مرسل")h+=bx("التقرير مُرسل. يمكنك إعادة فتحه للتعديل قبل اعتماد الإدارة، ويُسجَّل ذلك وتبقى نسخة الإرسال الأول محفوظة.","إعادة فتح للتعديل","ro","info");
+ return h
+}
+/* Long Arabic date for the header: "الثلاثاء · 13 أكتوبر 2026" */
+function longDate(ds){
+ const d=ds?new Date(ds+"T12:00:00"):new Date();
+ return DAYS[d.getDay()]+" · "+d.getDate()+" "+MN[d.getMonth()]+" "+d.getFullYear();
+}
+/* Save state shown in the header: ok | dirty | saving | err. Tapping it saves at once. */
+let SAVE_ST="ok";
+const SAVE_LABEL={ok:"محفوظ",dirty:"غير محفوظ — احفظ الآن",saving:"جارٍ الحفظ…",err:"تعذّر الحفظ — أعد المحاولة"};
+function setSave(st){
+ SAVE_ST=st;const e=$("#savest");if(!e)return;
+ e.className="savest "+st;e.innerHTML=(st==="ok"?IC.check:"")+"<span>"+SAVE_LABEL[st]+"</span>";
+}
+function visitChips(v,k){
+ const c=[],chip=(t,cls,ic)=>'<span class="chip'+(cls?" "+cls:"")+'">'+(ic||"")+esc(t)+'</span>';
+ if(v.time)c.push(chip(v.time));
+ if(k==="d"){
+  if(v.intro)c.push(chip("تعريف: "+v.intro));
+  if(v.remind&&v.remind!=="—")c.push(chip("تذكير: "+v.remind));
+  const sm=sampleText(v);if(sm)c.push(chip("عينات: "+sm));
+ }else{
+  if(v.product)c.push(chip(v.product));
+  if(v.order)c.push(chip("طلبية: "+v.order));
+ }
+ const g=v.gps||{};
+ c.push(typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
+ return '<div class="chips">'+c.join("")+'</div>';
+}
+function visitCard(k,v,i,lk){
+ const sub=k==="d"?[v.specialty,v.place].filter(Boolean).join(" · "):[v.loc,v.near].filter(Boolean).join(" · ");
+ return '<article class="vcard"><div class="vh"><span class="num">'+String(i+1).padStart(2,"0")+'</span><div class="vt"><b>'+esc(v.name)+'</b>'+(sub?'<small>'+esc(sub)+'</small>':'')+'</div>'+
+  (lk?'':'<button type="button" class="more" data-more="'+k+i+'" aria-label="خيارات الزيارة">'+IC.more+'</button>')+'</div>'+visitChips(v,k)+'</article>';
+}
+function openVisitMenu(k,i){
+ const v=(k==="d"?S.docs:S.phs)[i];if(!v)return;
+ $("#modal").innerHTML='<h3>'+esc(v.name)+'</h3><button type="button" class="sheetbtn" id="vm_ed">تعديل الزيارة</button><button type="button" class="sheetbtn danger" id="vm_del">حذف الزيارة</button><button type="button" class="sheetbtn" id="vm_x">إلغاء</button>';
+ $("#ov").classList.add("on");
+ $("#vm_x").onclick=()=>$("#ov").classList.remove("on");
+ $("#vm_ed").onclick=()=>form(k,i);
+ $("#vm_del").onclick=()=>{const b=$("#vm_del");if(!b.dataset.c){b.dataset.c=1;b.textContent="اضغط مرة أخرى لتأكيد الحذف";return}
+  (k==="d"?S.docs:S.phs).splice(i,1);$("#ov").classList.remove("on");auto();home()};
+}
+function openNote(){
+ const lk=locked();
+ $("#modal").innerHTML='<h3>ملاحظة اليوم</h3><label for="notes_in">ملاحظات عامة عن يوم العمل</label><textarea id="notes_in" rows="5" '+(lk?"disabled":"")+'>'+esc(S.notes)+'</textarea><div class="mfoot"><button type="button" class="btn" id="nt_x">إغلاق</button>'+(lk?'':'<button type="button" class="btn pri" id="nt_ok">حفظ الملاحظة</button>')+'</div>';
+ $("#ov").classList.add("on");
+ $("#nt_x").onclick=()=>$("#ov").classList.remove("on");
+ if(!lk)$("#nt_ok").onclick=()=>{S.notes=$("#notes_in").value;$("#ov").classList.remove("on");auto();home()};
+}
 function home(){
-  repScreenSeq++;
- const di=dateInfo(S.date);
- $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="شعار الشركة" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div>
- <div class="sub">تقرير الزيارات اليومية</div><h2>${esc(rep.name)}</h2><div class="meta"><span>${di.day} ${di.date}</span><span>${esc(S.no||"تقرير جديد")}</span><span class="chip">${esc(S.status)}</span></div>
- <div class="stats"><div><b>${S.docs.length}</b>أطباء</div><div><b>${S.phs.length}</b>صيدليات</div><div><b>${S.docs.length+S.phs.length}</b>الإجمالي</div></div></div>
- ${repNav("t")}
- <div class="wrap">
- ${banner()}<label for="notes">ملاحظة اليوم</label><textarea id="notes" rows="3" placeholder="ملاحظات عامة عن يوم العمل">${esc(S.notes)}</textarea>
- <div class="sec"><h3>👨‍⚕️ زيارات الأطباء</h3><span>${S.docs.length}</span></div>
- ${S.docs.length?S.docs.map((v,i)=>rowHtml("d",v,i,`${esc(v.name)} — ${esc(v.specialty)}`,[v.intro,v.remind,v.place,v.time,v.sector].filter(Boolean).join(" · "))).join(""):'<div class="empty">لا توجد زيارات بعد.</div>'}
- <button class="btn dash" data-add="d">＋ إضافة زيارة طبيب</button>
- <div class="sec"><h3>🏥 زيارات الصيدليات</h3><span>${S.phs.length}</span></div>
- ${S.phs.length?S.phs.map((v,i)=>rowHtml("p",v,i,esc(v.name),[v.loc,v.time,v.product,v.order].filter(Boolean).join(" · "))).join(""):'<div class="empty">لا توجد زيارات بعد.</div>'}
- <button class="btn dash" data-add="p">＋ إضافة زيارة صيدلية</button><div style="height:20px"></div></div>
- <div class="bar"><button class="btn" id="draft">حفظ مسودة</button><button class="btn pri" id="review">مراجعة التقرير</button></div>`;
- $("#notes").oninput=e=>{S.notes=e.target.value;auto()};
+ repScreenSeq++;
+ const lk=locked(),title=S.date===TD?"تقرير اليوم":"تقرير يوم "+S.date.split("-").reverse().join("/");
+ const stat=(ic,n,l,cls)=>'<div class="rstat'+(cls?" "+cls:"")+'"><i>'+ic+'</i><b>'+n+'</b><span>'+l+'</span></div>';
+ $("#app").innerHTML=repTop(title,{sub:longDate(S.date),chip:S.status,save:!lk})+
+ '<div class="rstats">'+stat(IC.doc,S.docs.length,"أطباء")+stat(IC.ph,S.phs.length,"صيدليات")+stat(IC.ok,S.docs.length+S.phs.length,"إجمالي الزيارات","tot")+'</div>'+
+ '<div class="wrap rwrap">'+banner()+
+ '<div class="sec"><h3>زيارات الأطباء</h3><span>'+S.docs.length+'</span></div>'+
+ (S.docs.length?S.docs.map((v,i)=>visitCard("d",v,i,lk)).join(""):'<div class="empty">لا توجد زيارات أطباء بعد.</div>')+
+ (lk?'':'<button type="button" class="btn dash" data-add="d">'+IC.plus+' زيارة طبيب</button>')+
+ '<div class="sec"><h3>زيارات الصيدليات</h3><span>'+S.phs.length+'</span></div>'+
+ (S.phs.length?S.phs.map((v,i)=>visitCard("p",v,i,lk)).join(""):'<div class="empty">لا توجد زيارات صيدليات بعد.</div>')+
+ (lk?'':'<button type="button" class="btn dash" data-add="p">'+IC.plus+' زيارة صيدلية</button>')+'</div>'+
+ '<div class="rdock"><div class="acts2"><button type="button" class="btn" id="notebtn">'+(S.notes?"ملاحظة اليوم ✓":"ملاحظة اليوم")+'</button><button type="button" class="btn pri" id="review">'+(lk?"عرض التقرير":"مراجعة وإرسال التقرير")+'</button></div>'+repNav("t")+'</div>';
+ if(!lk)setSave(SAVE_ST);
  document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>form(b.dataset.add));
- document.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>form(b.dataset.ed[0],+b.dataset.ed.slice(1)));
- document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{const k=b.dataset.del[0]==="d"?"docs":"phs";if(confirm("حذف هذه الزيارة؟")){S[k].splice(+b.dataset.del.slice(1),1);auto();home()}});
- $("#draft").onclick=async()=>{try{await saveNow();home();toast("تم حفظ المسودة")}catch(e){toast(e.message)}};
+ document.querySelectorAll("[data-more]").forEach(b=>b.onclick=()=>openVisitMenu(b.dataset.more[0],+b.dataset.more.slice(1)));
+ $("#notebtn").onclick=openNote;
+ if($("#savest"))$("#savest").onclick=async()=>{if(SAVE_ST==="saving")return;try{await saveNow();toast("تم الحفظ")}catch(e){toast(e.message)}};
  $("#review").onclick=preview;bindNav();if($("#rh"))$("#rh").onclick=screenHistory;
  if($("#bk"))$("#bk").onclick=()=>loadDay(TD);if($("#py"))$("#py").onclick=()=>loadDay(PREV.date);
  if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{const out=await srv("reopenReport",{id:S.id});if(out&&out.report){reportContextSeq++;cancelAuto();S=mapRep(out.report);PREV=out.prev||PREV;home()}else await loadDay(S.date)}catch(e){toast(e.message)}};
- $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
- if(locked()){$("#notes").disabled=true;document.querySelectorAll("[data-add],[data-ed],[data-del],#draft").forEach(e=>e.style.display="none")}
 }
-const rowHtml=(k,v,i,t,s)=>`<div class="row"><span class="n">${String(i+1).padStart(2,"0")}</span><div class="t"><b>${t}</b><small>${esc(s)}</small></div><button data-ed="${k}${i}">تعديل</button><button class="del" data-del="${k}${i}" aria-label="حذف">✕</button></div>`;
 let t0;
 function cancelAuto(){clearTimeout(t0);t0=null}
-function auto(){if(locked())return;cancelAuto();t0=setTimeout(()=>{t0=null;saveNow().catch(e=>toast("تعذر الحفظ التلقائي: "+e.message))},2000)}
+function auto(){if(locked())return;cancelAuto();setSave("dirty");t0=setTimeout(()=>{t0=null;saveNow().catch(e=>toast("تعذر الحفظ التلقائي: "+e.message))},2000)}
 
 const opts=(a,v)=>a.map(x=>`<option ${x===v?"selected":""}>${esc(x)}</option>`).join("");
 const seg=(n,v)=>`<div class="seg">${["صباحًا","مساءً"].map(x=>`<label><input type="radio" name="${n}" value="${x}" ${x===v?"checked":""}><span>${x}</span></label>`).join("")}</div>`;
