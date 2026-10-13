@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('assert'), vm = require('vm');
 const { makeEnv } = require('./gas-harness');
+const plain = x => JSON.parse(JSON.stringify(x));
 
 const NOW = new Date().toISOString();
 const SEED = () => ({
@@ -63,6 +64,52 @@ test('the shared Reports index never leaks out of login: a save right after sees
   assert.strictEqual(mine.data.id, r.data.id);
   const again = login(); // a new login sees the report created after the previous one
   assert.strictEqual(again.report.id, r.data.id);
+});
+
+/* ---------- holidays / leaves cache ---------- */
+test('second login reads neither Leaves nor Holidays (cached)', () => {
+  const { env, login } = setup();
+  login(); env.resetReads(); login();
+  assert.deepStrictEqual([env.reads.Leaves || 0, env.reads.Holidays || 0], [0, 0]);
+});
+test('adding or deleting a leave / holiday through the app is visible at once', () => {
+  const { env, login } = setup(), adm = env.session('ADMIN', 'admin');
+  login(); // caches holidays/leaves
+  env.call(adm, 'leaveSave', { row: { repId: 'REP-0001', type: 'سنوية', from: '2026-12-01', to: '2026-12-03' } });
+  assert.strictEqual(env.ctx.offData_().lv['REP-0001'].length, 1);
+  const hid = env.call(adm, 'holidaySave', { row: { date: '2026-12-25', name: 'عطلة' } });
+  assert.strictEqual(env.ctx.offData_().hol['2026-12-25'], 'عطلة');
+  env.call(adm, 'holidayDelete', { id: hid });
+  assert.strictEqual(env.ctx.offData_().hol['2026-12-25'], undefined);
+});
+
+/* ---------- cache warming trigger ---------- */
+const withTriggers = (env, list) => { env.ctx.ScriptApp.getProjectTriggers = () => list; };
+test('warm handler refuses any caller that is not its installed trigger', () => {
+  const { env } = setup();
+  assert.throws(() => env.ctx.warmCachesTriggerHandler(), /مخصص للمشغّل المثبّت/);
+  assert.throws(() => env.ctx.warmCachesTriggerHandler({ triggerUid: 'FAKE' }), /مخصص للمشغّل المثبّت/);
+});
+test('after an in-app change cleared the cache, the trigger rebuilds it so the next login is fast', () => {
+  const { env, login } = setup();
+  login(); env.ctx.clearCache_();
+  withTriggers(env, [{ getHandlerFunction: () => 'warmCachesTriggerHandler', getUniqueId: () => 'T1' }]);
+  const r = env.ctx.warmCachesTriggerHandler({ triggerUid: 'T1' });
+  assert.strictEqual(r.lookupsWereCached, false);
+  env.resetReads(); login();
+  assert.deepStrictEqual(['Doctors', 'Facilities', 'DoctorWorkplaces', 'Products', 'Leaves'].map(n => env.reads[n] || 0), [0, 0, 0, 0, 0]);
+  assert.strictEqual(env.ctx.warmCachesTriggerHandler({ triggerUid: 'T1' }).lookupsWereCached, true); // cheap when warm
+});
+test('installCacheWarmTrigger replaces any old trigger with one running every 10 minutes', () => {
+  const { env } = setup(), made = [], deleted = [];
+  const old = { getHandlerFunction: () => 'warmCachesTriggerHandler', getUniqueId: () => 'OLD' };
+  env.ctx.ScriptApp.getProjectTriggers = () => [old, { getHandlerFunction: () => 'monthlyClose_', getUniqueId: () => 'M' }];
+  env.ctx.ScriptApp.deleteTrigger = t => deleted.push(t.getUniqueId());
+  env.ctx.ScriptApp.newTrigger = h => ({ timeBased: () => ({ everyMinutes: m => ({ create: () => { made.push([h, m]); return { getUniqueId: () => 'NEW' }; } }) }) });
+  const r = env.ctx.installCacheWarmTrigger();
+  assert.deepStrictEqual(plain(made), [['warmCachesTriggerHandler', 10]]);
+  assert.deepStrictEqual(plain(deleted), ['OLD']);
+  assert.deepStrictEqual([r.installed, r.replaced, r.triggerId], [true, 1, 'NEW']);
 });
 
 let pass = 0, fail = 0;

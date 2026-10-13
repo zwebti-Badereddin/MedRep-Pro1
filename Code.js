@@ -2063,17 +2063,41 @@ function repSave_(s, p) {
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addItem('تفعيل تجهيز البيانات التلقائي (أسرع دخول)', 'installCacheWarmTrigger').addToUi();
 }
 // Owner-only (menu): after editing master data directly in the sheet, drop the long-lived caches so the app shows it at once.
 function refreshAppCache() {
   ownerOnly_();
-  clearCache_();
+  clearCache_(); dropOffCache_();
   const c = CacheService.getScriptCache(), keys = ['v2_ok', 'uc_fac', 'uc_wp', 'uc_doctors', 'uc_pharmacies'];
   keys.slice(1).forEach(k => { for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(k + '_' + i); });
   c.removeAll(keys);
   try { SpreadsheetApp.getUi().alert('تم تحديث بيانات التطبيق. ستظهر التعديلات عند الدخول التالي.'); } catch (e) {} // also runnable from the editor
   return true;
+}
+// Cache warming: an in-app change clears the lookups, and the first rep to log in afterwards would rebuild them (~4 s).
+// A time trigger rebuilds them every 10 minutes when missing; when they are cached the run costs a few cache reads only.
+const WARM_HANDLER = 'warmCachesTriggerHandler', WARM_EVERY_MIN = 10;
+function warmCaches_() {
+  const t = Date.now(), wasCached = !!cacheGetLarge_(LOOKUPS_KEY);
+  lookups_(); settings_(); offData_();
+  return { lookupsWereCached: wasCached, ms: Date.now() - t };
+}
+// Public because triggers can only call top-level functions; it refuses any caller but its own installed trigger.
+function warmCachesTriggerHandler(e) {
+  const uid = e && e.triggerUid != null ? String(e.triggerUid) : '';
+  if (!uid || !ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === WARM_HANDLER && String(t.getUniqueId()) === uid))
+    throw new Error('تشغيل مرفوض: هذا المعالج مخصص للمشغّل المثبّت فقط.');
+  return warmCaches_();
+}
+function installCacheWarmTrigger() {
+  ownerOnly_();
+  const old = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === WARM_HANDLER);
+  old.forEach(t => ScriptApp.deleteTrigger(t));
+  const trigger = ScriptApp.newTrigger(WARM_HANDLER).timeBased().everyMinutes(WARM_EVERY_MIN).create();
+  const first = warmCaches_();
+  try { SpreadsheetApp.getUi().alert('تم تفعيل تجهيز بيانات التطبيق تلقائيًا كل ' + WARM_EVERY_MIN + ' دقائق.'); } catch (err) {}
+  return { installed: true, replaced: old.length, triggerId: trigger.getUniqueId(), everyMinutes: WARM_EVERY_MIN, firstRun: first };
 }
 function addRepsFromSheet() {
   ownerOnly_();
@@ -2642,12 +2666,21 @@ function migrateFacilityModelV2() {
   } finally { lock.releaseLock(); }
 }
 
+// Holidays and leaves change only through leaveSave_ / holidaySave_ / delRow_, which drop this cache; read on every login otherwise.
+const OFF_KEY = 'off';
 function offData_() {
+  const hit = cacheGetLarge_(OFF_KEY); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   ensureSheet_('Leaves'); ensureSheet_('Holidays');
   const hol = {}, lv = {};
   dbAll_('Holidays').forEach(h => { hol[h.date] = h.name; });
   dbAll_('Leaves').forEach(l => { (lv[l.repId] = lv[l.repId] || []).push(l); });
-  return { hol: hol, lv: lv };
+  const out = { hol: hol, lv: lv };
+  cachePutLarge_(OFF_KEY, JSON.stringify(out), CACHE_LONG_SEC);
+  return out;
+}
+function dropOffCache_() {
+  const keys = [OFF_KEY]; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(OFF_KEY + '_' + i);
+  try { CacheService.getScriptCache().removeAll(keys); } catch (e) {}
 }
 // 1 = fully off (holiday or leave), 0.5 = permission, 0 = normal working day
 function offWeight_(off, repId, day) {
@@ -2683,7 +2716,7 @@ function holidaySave_(s, p) {
 }
 function delRow_(s, sheet, id, action) {
   const sh = sheet_(sheet), v = sh.getDataRange().getValues();
-  for (let i = 1; i < v.length; i++) if (String(v[i][0]) === String(id)) { sh.deleteRow(i + 1); audit_(s, action, id); return true; }
+  for (let i = 1; i < v.length; i++) if (String(v[i][0]) === String(id)) { sh.deleteRow(i + 1); if (sheet === 'Leaves' || sheet === 'Holidays') dropOffCache_(); audit_(s, action, id); return true; }
   throw new Error('السجل غير موجود');
 }
 
@@ -2884,6 +2917,7 @@ function findReport_(match) { const x = findReportRow_(match); return x && x.r; 
 const TABLE_CACHE = 'm2_';
 const VALIDATION_TABLES = ['Doctors', 'DoctorWorkplaces', 'Pharmacies', 'Facilities', 'FacilityLocations'];
 function dropTableCache_(n) {
+  if (n === 'Leaves' || n === 'Holidays') { dropOffCache_(); return; } // every app write to them goes through dbAppend_/dbUpsert_
   if (VALIDATION_TABLES.indexOf(n) < 0) return;
   const keys = [TABLE_CACHE + n]; for (let i = 0; i < LARGE_MAX_CHUNKS; i++) keys.push(TABLE_CACHE + n + '_' + i);
   try { CacheService.getScriptCache().removeAll(keys); } catch (e) {}
@@ -3124,6 +3158,10 @@ function pilotHealthCheck() {
         label + ': ' + n + ' مهمة'
       );
     });
+
+    const warmCount = count(WARM_HANDLER);
+    add(warmCount === 1 ? 'PASS' : 'WARN', 'المهام المجدولة', 'تجهيز بيانات التطبيق: ' + warmCount + ' مهمة',
+      warmCount === 1 ? '' : 'شغّل installCacheWarmTrigger من قائمة MedRep Pro لتسريع دخول المندوبين.');
 
     const backupCount = count('weeklyBackup_');
 
