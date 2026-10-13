@@ -107,6 +107,15 @@ test('a second run finds nothing and refuses', () => {
   assert.ok(p.empty && p.approvalCode === '');
   assert.throws(() => env.ctx.cleanupTestData(), /لا توجد بيانات تجربة/);
 });
+test('demo names match despite spacing, a joined "د." prefix, hamza and invisible marks; a missing demo name is reported', () => {
+  const s = SEED();
+  s.Doctors = [{ id: 'DOC-0001', name: ' د.احمد  سالم ' }, { id: 'DOC-0002', name: '‏د. محمد علي' }, { id: 'DOC-0003', name: 'د. خالد' }];
+  s.Pharmacies = [{ id: 'PH-0002', name: 'صيدلية حقيقية' }];
+  const p = setup(s).env.ctx.previewTestDataCleanup();
+  assert.deepStrictEqual(p.rows.Doctors.map(x => x.id), ['DOC-0001', 'DOC-0002']);
+  assert.ok(!p.rows.Pharmacies && p.warnings.some(w => w.type === 'demoNotFound' && w.name === 'صيدلية الشفاء'));
+  assert.ok(!p.warnings.some(w => w.type === 'demoNotFound' && w.sheet === 'Doctors'));
+});
 test('warning when no product would be left', () => {
   const s = SEED(); s.Products = s.Products.slice(0, 3);
   assert.ok(setup(s).env.ctx.previewTestDataCleanup().warnings.some(w => w.type === 'noProductLeft'));

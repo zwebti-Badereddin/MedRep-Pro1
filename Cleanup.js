@@ -27,7 +27,13 @@ function testDataCleanupPlan_(t) {
   const has = (n, id) => !!del[n] && del[n].has(S(id));
 
   CLEANUP_WIPE.forEach(n => rows(n).forEach(r => mark(n, r, 'سجل تجربة')));
-  Object.keys(CLEANUP_DEMO).forEach(n => rows(n).forEach(r => { if (CLEANUP_DEMO[n].indexOf(S(r.name)) >= 0) mark(n, r, 'بيانات setup التجريبية'); }));
+  // Demo names match like duplicate detection does (normName_: "د." prefix, hamza, spacing), ignoring invisible direction marks.
+  const N = x => normName_(String(x == null ? '' : x).replace(/[​-‏‪-‮⁦-⁩﻿]/g, ''));
+  Object.keys(CLEANUP_DEMO).forEach(n => CLEANUP_DEMO[n].forEach(name => {
+    const hit = rows(n).filter(r => N(r.name) === N(name));
+    hit.forEach(r => mark(n, r, 'بيانات setup التجريبية'));
+    if (!hit.length) warnings.push({ type: 'demoNotFound', sheet: n, name: name, note: 'إن كان موجودًا باسم مختلف فأضف رقمه في TEST_CLEANUP_EXTRA.' });
+  }));
   CLEANUP_EXTRA_SHEETS.forEach(n => (extra[n] || []).map(S).forEach(id => {
     const r = rows(n).find(x => S(x.id) === id);
     if (r) mark(n, r, 'مضاف في TEST_CLEANUP_EXTRA'); else warnings.push({ type: 'extraIdNotFound', sheet: n, id: id });
