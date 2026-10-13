@@ -41,6 +41,8 @@ function makeSheet(name, rows, reads, writes) {
     getRange: (r, c, nr, nc) => range(r, c, nr || 1, nc || 1),
     appendRow: arr => { data.push(arr.slice()); },
     deleteRow: i => { data.splice(i - 1, 1); },
+    deleteRows: (i, n) => { data.splice(i - 1, n); },
+    insertRowsAfter: () => {},
     setFrozenRows: () => {}
   };
 }
@@ -69,7 +71,7 @@ function makeEnv(seed, opts) {
       getAll: ks => { const o = {}; ks.forEach(k => { if (cache.has(k)) o[k] = cache.get(k); }); return o; },
       putAll: (o, s) => Object.keys(o).forEach(k => { cache.set(k, String(o[k])); ttl[k] = s; })
     }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, String(v)) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (props.has(k) ? props.get(k) : null), setProperty: (k, v) => props.set(k, String(v)), deleteProperty: k => props.delete(k) }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     Utilities: {
       getUuid: () => crypto.randomUUID(),
@@ -104,6 +106,6 @@ function makeEnv(seed, opts) {
   const rows = n => vm.runInContext('dbAllRaw_', ctx)(n);
   const snapshot = () => JSON.stringify(Object.keys(sheets).sort().map(n => [n, sheets[n]._data]));
   const resetReads = () => { Object.keys(reads).forEach(k => delete reads[k]); writes.length = 0; };
-  return { ctx, sheets, call, session, rows, reads, ttl, writes, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
+  return { ctx, props, sheets, call, session, rows, reads, ttl, writes, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
 }
 module.exports = { makeEnv };
