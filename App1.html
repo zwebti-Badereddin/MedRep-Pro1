@@ -103,9 +103,13 @@ function login(adm){
 /* ===== Admin ===== */
 const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 let adminNavSeq=0;
+/* Decorative stethoscope drawn in the empty part of the admin header (green ear tubes, white tubing ending in the chest piece). */
+const STETH='<svg class="steth" viewBox="0 0 340 100" aria-hidden="true" focusable="false"><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="5">'+
+ '<path stroke="#a6ec8a" d="M33 14C21 34 30 52 50 56M67 14C79 34 70 52 50 56"/><path stroke="#fff" d="M50 56V66C50 94 26 94 33 79C40 66 90 70 140 80C190 90 232 93 268 76C280 70 288 63 293 58"/>'+
+ '<circle stroke="#fff" cx="304" cy="50" r="12"/><circle stroke="#fff" cx="304" cy="50" r="4"/></g><g fill="#a6ec8a"><rect x="27" y="4" width="12" height="10" rx="4"/><rect x="61" y="4" width="12" height="10" rx="4"/></g></svg>';
 function adminHome(){
  const n=new Date();
- $("#app").innerHTML=`<div class="top"><div class="brandrow">${CFG.company.logo?`<img class="mk" src="${esc(CFG.company.logo)}" alt="" style="width:auto;max-width:88px;height:56px;object-fit:contain">`:`<span class="mk">${esc(CFG.company.short)}</span>`}<span class="co">${esc(CFG.company.name)}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:14px">لوحة الإدارة</h2></div>
+ $("#app").innerHTML=`<div class="top adm">${STETH}<div class="brandrow">${CFG.company.logo?`<span class="alogo"><img src="${esc(CFG.company.logo)}" alt=""></span>`:`<span class="mk alogo">${esc(CFG.company.short)}</span>`}<span class="co"><b>${esc(CFG.company.name)}</b>${CFG.company.title?`<small>${esc(CFG.company.title)}</small>`:""}</span><a href="#" id="lo">خروج</a></div><h2 style="margin-top:16px">لوحة الإدارة</h2></div>
  <div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap">${licNotice()}<div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
