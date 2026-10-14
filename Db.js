@@ -60,7 +60,7 @@ function reportsBody_(rows) {
   const block = rows.length > 8 ? sh.getRange(lo, c0, hi - lo + 1, w).getValues() : null;
   return rows.map(r => {
     const v = block ? block[r.rowNo - lo] : sh.getRange(r.rowNo, c0, 1, w).getValues()[0];
-    return Object.assign({}, r, { notes: v[0], doctors: v[H.indexOf('doctors') + 1 - c0], pharmacies: v[H.indexOf('pharmacies') + 1 - c0] });
+    return Object.assign({}, r, { notes: cellVal_('notes', v[0]), doctors: v[H.indexOf('doctors') + 1 - c0], pharmacies: v[H.indexOf('pharmacies') + 1 - c0] });
   });
 }
 // Number of visits per report without reading the JSON of every report on every call.

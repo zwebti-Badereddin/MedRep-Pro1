@@ -78,6 +78,15 @@ test('admin text search, export and KPI read only notes + visits columns (never 
   env.call(adm, 'performance', { from: '2026-01-01', to: env.today });
   noSnap('performance');
 });
+test('export: a note Sheets turned into a date comes out as text, as before (not a JS date string)', () => {
+  const { env, col } = setup(), adm = env.session('ADMIN', 'admin');
+  env.sheets.Reports._data[2][col('notes') - 1] = vm.runInContext('new Date(Date.UTC(2026, 0, 2))', env.ctx); // XR1's note, auto-converted by Sheets
+  const ex = env.call(adm, 'exportVisits', { from: '2026-01-01', to: '2026-01-05' }), r = ex.rows.find(x => x[0] === 'MR-X');
+  assert.strictEqual(r, undefined); // XR1 has no visits: export rows are per visit
+  env.sheets.Reports._data[2][col('doctors') - 1] = '[{"name":"منى"}]';
+  const row = env.call(adm, 'exportVisits', { from: '2026-01-01', to: '2026-01-05' }).rows.find(x => x[0] === 'MR-X');
+  assert.strictEqual(row[row.length - 1], '2026-01-02T00:00:00.000Z');
+});
 test('rep search sees only his own reports', () => {
   const { env, rep } = setup();
   env.call(rep, 'saveReport', { date: env.today, doctors: [visit()] });
