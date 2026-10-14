@@ -17,7 +17,7 @@ function makeSheet(name, rows, reads, writes) {
   const cell = (r, c) => (data[r] && data[r][c] !== undefined ? data[r][c] : '');
   const logWrite = (r0, c0, nr, nc) => writes.push({ sheet: name, row: r0, col: c0, rows: nr, cols: nc });
   const range = (r0, c0, nr, nc) => ({
-    getValues: () => { reads[name] = (reads[name] || 0) + 1; return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => cell(r0 - 1 + i, c0 - 1 + j))); },
+    getValues: () => { reads[name] = (reads[name] || 0) + 1; if (reads._log) reads._log.push({ sheet: name, row: r0, col: c0, rows: nr, cols: nc }); return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => cell(r0 - 1 + i, c0 - 1 + j))); },
     getValue: () => { reads[name] = (reads[name] || 0) + 1; return cell(r0 - 1, c0 - 1); },
     getDisplayValues() { return this.getValues().map(r => r.map(String)); },
     setValues: vals => { logWrite(r0, c0, vals.length, vals[0] ? vals[0].length : 0); vals.forEach((row, i) => row.forEach((v, j) => { const r = r0 - 1 + i; while (data.length <= r) data.push([]); data[r][c0 - 1 + j] = v; })); },
@@ -51,6 +51,7 @@ function makeSheet(name, rows, reads, writes) {
 function makeEnv(seed, opts) {
   opts = opts || {};
   const sheets = {}, cache = new Map(), props = new Map([['SALT', 'test-salt']]), reads = {}, ttl = {}, writes = [];
+  Object.defineProperty(reads, '_log', { value: [], enumerable: false }); // which ranges were read (sheet, first column, width)
   const ss = {
     getSheetByName: n => sheets[n] || null,
     insertSheet: n => (sheets[n] = makeSheet(n, [], reads, writes)),
@@ -105,7 +106,7 @@ function makeEnv(seed, opts) {
   };
   const rows = n => vm.runInContext('dbAllRaw_', ctx)(n);
   const snapshot = () => JSON.stringify(Object.keys(sheets).sort().map(n => [n, sheets[n]._data]));
-  const resetReads = () => { Object.keys(reads).forEach(k => delete reads[k]); writes.length = 0; };
+  const resetReads = () => { Object.keys(reads).forEach(k => delete reads[k]); reads._log.length = 0; writes.length = 0; };
   return { ctx, props, sheets, call, session, rows, reads, ttl, writes, resetReads, snapshot, today: fmt(new Date(), 'yyyy-MM-dd'), clearCache: () => cache.clear() };
 }
 module.exports = { makeEnv };

@@ -57,9 +57,10 @@ function saveNow(){
  if(!S)return Promise.reject(new Error("لا يوجد تقرير للحفظ"));
  if(typeof cancelAuto==="function")cancelAuto();
  const target=S,context=reportContextSeq,targetId=target.id||null,targetDate=target.date;
- const payload=JSON.parse(JSON.stringify({date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs}));
+ const payload=JSON.parse(JSON.stringify({id:target.id||target.rid||null,date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs})); // id: lookup hint only, checked on the server
  const mark=st=>{if(typeof setSave==="function"&&reportContextSeq===context&&S===target)setSave(st)}; // header save state
  const task=saveChain.catch(()=>{}).then(()=>{mark("saving");return srv("saveReport",payload)}).then(r=>{
+  if(r&&r.id&&target.date===targetDate)target.rid=r.id; // later saves of this report skip the server-side search
   // A delayed response may update UI state only if its original report is still active.
   if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
    S.no=r.no;S.status=r.status;

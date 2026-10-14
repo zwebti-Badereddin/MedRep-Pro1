@@ -217,7 +217,7 @@ $("#pvsend").onclick=async()=>{
  cancelAuto();
  try{
   await saveChain.catch(()=>{}); // submitReport persists the full current payload server-side under its own lock.
-  await srv("submitReport",JSON.parse(JSON.stringify({date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));
+  await srv("submitReport",JSON.parse(JSON.stringify({id:S.id||S.rid||null,date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));
   const dd=S.date;const[mr,pv]=await Promise.all([srv("myReport",{date:dd}),srv("prevInfo")]);S=mapRep(mr);PREV=pv;
   $("#pv").classList.remove("on");home();toast("تم إرسال التقرير")
  }catch(e){toast(e.message)}

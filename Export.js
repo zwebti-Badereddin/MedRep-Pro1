@@ -32,7 +32,8 @@ function exportVisits_(s, p) {
   if (!ok(p.from) || !ok(p.to) || p.from > p.to) throw new Error('اختر فترة صحيحة (من … إلى …).');
   if ((Date.parse(p.to) - Date.parse(p.from)) / 864e5 > EXPORT_MAX_DAYS) throw new Error('أقصى فترة للتصدير سنة واحدة.');
   const reps = repNames_();
-  const rows = dbAll_('Reports').filter(r => r.date >= p.from && r.date <= p.to && (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status))
+  // Small-column index first, then only notes + visits of the matching rows (never the snapshots).
+  const rows = reportsBody_(reportsLight_().filter(r => r.date >= p.from && r.date <= p.to && (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status)))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.no).localeCompare(String(b.no))));
   const out = exportVisitRows_(rows, reps);
   if (out.length - 1 > EXPORT_MAX_ROWS) throw new Error('عدد الزيارات أكبر من ' + EXPORT_MAX_ROWS + '. قسّم الفترة إلى أجزاء أصغر.');

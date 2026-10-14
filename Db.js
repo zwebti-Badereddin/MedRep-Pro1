@@ -51,13 +51,17 @@ function reportsLightRead_() {
   }
   return out;
 }
-function reportsFull_(rows) {
+// reportsLight_ rows + notes/doctors/pharmacies (stored JSON text). Only those 3 adjacent columns are read: the snapshots,
+// the bulk of every submitted row, are never needed by lists, search, export or KPI.
+function reportsBody_(rows) {
   if (!rows.length) return [];
-  const sh = sheet_('Reports'), W = T.Reports.length;
-  if (rows.length <= 8) return rows.map(r => rowObj_('Reports', sh.getRange(r.rowNo, 1, 1, W).getValues()[0]));
+  const sh = sheet_('Reports'), H = T.Reports, c0 = H.indexOf('notes') + 1, w = H.indexOf('pharmacies') + 2 - c0;
   const lo = Math.min.apply(null, rows.map(r => r.rowNo)), hi = Math.max.apply(null, rows.map(r => r.rowNo));
-  const v = sh.getRange(lo, 1, hi - lo + 1, W).getValues();
-  return rows.map(r => rowObj_('Reports', v[r.rowNo - lo]));
+  const block = rows.length > 8 ? sh.getRange(lo, c0, hi - lo + 1, w).getValues() : null;
+  return rows.map(r => {
+    const v = block ? block[r.rowNo - lo] : sh.getRange(r.rowNo, c0, 1, w).getValues()[0];
+    return Object.assign({}, r, { notes: v[0], doctors: v[H.indexOf('doctors') + 1 - c0], pharmacies: v[H.indexOf('pharmacies') + 1 - c0] });
+  });
 }
 // Number of visits per report without reading the JSON of every report on every call.
 // Cached per (id, updatedAt): a changed report gets a new key, so counts never go stale. Only cache misses touch the sheet.

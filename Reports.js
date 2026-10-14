@@ -66,13 +66,20 @@ function acquireLock_(ms) {
   try { lock.waitLock(ms); } catch (e) { throw new Error('النظام مشغول لحظيًا، ستُعاد المحاولة تلقائيًا.'); }
   return lock;
 }
+// The rep's report for a date. The client sends the report id once it knows it: one id lookup instead of the full index.
+// The id is only a hint: the row must belong to this rep and date, otherwise the index search decides.
+function repReportRow_(s, date, id) {
+  const byId = id ? findReportRowById_(id) : null;
+  if (byId && byId.r.repId === s.uid && byId.r.date === date) return byId;
+  return findReportRow_(x => x.repId === s.uid && x.date === date);
+}
 const reportStamp_ = r => r ? [r.id, r.status, r.updatedAt, r.reopens].join('|') : '';
 // Heavy part of a save (reads every master table, validates ids, computes GPS verdicts). It runs WITHOUT the script lock,
 // reading each sheet once. The result carries a stamp of the report row it was based on; persistReport_ re-checks it under the lock.
 function prepareReport_(s, p) {
   const date = p.date || today_();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاريخ غير صالح');
-  const hit = findReportRow_(x => x.repId === s.uid && x.date === date), r = hit ? hit.r : null;
+  const hit = repReportRow_(s, date, p.id), r = hit ? hit.r : null;
   if (r && ['مسودة', 'معاد للمندوب'].indexOf(r.status) < 0) throw new Error('لا يمكن تعديل تقرير بعد إرساله. أعد فتحه أولًا.');
   if (!editable_(date, r)) throw new Error('انتهت مهلة كتابة هذا التقرير. اطلب من الإدارة إعادته إليك.');
   requireFacilityV2_();
@@ -167,7 +174,10 @@ function persistReport_(s, p, lockHeld, pre, dry) {
       snapshot: r ? r.snapshot : '', snapshot1: r ? r.snapshot1 : '', reopens: r ? (+r.reopens || 0) : 0, createdAt: r ? r.createdAt : now, updatedAt: now, submittedAt: r ? r.submittedAt : '', reviewNote: r ? r.reviewNote : ''
     };
     if (dry) return row; // caller writes the final row itself (submit: one write instead of two)
-    dbUpsert_('Reports', 'id', row); phase_('write', tF);
+    // An existing row (checked fresh above, under the lock): only the cells a draft save changes. The snapshots are not rewritten.
+    if (r && pre.rowNo) dbWriteCells_('Reports', pre.rowNo, 'id', row, ['notes', 'doctors', 'pharmacies', 'updatedAt']);
+    else dbUpsert_('Reports', 'id', row);
+    phase_('write', tF);
     saved = row; isNew = !r;
     try { CacheService.getScriptCache().put('vc_' + row.id + '_' + row.updatedAt, String(docs.length + phs.length), 21600); } catch (e) {}
   } finally {
@@ -260,12 +270,12 @@ function listReports_(s, p) {
 }
 function listReportsFull_(s, p) {
   const q = (p.q || '').toLowerCase(), reps = repNames_();
-  return dbAll_('Reports').filter(r =>
+  // Filter on the small-column index first; only the surviving rows' visit columns are read for the text search.
+  return reportsBody_(reportsLight_().filter(r =>
     (s.role === 'admin' || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
-    (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to) &&
-    (!q || searchText_(r, s.role).indexOf(q) >= 0)
-  ).map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0,
+    (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to))
+  ).filter(r => !q || searchText_(r, s.role).indexOf(q) >= 0).map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0,
     visits: JSON.parse(r.doctors || '[]').length + JSON.parse(r.pharmacies || '[]').length })).reverse();
 }
 function reportVisitGpsCheck_(v, kind, st) {

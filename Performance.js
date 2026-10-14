@@ -9,7 +9,7 @@ function performance_(s, p) {
   const wdays = String(settings_().workDays || '0,1,2,3,4').split(',').map(Number), off = offData_(), allDays = workDays_(from, to, wdays);
   const SCALED = ['visits', 'doctor_cov', 'pharmacy_cov'];
   const availOf = id => allDays.reduce((a, d) => a + (1 - offWeight_(off, id, d)), 0);
-  const reports = reportsFull_(reportsLight_().filter(r => r.date >= from && r.date <= to && ['مرسل', 'معتمد'].indexOf(r.status) >= 0)).map(parseReport_);
+  const reports = reportsBody_(reportsLight_().filter(r => r.date >= from && r.date <= to && ['مرسل', 'معتمد'].indexOf(r.status) >= 0)).map(parseReport_);
   const totalW = cfg.reduce((a, k) => a + (+k.weight || 0), 0) || 1;
   return dbAll_('Reps').filter(r => String(r.active) !== 'false').map(rep => {
     const rs = reports.filter(r => r.repId === rep.id), docs = [].concat.apply([], rs.map(r => r.doctors)), phs = [].concat.apply([], rs.map(r => r.pharmacies));
