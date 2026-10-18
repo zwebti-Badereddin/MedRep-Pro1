@@ -869,7 +869,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
   const allW = dbAll_('DoctorWorkplaces').filter(w => normName_(w.workplace) === key);
   let facilities = dbAll_('Facilities');
   let locations = dbAll_('FacilityLocations');
-  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key);
+  let facility = facilities.find(f => f.legacyEntity === 'SHARED_DOCTOR_FACILITY' && normName_(f.name) === key), created = false;
 
   // Preserve a previously approved legacy reference when the first shared relation is created.
   // Reuse only an unambiguous approved coordinate; conflicting approved points require admin review.
@@ -904,7 +904,7 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
     const id = 'FAC-SH-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
     facility = { id:id, name:name, type:'منشأة طبية', region:'', address:'',
       status:'نشط', legacyEntity:'SHARED_DOCTOR_FACILITY', legacyId:id, createdAt:now, createdBy:s.uid, updatedAt:now, updatedBy:s.uid };
-    dbAppend_('Facilities', facility);
+    dbAppend_('Facilities', facility); created = true;
   }
 
   const relations = dbAll_('DoctorPlaces');
@@ -931,12 +931,11 @@ function proposeSharedDoctorFacility_(s, workplace, lat, lng) {
       radius:'',source:'REP_PROPOSAL',state:'مراجعة مطلوبة',proposedBy:s.uid,proposedAt:now,
       approvedBy:'',approvedAt:'',version:version,active:true,note:'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا'});
   }
-  facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility);
+  if (!created) { facility.updatedAt=now;facility.updatedBy=s.uid;dbUpsert_('Facilities','id',facility); } // a facility appended above already carries these values
   return { facilityId:facility.id, alreadyApproved:!!approvedReference };
 }
 function addDoctorWorkplace_(s, p) {
-  ensureDoctorWorkplaces_();
-  return readScope_(() => addDoctorWorkplaceCore_(s, p)); // each sheet is read once; writes invalidate only their own sheet
+  return readScope_(() => { ensureDoctorWorkplaces_(); return addDoctorWorkplaceCore_(s, p); }); // each sheet is read once; writes invalidate only their own sheet
 }
 function addDoctorWorkplaceCore_(s, p) {
   const doctor = dbAll_('Doctors').find(d => d.id === p.doctorId && String(d.active) !== 'false');
@@ -1006,11 +1005,11 @@ function gpsReference_(s, p) {
 }
 
 function workplacesList_(s, p) {
-  ensureDoctorWorkplaces_();
   return readScope_(() => {
+  ensureDoctorWorkplaces_();
   let t = Date.now();
-  // Same write-through-invalidated table cache as report saving: any admin edit drops it at once.
-  VALIDATION_TABLES.forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
+  // Same write-through-invalidated table cache as report saving: any admin edit drops it at once. Only the tables this list reads.
+  ['DoctorWorkplaces', 'DoctorPlaces', 'Facilities', 'FacilityLocations'].forEach(n => { if (sheet_(n) && !_RM[n]) _RM[n] = cachedTable_(n); });
   phase_('tables', t); t = Date.now();
   const counts = usageCounts_('wp');
   phase_('usage', t); t = Date.now();

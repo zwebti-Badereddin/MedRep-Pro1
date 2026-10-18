@@ -69,11 +69,14 @@ function openWorkplaceMap(w){
  '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc((w.workplace ? w.workplace : (w.location ? w.location : w.name))+" "+(w.doctorName ? w.doctorName : ""))+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
  '<div id="wpSearchStatus" style="font-size:12px;color:var(--mut);min-height:20px"></div><div id="wpMap" style="height:350px;min-height:300px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>'+
  '<div id="wpCoords" style="font-size:13px;color:var(--mut);margin:8px 0">انقر على الخريطة لتحديد الموقع الدقيق.</div>'+
+ '<div class="two" style="margin:4px 0"><input id="wpLat" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط العرض Latitude" aria-label="خط العرض"><input id="wpLng" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط الطول Longitude" aria-label="خط الطول"></div><button class="btn" id="wpGo" type="button">تحديد على الخريطة</button><div class="err" id="wpCoordErr"></div>'+
  '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ موقع المنشأة</button></div>'+
  '<div style="font-size:11px;color:var(--mut);margin-top:8px">الخريطة والبحث الجغرافي من OpenStreetMap/Nominatim. تحقق بصريًا من موقع المنشأة قبل الحفظ.</div>';
  $("#ov").classList.add("on");
  $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null};
  $("#wpSave").onclick=()=>{if(!workplaceMapPoint)return;const point={lat:workplaceMapPoint.lat,lng:workplaceMapPoint.lng};if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null;mAct(w.id,"setLoc",point)};
+ $("#wpGo").onclick=()=>{const la=$("#wpLat").value.trim(),ln=$("#wpLng").value.trim(),num=/^-?\d+(\.\d+)?$/,err=$("#wpCoordErr");err.textContent="";if(/[٠-٬۰-۹]/.test(la+ln)){err.textContent="استخدم الأرقام الإنجليزية (0–9) والنقطة العشرية فقط؛ الأرقام العربية-الهندية غير مقبولة.";return}if(!num.test(la)||!num.test(ln)){err.textContent="أدخل خط العرض وخط الطول أرقامًا عشرية صحيحة، مثل 32.8872 و13.1913.";return}const lat=+la,lng=+ln;if(lat<-90||lat>90||lng<-180||lng>180){err.textContent="خط العرض يجب أن يكون بين -90 و90، وخط الطول بين -180 و180.";return}if(!workplaceMapInstance||workplaceMapInstance.getContainer()!==$("#wpMap")){err.textContent="انتظر اكتمال تحميل الخريطة";return}setWorkplaceMapPoint(lat,lng,true)};
+ $("#wpLat").oninput=$("#wpLng").oninput=()=>{$("#wpSave").disabled=true}; // typed values are not saved until applied to the marker
  $("#wpSearch").onsubmit=async e=>{
   e.preventDefault();const query=$("#wpQuery").value.trim();if(!query)return;
   $("#wpSearchStatus").textContent="جارٍ البحث عن المكان…";
@@ -107,6 +110,7 @@ function setWorkplaceMapPoint(lat,lng,zoom){
 function showWorkplaceMapCoords(){
  if(!workplaceMapPoint)return;
  $("#wpCoords").textContent="الإحداثيات المحددة: "+workplaceMapPoint.lat.toFixed(6)+", "+workplaceMapPoint.lng.toFixed(6);
+ if($("#wpLat")){$("#wpLat").value=workplaceMapPoint.lat.toFixed(6);$("#wpLng").value=workplaceMapPoint.lng.toFixed(6);$("#wpCoordErr").textContent=""}
  $("#wpSave").disabled=false;
 }
 function drawR(){if(!$("#mf"))return;const f=$("#mf").value,q=norm($("#mq").value),off=r=>String(r.active)==="false";
