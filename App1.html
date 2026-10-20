@@ -177,6 +177,20 @@ async function openRep(id){
   installGpsCompareButton(r);$("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
 }
 $("#stage").addEventListener("click",e=>{const b=e.target&&e.target.closest&&e.target.closest("#rptloc");if(b&&CUR)openReportLocations(CUR.first&&CUR.snapshot1?CUR.snapshot1:CUR.x0)});
+/* Base maps: street map (OpenStreetMap) or satellite imagery with street and place names (Esri). The admin's optional Esri
+   key (Settings) is used when present; if those tiles fail, the keyless Esri service is used instead. Choice kept per map. */
+function addBaseLayers(map,ctx,defSat){
+ const key=String((CFG.st||{}).mapKey||"").trim(),E=p=>"https:\/\/server.arcgisonline.com/ArcGIS/rest/services/"+p+"/MapServer/tile/{z}/{y}/{x}",K=p=>"https:\/\/ibasemaps-api.arcgis.com/arcgis/rest/services/"+p+"/MapServer/tile/{z}/{y}/{x}?token="+encodeURIComponent(key);
+ const parts=["World_Imagery","Reference/World_Transportation","Reference/World_Boundaries_and_Places"],tiles=u=>parts.map((p,i)=>L.tileLayer(u(p),Object.assign({maxZoom:19,maxNativeZoom:19},i?{}:{attribution:"Esri, Maxar, Earthstar Geographics"})));
+ const sat=L.layerGroup(tiles(key?K:E));
+ if(key){let fell=false;sat.eachLayer(l=>l.on("tileerror",()=>{if(fell)return;fell=true;sat.clearLayers();tiles(E).forEach(t=>sat.addLayer(t))}))}
+ const osm=L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'});
+ const base={"خريطة":osm,"قمر صناعي":sat},pk="mr_map_"+ctx;let pick=null;try{pick=localStorage.getItem(pk)}catch(e){}
+ (base[pick]||(defSat?sat:osm)).addTo(map);
+ L.control.layers(base,null,{position:"topright",collapsed:false}).addTo(map);
+ map.on("baselayerchange",e=>{try{localStorage.setItem(pk,e.name)}catch(x){}});
+ return map;
+}
 function openReportLocations(x){
  const pts=[],rows=[],add=(list,kind,tag,color)=>(list||[]).forEach((v,i)=>{const g=(v&&v.gps)||{},ok=gpsPointValid(g.lat,g.lng),label=tag+(i+1);let when="";
   if(ok&&g.ts){let ms=typeof g.ts==="number"?g.ts:Number(g.ts);if(isFinite(ms)){if(ms<1e12)ms*=1000}else ms=Date.parse(String(g.ts));if(isFinite(ms))when=new Date(ms).toLocaleString("ar-LY")}
@@ -191,7 +205,7 @@ function openReportLocations(x){
  loadWorkplaceMapLib().then(()=>{
   if(seq!==visitGpsDrawSeq||!$("#rlMap"))return;
   const m=visitCompareMapInstance=L.map("rlMap",{scrollWheelZoom:true});
-  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(m);
+  addBaseLayers(m,"report",false);
   pts.forEach(p=>{if(p.acc>0)L.circle([p.lat,p.lng],{radius:p.acc,color:p.color,weight:1,fillOpacity:.06}).addTo(m);L.circleMarker([p.lat,p.lng],{radius:8,color:p.color,fillColor:p.color,fillOpacity:.9}).addTo(m).bindTooltip(p.label,{permanent:true,direction:"top",offset:[0,-6]}).bindPopup(esc(p.title))});
   if(pts.length>1)m.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lng])).pad(.2));else m.setView([pts[0].lat,pts[0].lng],17);
   setTimeout(()=>{if(visitCompareMapInstance===m)m.invalidateSize()},120);
@@ -278,7 +292,7 @@ function drawGpsComparisonVisit(v){
   if(drawSeq!==visitGpsDrawSeq||!$("#visitGpsMap"))return;
   const pts=[];if(repOk)pts.push([+g.lat,+g.lng]);if(refOk)pts.push([+rawRef.lat,+rawRef.lng]);
   visitCompareMapInstance=L.map("visitGpsMap",{scrollWheelZoom:true}).setView(pts[0],17);
-  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:`&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`}).addTo(visitCompareMapInstance);
+  addBaseLayers(visitCompareMapInstance,"compare",false);
   if(refOk){
    L.circle([+rawRef.lat,+rawRef.lng],{radius:Math.max(20,+rawRef.radius||150),color:"#2563eb",fillColor:"#2563eb",fillOpacity:.08,weight:2}).addTo(visitCompareMapInstance);
    L.circleMarker([+rawRef.lat,+rawRef.lng],{radius:9,color:"#1d4ed8",fillColor:"#3b82f6",fillOpacity:1}).addTo(visitCompareMapInstance).bindPopup("موقع المنشأة المعتمد");

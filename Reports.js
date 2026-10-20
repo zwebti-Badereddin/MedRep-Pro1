@@ -212,7 +212,7 @@ function submitReport_(s, p) {
     const rep = dbAll_('Reps').find(x => x.id === s.uid);
     if (!rep) fail('تعذّر العثور على حساب المندوب.');
     t0 = Date.now();
-    snap = { company: (function () { const x = settings_(); delete x.reportEmail; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
+    snap = { company: (function () { const x = settings_(); delete x.reportEmail; delete x.mapKey; return x; })(), no: r.no, rep: rep.name, date: r.date, reopens: +r.reopens || 0, notes: r.notes, doctors: r.doctors, pharmacies: r.pharmacies, frozenAt: new Date().toISOString() };
     r.status = 'مرسل'; r.submittedAt = snap.frozenAt; r.snapshot = JSON.stringify(snap);
     r.doctors = JSON.stringify(r.doctors); r.pharmacies = JSON.stringify(r.pharmacies);
     const nVisits = JSON.parse(r.doctors).length + JSON.parse(r.pharmacies).length;

@@ -166,7 +166,7 @@ function openWorkplaceMap(w){
   if(!$("#wpMap"))return;
   const initial=workplaceMapPoint||{lat:32.8872,lng:13.1913};
   workplaceMapInstance=L.map("wpMap").setView([initial.lat,initial.lng],workplaceMapPoint?17:12);
-  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(workplaceMapInstance);
+  addBaseLayers(workplaceMapInstance,"pin",true);
   workplaceMapInstance.on("click",e=>setWorkplaceMapPoint(e.latlng.lat,e.latlng.lng,false));
   if(workplaceMapPoint)setWorkplaceMapPoint(initial.lat,initial.lng,false);
   setTimeout(()=>workplaceMapInstance&&workplaceMapInstance.invalidateSize(),150);

@@ -199,7 +199,7 @@ function saveCompanyLogo_(s, p) {
   audit_(s, next ? 'save_logo_url' : 'remove_logo', 'Settings');
   return next;
 }
-const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc', 'repPerformanceEnabled', 'workplacePolicy', 'theme'];
+const SETTING_KEYS = ['companyName', 'shortName', 'brandColor', 'reportTitle', 'phone', 'address', 'reportEmail', 'closeHour', 'workDays', 'gpsRadius', 'gpsRefAcc', 'repPerformanceEnabled', 'workplacePolicy', 'theme', 'mapKey'];
 function saveSettings_(s, p) {
   const v = p.values || {};
   Object.keys(v).forEach(k => {
@@ -210,7 +210,8 @@ function saveSettings_(s, p) {
     if (k === 'gpsRefAcc' && (!/^\d+(?:\.\d+)?$/.test(x) || +x < 1 || +x > 500)) throw new Error('أقصى دقة GPS يجب أن تكون بين 1 و500 متر.');
     if (k === 'workplacePolicy' && ['soft', 'strict'].indexOf(x) < 0) throw new Error('سياسة ربط الأطباء بالمنشآت غير صالحة.');
     if (k === 'theme' && ['auto', 'light', 'dark'].indexOf(x) < 0) throw new Error('مظهر الألوان غير صالح.');
-    x = x.slice(0, 200);
+    if (k === 'mapKey' && x && !/^[A-Za-z0-9._-]{20,600}$/.test(x)) throw new Error('مفتاح الخرائط غير صالح: الصقه كما هو دون مسافات.');
+    x = x.slice(0, k === 'mapKey' ? 600 : 200); // map API keys can be longer than other settings
     dbUpsert_('Settings', 'key', { key: k, value: x });
   });
   clearCache_(); audit_(s, 'save_settings', 'Settings', Object.keys(v).filter(k => k !== 'logo').join(',')); return true;
