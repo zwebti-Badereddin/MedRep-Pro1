@@ -222,11 +222,9 @@ async function loadDay(d){
  const seq=++reportContextSeq;
  if(typeof cancelAuto==="function")cancelAuto();
  try{
-  const next=mapRep(await srv("myReport",{date:d}));
+  const [mr,prev]=await Promise.all([srv("myReport",{date:d}),srv("prevInfo")]); // two independent requests, sent together
   if(seq!==reportContextSeq)return;
-  const prev=await srv("prevInfo");
-  if(seq!==reportContextSeq)return;
-  S=next;PREV=prev;home()
+  S=mapRep(mr);PREV=prev;restoreDraft();home()
  }catch(e){if(seq===reportContextSeq)toast(e.message)}
 }
 function banner(){
@@ -242,9 +240,9 @@ function longDate(ds){
  const d=ds?new Date(ds+"T12:00:00"):new Date();
  return DAYS[d.getDay()]+" · "+d.getDate()+" "+MN[d.getMonth()]+" "+d.getFullYear();
 }
-/* Save state shown in the header: ok | dirty | saving | err. Tapping it saves at once. */
+/* Save state shown in the header: ok | dirty | saving | offline | err. Tapping it saves at once. */
 let SAVE_ST="ok";
-const SAVE_LABEL={ok:"محفوظ",dirty:"غير محفوظ — احفظ الآن",saving:"جارٍ الحفظ…",err:"تعذّر الحفظ — أعد المحاولة"};
+const SAVE_LABEL={ok:"محفوظ",dirty:"غير محفوظ — احفظ الآن",saving:"جارٍ الحفظ…",offline:"غير متصل — سيُعاد الحفظ تلقائيًا",err:"تعذّر الحفظ — أعد المحاولة"};
 function setSave(st){
  SAVE_ST=st;const e=$("#savest");if(!e)return;
  e.className="savest "+st;e.innerHTML=(st==="ok"?IC.check:"")+"<span>"+SAVE_LABEL[st]+"</span>";
@@ -308,9 +306,14 @@ function home(){
  if($("#bk"))$("#bk").onclick=()=>loadDay(TD);if($("#py"))$("#py").onclick=()=>loadDay(PREV.date);
  if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{const out=await srv("reopenReport",{id:S.id});if(out&&out.report){reportContextSeq++;cancelAuto();S=mapRep(out.report);PREV=out.prev||PREV;home()}else await loadDay(S.date)}catch(e){toast(e.message)}};
 }
-let t0;
-function cancelAuto(){clearTimeout(t0);t0=null}
-function auto(){if(locked())return;cancelAuto();setSave("dirty");t0=setTimeout(()=>{t0=null;saveNow().catch(e=>toast("تعذر الحفظ التلقائي: "+e.message))},2000)}
+let t0,retryT=null,retryN=0;
+function cancelAuto(){clearTimeout(t0);t0=null;clearTimeout(retryT);retryT=null}
+/* A connection failure is retried on its own (5 s, 10 s, 20 s … up to 1 min, and at once when the phone is back online);
+   a refusal from the server (validation) is shown to the rep and not retried. */
+function saveFail(e){if(e&&e.net){setSave("offline");clearTimeout(retryT);const ms=Math.min(60000,5000*Math.pow(2,retryN++));retryT=setTimeout(()=>{retryT=null;saveBg()},ms)}else toast("تعذر الحفظ التلقائي: "+((e&&e.message)||e))}
+function saveBg(){return saveNow().then(r=>{retryN=0;return r}).catch(saveFail)}
+function auto(){if(locked())return;cancelAuto();draftSave();setSave("dirty");t0=setTimeout(()=>{t0=null;saveBg()},2000)}
+addEventListener("online",()=>{if(SAVE_ST==="offline"&&S&&!locked()){clearTimeout(retryT);retryT=null;saveBg()}});
 
 const opts=(a,v)=>a.map(x=>`<option ${x===v?"selected":""}>${esc(x)}</option>`).join("");
 const seg=(n,v)=>`<div class="seg">${["صباحًا","مساءً"].map(x=>`<label><input type="radio" name="${n}" value="${x}" ${x===v?"checked":""}><span>${x}</span></label>`).join("")}</div>`;

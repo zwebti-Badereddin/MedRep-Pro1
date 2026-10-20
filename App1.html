@@ -5,7 +5,7 @@
 let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],products:[],samples:["—"]},TOKEN=null;
 let NB=0;const bz=()=>{const e=document.getElementById("busy");if(e)e.style.display=NB?"block":"none"};
 function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
-function _call(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>rej(new Error((e&&e.message)||"تعذر الاتصال بالخادم"))).api(TOKEN,a,p||{}))}
+function _call(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>{const x=new Error((e&&e.message)||"تعذر الاتصال بالخادم");x.net=true;rej(x)}).api(TOKEN,a,p||{}))}
 /* ---- resilience layer: automatic retry when the server is busy + re-login when the session ends ---- */
 const devKey=x=>"mr_dev_"+(x?"a":"r");
 function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
@@ -34,7 +34,7 @@ function reauth(){
   q("#ra_x").onclick=()=>{close();TOKEN=null;login();rej(new Error("تم تسجيل الخروج"))};
   (q("#ra_u")||q("#ra_c")).focus()});
  return REAUTH}
-const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[],phs:r.pharmacies||[],status:r.status,no:r.no,date:r.date});
+const mapRep=r=>({id:r.id,reopens:r.reopens,notes:r.notes||"",docs:r.doctors||[],phs:r.pharmacies||[],status:r.status,no:r.no,date:r.date,upd:r.updatedAt||""});
 function applyBoot(b){const st=b.settings,u=a=>a.filter((x,i)=>x&&a.indexOf(x)===i);
  CFG.company={name:st.companyName||"",short:st.shortName||"",color:st.brandColor||"#0b6b6f",title:st.reportTitle||"",prefix:st.reportPrefix||"MR",phone:st.phone||"",address:st.address||"",logo:st.logo||""};
  CFG.doctors=b.doctors.map(d=>d.name);CFG.docs=b.doctors;CFG.facilities=b.facilities||[];CFG.phs=b.pharmacies;CFG.specialties=u((b.specialties||[]).concat(b.doctors.map(d=>d.specialty)));if(!CFG.specialties.length)CFG.specialties=["باطنة","قلب","أطفال"];
@@ -58,10 +58,11 @@ function saveNow(){
  if(!S)return Promise.reject(new Error("لا يوجد تقرير للحفظ"));
  if(typeof cancelAuto==="function")cancelAuto();
  const target=S,context=reportContextSeq,targetId=target.id||null,targetDate=target.date;
- const payload=JSON.parse(JSON.stringify({id:target.id||target.rid||null,date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs})); // id: lookup hint only, checked on the server
+ const payload=JSON.parse(JSON.stringify({id:target.id||target.rid||null,date:targetDate,notes:target.notes,doctors:target.docs,pharmacies:target.phs})),savedAt=Date.now(); // id: lookup hint only, checked on the server
  const mark=st=>{if(typeof setSave==="function"&&reportContextSeq===context&&S===target)setSave(st)}; // header save state
  const task=saveChain.catch(()=>{}).then(()=>{mark("saving");return srv("saveReport",payload)}).then(r=>{
   if(r&&r.id&&target.date===targetDate)target.rid=r.id; // later saves of this report skip the server-side search
+  if(r&&r.updatedAt)target.upd=r.updatedAt;draftAfterSave(targetDate,savedAt,r&&r.updatedAt);
   // A delayed response may update UI state only if its original report is still active.
   if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
    S.no=r.no;S.status=r.status;
@@ -70,10 +71,29 @@ function saveNow(){
   }
   mark(t0?"dirty":"ok"); // a newer edit may already be waiting for its own save
   return r
- },e=>{mark("err");throw e});
+ },e=>{mark(e&&e.net?"offline":"err");throw e});
  saveChain=task;
  return task
 }
+/* Local copy of the rep's draft: kept until the server confirms the save, so a dropped connection or a closed app loses
+   nothing. It is restored only when the server copy is still the one it was based on (no newer save from elsewhere). */
+const draftPre=()=>rep&&rep.id?"mr_draft_"+rep.id+"_":"";
+function draftGet(d){try{const p=draftPre(),v=p&&d?localStorage.getItem(p+d):null;return v?JSON.parse(v):null}catch(e){return null}}
+function draftSet(d,o){try{const p=draftPre();if(p&&d)localStorage.setItem(p+d,JSON.stringify(o))}catch(e){}}
+function draftDrop(d){try{const p=draftPre();if(p&&d)localStorage.removeItem(p+d)}catch(e){}}
+function draftKeys(){try{const p=draftPre();return p?Object.keys(localStorage).filter(k=>k.indexOf(p)===0):[]}catch(e){return []}}
+function draftDropAll(){try{draftKeys().forEach(k=>localStorage.removeItem(k))}catch(e){}}
+function draftSave(){if(S&&!locked())draftSet(S.date,{at:Date.now(),base:S.upd||"",rid:S.id||S.rid||null,notes:S.notes,docs:S.docs,phs:S.phs})}
+function draftAfterSave(d,savedAt,upd){const x=draftGet(d);if(!x)return;if(x.at<=savedAt)draftDrop(d);else{if(upd)x.base=upd;draftSet(d,x)}}
+function restoreDraft(){
+ if(!S)return;const d=draftGet(S.date);if(!d)return;
+ const same=JSON.stringify([d.notes||"",d.docs||[],d.phs||[]])===JSON.stringify([S.notes||"",S.docs||[],S.phs||[]]);
+ if(same||locked()||(d.rid&&S.id&&String(d.rid)!==String(S.id))||String(d.base||"")!==String(S.upd||"")){
+  draftDrop(S.date);if(!same&&!locked())setTimeout(()=>toast("وُجدت تعديلات محلية أقدم من النسخة المحفوظة على الخادم، فاعتُمدت نسخة الخادم."),0);return}
+ S.notes=d.notes||"";S.docs=d.docs||[];S.phs=d.phs||[];
+ setTimeout(()=>{if(typeof auto==="function")auto();toast("استُعيدت تعديلات لم تُحفظ على الخادم، وجارٍ حفظها.")},0);
+}
+addEventListener("beforeunload",e=>{if(S&&rep&&rep.role!=="admin"&&typeof SAVE_ST==="string"&&["dirty","saving","offline","err"].indexOf(SAVE_ST)>=0){e.preventDefault();e.returnValue=""}});
 /* GPS: captured silently while the visit form is open; verdict is computed on the server */
 let GEO=null,GW=null,GEO_FAILED=false;
 function startGeo(){GEO=null;GEO_FAILED=false;stopGeo();if(!navigator.geolocation){GEO_FAILED=true;showGeo();return}try{GW=navigator.geolocation.watchPosition(p=>{if(!GEO||p.coords.accuracy<=GEO.acc+1||p.timestamp-GEO.ts>8000)GEO={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp};GEO_FAILED=false;showGeo()},()=>{GEO_FAILED=true;showGeo()},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}catch(e){GEO_FAILED=true;showGeo()}}
@@ -98,7 +118,7 @@ function login(adm){
  $("#sw").onclick=e=>{e.preventDefault();login(!adm)};$("#inst").onclick=e=>{e.preventDefault();showInstallHelp()};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
   try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
-   if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;home();consent()}}
+   if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;restoreDraft();home();consent()}}
   catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
  $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();
 }

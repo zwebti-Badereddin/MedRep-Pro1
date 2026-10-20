@@ -59,7 +59,7 @@ function myReport_(s, p) {
 }
 // Draft upsert. GPS is stored inside each visit (gps:{lat,lng,acc,ts}) and is never required.
 function saveReport_(s, p) {
-  const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
+  const r = persistReport_(s, p); return { id: r.id, no: r.no, status: r.status, updatedAt: r.updatedAt, docs: repVisits_(JSON.parse(r.doctors)), phs: repVisits_(JSON.parse(r.pharmacies)) }; }
 // Takes the script lock, or fails fast with a message the client recognises and retries automatically.
 function acquireLock_(ms) {
   const lock = LockService.getScriptLock();

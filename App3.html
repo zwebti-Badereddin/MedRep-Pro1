@@ -211,7 +211,7 @@ function fit(){const st=$("#stage"),w=document.querySelector(".pvscroll").client
 async function preview(){
  const staleGpsButton=$("#pvgeo");if(staleGpsButton)staleGpsButton.remove();
  if(!S.docs.length&&!S.phs.length){toast("أضف زيارة واحدة على الأقل");return}
- try{if(!locked())await saveNow()}catch(e){toast(e.message);return}
+ if(!locked()){cancelAuto();saveBg()} // the preview opens at once; the send button waits for this save before submitting
  $("#pvsend").style.display=locked()?"none":"";$("#pvok").style.display=$("#pvret").style.display=$("#pv1").style.display="none";$("#pvs").style.display="";
  $("#stage").innerHTML=render(snapshot());$("#pv").classList.add("on");fit();
 }
@@ -230,7 +230,7 @@ $("#pvsend").onclick=async()=>{
  try{
   await saveChain.catch(()=>{}); // submitReport persists the full current payload server-side under its own lock.
   await srv("submitReport",JSON.parse(JSON.stringify({id:S.id||S.rid||null,date:S.date,notes:S.notes,doctors:S.docs,pharmacies:S.phs})));
-  const dd=S.date;const[mr,pv]=await Promise.all([srv("myReport",{date:dd}),srv("prevInfo")]);S=mapRep(mr);PREV=pv;
+  const dd=S.date;draftDrop(dd);const[mr,pv]=await Promise.all([srv("myReport",{date:dd}),srv("prevInfo")]);S=mapRep(mr);PREV=pv;
   $("#pv").classList.remove("on");home();toast("تم إرسال التقرير")
  }catch(e){toast(e.message)}
  finally{sendingReport=false;if(btn.isConnected){btn.disabled=false;btn.textContent=label}}

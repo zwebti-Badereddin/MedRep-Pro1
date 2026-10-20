@@ -28,7 +28,9 @@ function repNav(a){
  return '<nav class="bnav" aria-label="التنقل">'+items.map(x=>'<button type="button" class="rn'+(x[0]===a?' on" aria-current="page':'')+'" data-n="'+x[0]+'">'+IC[x[0]]+x[1]+'</button>').join("")+'</nav>';
 }
 function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
- const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
+ const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();
+  if(draftKeys().length&&!l.dataset.c){const h0=l.innerHTML;l.dataset.c=1;l.textContent="تعديلات لم تُحفظ بعد — اضغط مجددًا للخروج";saveBg().then(()=>{if(!draftKeys().length&&l.isConnected){l.dataset.c="";l.innerHTML=h0}});return}
+  draftDropAll();cancelAuto();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
 async function screenHistory(){
  const seq=++repScreenSeq;
  $("#app").innerHTML=repTop("تقاريري")+'<div class="wrap rwrap"><div id="hl" class="empty">جارٍ التحميل…</div></div><div class="rdock">'+repNav("h")+'</div>';bindNav();
