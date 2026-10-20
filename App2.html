@@ -34,7 +34,7 @@ function drawFacilities(){
  const pend=r=>(r.links||[]).filter(l=>l.active&&l.linkState==="بانتظار");
  const needs=r=>!off(r)&&(!r.approved||pend(r).length>0);
  const a=MS.rows.filter(r=>(f==="new"?needs(r):f==="links"?pend(r).length>0:f==="off"?off(r):!r.mergedInto)&&(!q||norm(r.name+" "+(r.links||[]).map(l=>l.doctorName).join(" ")).includes(q)));
- const geo=r=>!has(r)?"لا إحداثيات":r.approved?"الموقع معتمد ✓":r.geoSource==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":r.geoSource==="ADMIN_IMPORT"?"إحداثيات مستوردة من Excel — راجعها واعتمدها":"الموقع بانتظار الاعتماد";
+ const geo=r=>!has(r)?(r.geoSource==="REP_NO_FIX"?"لا إحداثيات — تعذّر على المندوب التقاط الموقع في المنشأة؛ حدده من الخريطة":r.geoSource==="REP_AWAY"?"لا إحداثيات — أضافها المندوب من خارج المنشأة؛ حدده من الخريطة":"لا إحداثيات"):r.approved?"الموقع معتمد ✓":r.geoSource==="REP_PROPOSAL"?"إحداثيات مقترحة من المندوب — غير معتمدة":r.geoSource==="ADMIN_IMPORT"?"إحداثيات مستوردة من Excel — راجعها واعتمدها":"الموقع بانتظار الاعتماد";
  $("#ml").innerHTML='<button class="btn dash" id="facAdd">＋ إضافة منشأة</button><div style="height:10px"></div>'+(a.length?a.map(r=>{
   const docs=(r.links||[]).filter(l=>l.active&&l.linkState!=="مرفوض");
   return '<div class="row" data-id="'+esc(r.id)+'" style="display:block;'+(off(r)?"opacity:.65":"")+'"><b>'+esc(r.name)+'</b> '+

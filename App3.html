@@ -57,7 +57,7 @@ function form(k,idx){
  <div class="step"><span>2</span>مكان الزيارة</div>
  <div class="fchips" id="f_fchips"><span class="geo">اختر الطبيب أولًا</span></div>
  <div id="f_wp_wrap" style="display:none;margin-top:8px"><label for="f_workplace">منشأة أخرى أو اقتراح منشأة جديدة</label><select id="f_workplace"><option value="">اختر الطبيب أولًا</option></select></div>
- <div id="f_newplace_wrap" style="display:none"><label>اقتراح منشأة جديدة للإدارة</label><input id="f_newplace" placeholder="اسم المستشفى أو العيادة" value=""><div class="two"><div><label>خط العرض Latitude *</label><input id="f_newlat" inputmode="decimal" placeholder="32.8872"></div><div><label>خط الطول Longitude *</label><input id="f_newlng" inputmode="decimal" placeholder="13.1913"></div></div><small class="geo">الإحداثيات التي تدخلها اقتراح للمراجعة فقط، ولا تصبح مرجعًا معتمدًا حتى تتحقق الإدارة من الموقع.</small></div><div id="f_place_status" class="geo"></div>
+ <div id="f_newplace_wrap" style="display:none"><label>اقتراح منشأة جديدة للإدارة</label><input id="f_newplace" placeholder="اسم المستشفى أو العيادة" value=""><label>موقع المنشأة</label><div class="seg"><label><input type="radio" name="np_where" value="here" checked><span>أنا في المنشأة الآن</span></label><label><input type="radio" name="np_where" value="away"><span>لستُ في المنشأة الآن</span></label></div><div id="np_gps" class="geo"></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0"><button type="button" class="mini" id="np_retry">إعادة محاولة تحديد الموقع</button><button type="button" class="mini" id="np_manual_t">إدخال الإحداثيات يدويًا</button></div><div id="np_manual" style="display:none"><div class="two"><div><label>خط العرض Latitude</label><input id="f_newlat" inputmode="decimal" placeholder="32.8872"></div><div><label>خط الطول Longitude</label><input id="f_newlng" inputmode="decimal" placeholder="13.1913"></div></div></div><small class="geo">الموقع المرسل اقتراح للمراجعة فقط، ولا يصبح مرجعًا معتمدًا حتى تعتمده الإدارة من الخريطة.</small></div><div id="f_place_status" class="geo"></div>
  <div class="step"><span>3</span>الزيارة</div>
  ${seg("time",cur.time||"صباحًا")}
  <div class="seg" style="margin-top:8px" role="group" aria-label="القطاع">${["خاص","عام"].map(x=>`<label><input type="radio" name="sector" value="${x}" ${x===(cur.sector||"خاص")?"checked":""}><span>قطاع ${x}</span></label>`).join("")}</div>
@@ -76,6 +76,7 @@ function form(k,idx){
  <label for="f_order">الطلبية</label><input id="f_order" value="${f("order")}">`;
  $("#modal").innerHTML=html+`<div class="err" id="ferr"></div><div class="mfoot"><button class="btn" type="button" id="cx">إلغاء</button><button class="btn pri" type="button" id="sv">حفظ الزيارة</button></div>`;
  $("#ov").classList.add("on");startGeo();
+ if($("#np_gps")){document.querySelectorAll("input[name=np_where]").forEach(x=>x.onchange=npStatus);$("#np_retry").onclick=()=>{const prev=GEO;startGeo();if(prev&&!GEO)GEO=prev;npStatus()};$("#np_manual_t").onclick=()=>{const m=$("#np_manual");m.style.display=m.style.display==="none"?"block":"none";npStatus()};$("#f_newlat").oninput=$("#f_newlng").oninput=npStatus;npStatus()}
  let smp=k==="d"?mergeSamples(normSamples(cur)):[];
  if(k==="d"){
  const specWrap=$("#f_spec_new_wrap"),specInput=$("#f_spec_new"),specMsg=$("#f_spec_msg"),specToggle=$("#f_spec_toggle"),specSave=$("#f_spec_save");
@@ -125,10 +126,10 @@ function form(k,idx){
     const selected=pickWorkplace(FCH,cur);
     if(selected){$("#f_workplace").value=selected.value;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.link?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":selected.w.reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
     else if(FCH.own.length&&!cur.place){$("#f_workplace").value=String(FCH.own[0].id);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=FCH.own[0].reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
-    else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل منشأة؛ أدخل إحداثياته ليُراجع من الإدارة.":"اختر منشأة مسجلة أو اقترح منشأة جديدة."}
+    else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل منشأة؛ سيُرسل كاقتراح منشأة جديدة لتراجعه الإدارة.":"اختر منشأة مسجلة أو اقترح منشأة جديدة."}
     const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true;drawFChips()};
    if(k==="d"){
-    $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة وخط العرض وخط الطول. ستبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"");drawFChips()};
+    $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة. يُرسل موقعك الحالي كموقع مقترح ويبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"");drawFChips()};
     $("#f_doc_chg").onclick=()=>{showDoc(null);$("#f_name").focus()};
    }
    setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
@@ -145,9 +146,9 @@ function form(k,idx){
    if(k==="d"){
     const chosen=$("#f_workplace").value;
     if(chosen==="__new__"){
-     placeName=g("f_newplace");const placeLat=g("f_newlat"),placeLng=g("f_newlng");if(placeName.length<2){$("#ferr").textContent="أدخل اسم المنشأة الجديدة." ;$("#sv").disabled=false;return}
-     const latNum=Number(placeLat),lngNum=Number(placeLng);if(placeLat===""||placeLng===""||!isFinite(latNum)||!isFinite(lngNum)||latNum < -90||latNum > 90||lngNum < -180||lngNum > 180){$("#ferr").textContent="أدخل خط العرض وخط الطول الصحيحين للمنشأة.";$("#sv").disabled=false;return}
-     try{const out=await srv("proposeFacility",{name:placeName,lat:latNum,lng:lngNum,doctorId:rec.id,sector:r("sector"),confirmNew:confirmNew});
+     placeName=g("f_newplace");if(placeName.length<2){$("#ferr").textContent="أدخل اسم المنشأة الجديدة." ;$("#sv").disabled=false;return}
+     const npLoc=npLocation();if(npLoc.error){$("#ferr").textContent=npLoc.error;$("#sv").disabled=false;return}
+     try{const out=await srv("proposeFacility",Object.assign({name:placeName,doctorId:rec.id,sector:r("sector"),confirmNew:confirmNew},npLoc.data));
       if(out.similar){ // a similar facility already exists: offer it first, creating a new one needs an explicit confirmation
        const st=$("#f_place_status");st.innerHTML='<b>توجد منشأة مسجلة مشابهة. اختر منها إن كانت هي نفسها:</b>'+out.similar.map(x=>'<button type="button" class="mini" data-use="'+esc(x.id)+'" style="display:block;width:100%;text-align:right;margin:4px 0">استخدم «'+esc(x.name)+'»'+(x.distance!=null?' — على بعد '+x.distance+' م':'')+'</button>').join("")+'<button type="button" class="mini" id="f_confirm_new" style="display:block;width:100%;margin-top:6px">لا، أنشئ منشأة جديدة باسم «'+esc(placeName)+'»</button>';
        st.querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{const sel=$("#f_workplace"),x=out.similar.find(y=>String(y.id)===b.dataset.use);if(![].some.call(sel.options,o=>o.value===b.dataset.use)){const op=new Option(x.name,x.id);op.dataset.link="1";sel.insertBefore(op,sel.lastElementChild)}sel.value=b.dataset.use;sel.selectedOptions[0].dataset.place=x.name;sel.onchange()});
@@ -172,6 +173,16 @@ function form(k,idx){
   stopGeo();$("#ov").classList.remove("on");auto();home();
  };
 }
+function npWhere(){const x=document.querySelector("input[name=np_where]:checked");return x?x.value:"here"}
+function npFix(){return GEO&&Date.now()-GEO.ts<600000?GEO:null}
+function npStatus(){const e=$("#np_gps");if(!e)return;const la=$("#f_newlat"),ln=$("#f_newlng"),man=!!(la&&ln&&(la.value.trim()||ln.value.trim())),away=npWhere()==="away",fix=npFix();
+ if(man)$("#np_manual").style.display="block";$("#np_retry").style.display=away||man?"none":"";
+ e.textContent=man?"سيُرسل الموقع الذي أدخلته يدويًا كموقع مقترح.":away?"سيُرسل الاقتراح دون موقع، وتحدد الإدارة الموقع من الخريطة.":fix?(fix.acc<=100?"📍 سيُرسل موقعك الحالي كموقع مقترح (دقة ±"+fix.acc+" م).":"⚠ الموقع ضعيف (دقة ±"+fix.acc+" م). اقترب من باب أو نافذة واضغط «إعادة محاولة تحديد الموقع»، أو احفظ ليُرسل بأفضل دقة متوفرة."):GEO_FAILED?"⚠ تعذّر تحديد الموقع. اضغط «إعادة محاولة تحديد الموقع»، أو احفظ ليُرسل الاقتراح دون موقع وتحدده الإدارة.":"… جارٍ تحديد موقعك"}
+function npLocation(){const la=$("#f_newlat").value.trim(),ln=$("#f_newlng").value.trim();
+ if(la||ln){const lat=Number(la),lng=Number(ln);if(la===""||ln===""||!isFinite(lat)||!isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return{error:"أدخل خط العرض وخط الطول الصحيحين للمنشأة، أو امسحهما ليُستخدم موقعك الحالي."};return{data:{lat:lat,lng:lng,locSource:"manual"}}}
+ if(npWhere()==="away")return{data:{locSource:"away"}};
+ const fix=npFix();if(fix)return{data:{lat:fix.lat,lng:fix.lng,acc:fix.acc,locSource:fix.acc<=100?"gps":"gps_weak"}};
+ return{data:{locSource:"none"}}}
 /* GPS is optional and never blocks saving: visit is stored first, location attaches later if available */
 function grabGps(v){
  if(!navigator.geolocation)return;

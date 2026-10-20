@@ -182,7 +182,10 @@ function proposeFacility_(s, p) {
   const name = String(p.name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
   if (name.length < 2) throw new Error('أدخل اسم المنشأة.');
   const isAdmin = s.role === 'admin', has = p.lat !== '' && p.lat != null && p.lng !== '' && p.lng != null, lat = Number(p.lat), lng = Number(p.lng);
-  if ((has || !isAdmin) && !gpsPointValidServer_(has ? lat : '', has ? lng : '')) throw new Error('أدخل خط العرض وخط الطول الصحيحين للمنشأة الجديدة.');
+  if (has && !gpsPointValidServer_(lat, lng)) throw new Error('أدخل خط العرض وخط الطول الصحيحين للمنشأة الجديدة.');
+  // A rep's proposal may come without a location (weak signal at the facility, or added from elsewhere); the admin then sets it on the map.
+  const src0 = String(p.locSource || ''), src = isAdmin ? '' : has ? (['gps', 'gps_weak', 'manual'].indexOf(src0) >= 0 ? src0 : 'manual') : (src0 === 'away' ? 'away' : 'none');
+  const acc = isFinite(+p.acc) && +p.acc > 0 && +p.acc <= 100000 ? Math.round(+p.acc) : '', accTxt = acc !== '' ? ' (±' + acc + ' م)' : '';
   const lock = acquireLock_(10000);
   try {
     const live = dbAll_('Facilities').filter(f => f.legacyEntity !== 'Pharmacies' && !f.mergedInto && f.status !== 'معطل');
@@ -194,15 +197,17 @@ function proposeFacility_(s, p) {
     const f = { id: id, name: name, type: String(p.type || 'منشأة طبية').trim().slice(0, 40), region: '', address: String(p.address || '').trim().slice(0, 180),
       status: 'نشط', legacyEntity: 'DOCTOR_FACILITY', legacyId: id, createdAt: now, createdBy: s.uid, updatedAt: now, updatedBy: s.uid,
       lat: has ? lat : '', lng: has ? lng : '', radius: '', geoState: has ? (isAdmin ? 'مؤكد' : 'مراجعة مطلوبة') : '',
-      geoSource: has ? (isAdmin ? 'ADMIN_MAP' : 'REP_PROPOSAL') : '', geoBy: has && isAdmin ? s.uid : '', geoAt: has && isAdmin ? now : '',
+      geoSource: has ? (isAdmin ? 'ADMIN_MAP' : 'REP_PROPOSAL') : (isAdmin ? '' : src === 'away' ? 'REP_AWAY' : 'REP_NO_FIX'), geoBy: has && isAdmin ? s.uid : '', geoAt: has && isAdmin ? now : '',
       geoVersion: has ? 1 : '', mergedInto: '' };
     dbAppend_('Facilities', f);
-    if (has) facilityLocationHistory_(s, f, isAdmin ? 'منشأة أنشأتها الإدارة' : 'إحداثيات مقترحة من المندوب؛ ليست مرجعًا معتمدًا');
+    if (has) facilityLocationHistory_(s, f, isAdmin ? 'منشأة أنشأتها الإدارة' : src === 'gps' ? 'إحداثيات من GPS هاتف المندوب' + accTxt + '؛ ليست مرجعًا معتمدًا'
+      : src === 'gps_weak' ? 'قراءة GPS ضعيفة من هاتف المندوب' + accTxt + '؛ تحقّق منها قبل الاعتماد' : 'إحداثيات أدخلها المندوب يدويًا؛ ليست مرجعًا معتمدًا');
+    const srcLabel = { gps: 'GPS' + accTxt, gps_weak: 'GPS ضعيف' + accTxt, manual: 'يدوي', none: 'تعذّر التقاط الموقع في المنشأة', away: 'أضافها من خارج المنشأة' }[src] || '';
     let linkId = '';
     const doctor = p.doctorId ? dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false') : null;
     if (doctor) { const rows = dbAll_('DoctorWorkplaces'), w = newLinkRow_(s, rows, doctor.id, doctor.name, f, p.sector); dbAppend_('DoctorWorkplaces', w); linkId = w.id; }
     clearCache_();
-    audit_(s, 'propose_facility', id, name + (has ? ' · lat=' + lat + ' · lng=' + lng : '') + (doctor ? ' · doctor=' + doctor.id : '') + (similar.length ? ' · similarConfirmed=' + similar.map(x => x.id).join(',') : ''));
+    audit_(s, 'propose_facility', id, name + (has ? ' · lat=' + lat + ' · lng=' + lng : '') + (srcLabel ? ' · loc=' + srcLabel : '') + (doctor ? ' · doctor=' + doctor.id : '') + (similar.length ? ' · similarConfirmed=' + similar.map(x => x.id).join(',') : ''));
     return { facility: { id: id, workplace: name, reviewed: facilityApproved_(f), linked: false }, linkId: linkId };
   } finally { lock.releaseLock(); }
 }

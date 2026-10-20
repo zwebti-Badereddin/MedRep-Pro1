@@ -225,7 +225,26 @@ test('proposeFacility: similar name or < 100 m is offered first (no write); conf
   const f = env.rows('Facilities').find(x => x.id === made.facility.id);
   assert.deepStrictEqual([f.geoSource, f.geoState, made.facility.reviewed], ['REP_PROPOSAL', 'مراجعة مطلوبة', false]);
   assert.strictEqual(links(env, 'DOC-0003', f.id)[0].linkState, 'بانتظار');
-  expectError(() => env.call(r, 'proposeFacility', { name: 'بلا إحداثيات' }), /خط العرض وخط الطول/);
+  expectError(() => env.call(r, 'proposeFacility', { name: 'إحداثيات خاطئة', lat: 95, lng: 13.2 }), /خط العرض وخط الطول/);
+});
+test('proposeFacility (rep): no location is accepted and labelled by reason; GPS source and accuracy are recorded, never approved', () => {
+  const env = makeEnv(V2SEED()), r = rep(env), get = id => env.rows('Facilities').find(x => x.id === id);
+  const noFix = get(env.call(r, 'proposeFacility', { name: 'مستوصف الإشارة الضعيفة', locSource: 'none' }).facility.id);
+  const away = get(env.call(r, 'proposeFacility', { name: 'عيادة أضيفت من المكتب', locSource: 'away' }).facility.id);
+  const bare = get(env.call(r, 'proposeFacility', { name: 'بلا إحداثيات' }).facility.id);
+  assert.deepStrictEqual([noFix.geoSource, noFix.geoState, noFix.lat], ['REP_NO_FIX', '', '']);
+  assert.deepStrictEqual([away.geoSource, bare.geoSource], ['REP_AWAY', 'REP_NO_FIX']);
+  assert.strictEqual(env.rows('FacilityLocations').filter(l => [noFix.id, away.id, bare.id].includes(l.facilityId)).length, 0);
+  const weak = env.call(r, 'proposeFacility', { name: 'مركز القراءة الضعيفة', lat: 31.5, lng: 11.5, acc: 320, locSource: 'gps_weak' }), fw = get(weak.facility.id);
+  assert.deepStrictEqual([fw.geoSource, fw.geoState, weak.facility.reviewed], ['REP_PROPOSAL', 'مراجعة مطلوبة', false]);
+  const good = get(env.call(r, 'proposeFacility', { name: 'مركز القراءة الجيدة', lat: 31.0, lng: 11.0, acc: 12, locSource: 'gps' }).facility.id);
+  const note = id => env.rows('FacilityLocations').filter(l => l.facilityId === id).map(l => l.note).join('|');
+  assert.ok(/ضعيفة/.test(note(fw.id)) && /320/.test(note(fw.id)), note(fw.id));
+  assert.ok(/GPS هاتف المندوب/.test(note(good.id)) && /12/.test(note(good.id)), note(good.id));
+  const aud = env.rows('Audit').filter(a => a.action === 'propose_facility').map(a => a.details).join('\n');
+  assert.ok(/loc=تعذّر التقاط الموقع في المنشأة/.test(aud) && /loc=أضافها من خارج المنشأة/.test(aud) && /loc=GPS ضعيف \(±320 م\)/.test(aud), aud);
+  const forged = get(env.call(r, 'proposeFacility', { name: 'مصدر مزيف', lat: 30.5, lng: 10.5, locSource: 'ADMIN_MAP' }).facility.id);
+  assert.deepStrictEqual([forged.geoSource, forged.geoState], ['REP_PROPOSAL', 'مراجعة مطلوبة']);
 });
 test('lookups: facilities come from Facilities only (no pharmacies, disabled or merged); each doctor lists his links', () => {
   const s = V2SEED(); s.DoctorWorkplaces.push(link('DWP-00009', 'DOC-0003', 'FAC-A', 'بانتظار'));
