@@ -93,13 +93,19 @@ function login(adm){
  $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 5 أرقام"}</div>
  ${adm?'<input id="admin_user" autocomplete="username" style="font-size:16px" aria-label="اسم المستخدم" placeholder="اسم المستخدم"><input id="code" type="password" autocomplete="current-password" style="letter-spacing:0;font-size:18px;margin-top:8px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
  <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
- <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a>${support()?'<div class="supl">'+esc(support())+'</div>':""}</div></div>`;
- $("#sw").onclick=e=>{e.preventDefault();login(!adm)};
+ <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a><a href="#" id="inst" style="display:block;text-align:center;margin-top:4px;color:var(--mut);font-size:14px;padding:8px">📲 تثبيت النظام على الهاتف</a>${support()?'<div class="supl">'+esc(support())+'</div>':""}</div></div>`;
+ $("#sw").onclick=e=>{e.preventDefault();login(!adm)};$("#inst").onclick=e=>{e.preventDefault();showInstallHelp()};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
   try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
    if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;home();consent()}}
   catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
  $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();
+}
+function showInstallHelp(){
+ const ua=navigator.userAgent||"",ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1),android=/Android/i.test(ua);
+ const iosSteps='<b>iPhone / iPad</b><ol style="line-height:1.9;margin:6px 0 12px;padding-inline-start:22px"><li>افتح رابط النظام في متصفح <b>Safari</b>.</li><li>اضغط زر المشاركة (مربع يخرج منه سهم).</li><li>اختر «إضافة إلى الشاشة الرئيسية» ثم «إضافة».</li></ol>',androidSteps='<b>Android</b><ol style="line-height:1.9;margin:6px 0 12px;padding-inline-start:22px"><li>افتح رابط النظام في متصفح <b>Chrome</b>.</li><li>اضغط القائمة ⋮ أعلى الشاشة.</li><li>اختر «إضافة إلى الشاشة الرئيسية» أو «تثبيت التطبيق» ثم «إضافة».</li></ol>';
+ $("#modal").innerHTML='<h3>تثبيت النظام على الهاتف</h3>'+(ios?iosSteps:android?androidSteps:'<p style="color:var(--mut);margin:0 0 10px">افتح رابط النظام من هاتفك ثم اتبع الخطوات المناسبة:</p>'+iosSteps+androidSteps)+'<p style="font-size:13px;color:var(--mut);line-height:1.7;margin:0 0 12px">ستظهر أيقونة على الشاشة الرئيسية تفتح النظام مباشرة، وقد يظهر شريط المتصفح أعلاها.</p><button class="btn pri full" id="instx" type="button">إغلاق</button>';
+ $("#ov").classList.add("on");$("#instx").onclick=()=>$("#ov").classList.remove("on");
 }
 /* ===== Admin ===== */
 const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
@@ -148,6 +154,28 @@ async function openRep(id){
   const draw=x=>render({adm:true,company:coOf(x.company||{}),no:x.no,rep:x.rep,day:DAYS[new Date(x.date+"T12:00:00").getDay()],date:x.date.split("-").reverse().join(" / "),notes:x.notes,docs:x.doctors,phs:x.pharmacies});CUR.draw=draw;CUR.x0=x;CUR.first=false;$("#stage").innerHTML=draw(x);$("#pv1").style.display=r.snapshot1?"":"none";$("#pv1").textContent="النسخة الأولى";
   $("#pvsend").style.display=$("#pvs").style.display="none";$("#pvok").style.display=$("#pvret").style.display=r.status==="مرسل"?"":"none";
   installGpsCompareButton(r);$("#pv").classList.add("on");fit()}catch(e){toast(e.message)}
+}
+$("#stage").addEventListener("click",e=>{const b=e.target&&e.target.closest&&e.target.closest("#rptloc");if(b&&CUR)openReportLocations(CUR.first&&CUR.snapshot1?CUR.snapshot1:CUR.x0)});
+function openReportLocations(x){
+ const pts=[],rows=[],add=(list,kind,tag,color)=>(list||[]).forEach((v,i)=>{const g=(v&&v.gps)||{},ok=gpsPointValid(g.lat,g.lng),label=tag+(i+1);let when="";
+  if(ok&&g.ts){let ms=typeof g.ts==="number"?g.ts:Number(g.ts);if(isFinite(ms)){if(ms<1e12)ms*=1000}else ms=Date.parse(String(g.ts));if(isFinite(ms))when=new Date(ms).toLocaleString("ar-LY")}
+  if(ok)pts.push({lat:+g.lat,lng:+g.lng,acc:+g.acc||0,label,color,title:kind+" "+(i+1)+" — "+((v&&v.name)||"")});
+  rows.push('<div class="row" style="display:block;padding:8px 10px"><b>'+esc(label)+'</b> · '+esc(kind+" — "+((v&&v.name)||""))+(v&&(v.place||v.loc)?" · "+esc(v.place||v.loc):"")+'<div style="font-size:12px;color:var(--mut)">'+(ok?esc((g.acc!=null&&g.acc!==""&&isFinite(+g.acc)?"دقة الموقع ±"+Math.round(+g.acc)+" م":"دقة الموقع غير متاحة")+(when?" · "+when:"")):"لا توجد إحداثيات محفوظة لهذه الزيارة")+'</div></div>')});
+ add(x&&x.doctors,"زيارة طبيب","ط","#b91c1c");add(x&&x.pharmacies,"زيارة صيدلية","ص","#7c3aed");
+ clearVisitGpsMap();const seq=++visitGpsDrawSeq;
+ $("#modal").innerHTML='<h3>مواقع الزيارات المسجلة</h3><div class="empty" style="margin:6px 0;color:var(--mut)">موقع هاتف المندوب وقت تسجيل كل زيارة (ط: طبيب، ص: صيدلية). للمراجعة فقط، وليس دليلًا على التقصير.</div><div id="rlMap" style="height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div><div id="rlMsg" class="empty" style="margin-top:6px">جارٍ تحميل الخريطة…</div><div style="max-height:220px;overflow:auto;margin-top:8px">'+rows.join("")+'</div><button class="btn full" id="rlClose" type="button" style="margin-top:10px">إغلاق</button>';
+ $("#ov").classList.add("on");$("#rlClose").onclick=closeVisitGpsComparison;
+ if(!pts.length){$("#rlMap").style.display="none";$("#rlMsg").textContent="لا توجد إحداثيات محفوظة لزيارات هذا التقرير. قد يكون الموقع غير مسجل أو انتهت مدة الاحتفاظ بالإحداثيات.";return}
+ if(typeof loadWorkplaceMapLib!=="function"){$("#rlMsg").textContent="تعذر تحميل أداة الخريطة.";return}
+ loadWorkplaceMapLib().then(()=>{
+  if(seq!==visitGpsDrawSeq||!$("#rlMap"))return;
+  const m=visitCompareMapInstance=L.map("rlMap",{scrollWheelZoom:true});
+  L.tileLayer("https:\/\/{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https:\/\/www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(m);
+  pts.forEach(p=>{if(p.acc>0)L.circle([p.lat,p.lng],{radius:p.acc,color:p.color,weight:1,fillOpacity:.06}).addTo(m);L.circleMarker([p.lat,p.lng],{radius:8,color:p.color,fillColor:p.color,fillOpacity:.9}).addTo(m).bindTooltip(p.label,{permanent:true,direction:"top",offset:[0,-6]}).bindPopup(esc(p.title))});
+  if(pts.length>1)m.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lng])).pad(.2));else m.setView([pts[0].lat,pts[0].lng],17);
+  setTimeout(()=>{if(visitCompareMapInstance===m)m.invalidateSize()},120);
+  $("#rlMsg").textContent=pts.length+" من "+rows.length+" زيارة لها إحداثيات محفوظة.";
+ }).catch(e=>{if(seq===visitGpsDrawSeq&&$("#rlMsg"))$("#rlMsg").textContent=(e&&e.message)||"تعذر تحميل الخريطة. تحقق من الاتصال بالإنترنت."});
 }
 
 function installGpsCompareButton(report){

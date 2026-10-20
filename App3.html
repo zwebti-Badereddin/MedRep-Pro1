@@ -191,6 +191,7 @@ function render(d,printable){
  ${d.docs.length?`<div class="rsec">👨‍⚕️ زيارات الأطباء</div>${docs}`:""}
  ${d.phs.length?`<div class="rsec">🏥 زيارات الصيدليات</div>${phs}`:""}
  <div class="sum"><div><b>${d.docs.length+d.phs.length}</b>إجمالي الزيارات</div><div><b>${d.docs.length}</b>أطباء</div><div><b>${d.phs.length}</b>صيدليات</div></div>
+ ${d.adm&&typeof gpsPointValid==="function"&&d.docs.concat(d.phs).some(v=>v&&v.gps&&gpsPointValid(v.gps.lat,v.gps.lng))?'<div class="rloc" style="text-align:center;margin:14px 0 4px"><button class="btn" id="rptloc" type="button">📍 الموقع</button></div>':""}
  <div class="rf"><span>${esc(c.name)}</span><span>${esc(d.no)}</span></div></div>`;
 }
 function snapshot(){const di=dateInfo(S.date);return JSON.parse(JSON.stringify({company:CFG.company,no:S.no,rep:rep.name,day:di.day,date:di.date,notes:S.notes,docs:S.docs,phs:S.phs}))}
