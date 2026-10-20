@@ -9,6 +9,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.ping) return ContentService.createTextOutput('OK ' + new Date().toISOString());
   const page = HtmlService.createTemplateFromFile('Index');
   try { page.support = supportContact_(); } catch (err) { page.support = ''; } // shown on the login screen; never blocks the page
+  try { const t = String(settings_().theme || ''); page.theme = t === 'light' || t === 'dark' ? t : ''; } catch (err) { page.theme = ''; } // '' = follow the device
   const out = page.evaluate()
     .setTitle('MedRep Pro').addMetaTag('viewport', 'width=device-width, initial-scale=1');
   // Tab / home-screen shortcut icon: the company logo when it is an https image URL. Never blocks the page.
