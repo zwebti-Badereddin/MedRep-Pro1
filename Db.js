@@ -131,13 +131,16 @@ function dbWriteCells_(n, rowNo, key, o, cols) {
   }
   dropTableCache_(n); if (_RM) delete _RM[n];
 }
-// Reference tables used to validate a visit and judge its GPS. Cached for 2 minutes, but ONLY the report save/submit path
+// Reference tables used to validate a visit and judge its GPS. Cached for 30 minutes (TABLE_CACHE_SEC), but ONLY the report save/submit path
 // reads them from the cache (ID generation and admin screens always read the sheet), and every write through
 // dbAppend_/dbUpsert_ drops the table's cache at once.
 // Facility model V2: doctor visits need only Doctors + DoctorWorkplaces + Facilities. FacilityLocations stays for pharmacy
 // references (unchanged), DoctorPlaces is no longer read.
 // Versioned key: rows cached by the previous deployment (old column layout) are never read by this one.
 const TABLE_CACHE = 'm2_';
+// Every app write drops the cache at once (dbAppend_/dbUpsert_/dbWriteCells_, clearCache_), so a long life is safe; only an edit typed
+// directly into the sheet waits for it to expire. A short life made almost every report save reload all five tables (~2-3 s).
+const TABLE_CACHE_SEC = 1800;
 const VALIDATION_TABLES = ['Doctors', 'DoctorWorkplaces', 'Pharmacies', 'Facilities', 'FacilityLocations'];
 function dropTableCache_(n) {
   if (n === 'Leaves' || n === 'Holidays') { dropOffCache_(); return; } // every app write to them goes through dbAppend_/dbUpsert_
@@ -149,7 +152,7 @@ function cachedTable_(n) {
   const hit = cacheGetLarge_(TABLE_CACHE + n);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   const rows = dbAllRaw_(n);
-  cachePutLarge_(TABLE_CACHE + n, JSON.stringify(rows), 120);
+  cachePutLarge_(TABLE_CACHE + n, JSON.stringify(rows), TABLE_CACHE_SEC);
   return rows;
 }
 function dbAppend_(n, o) { dropTableCache_(n); if (_RM) delete _RM[n]; sheet_(n).appendRow(T[n].map(c => o[c] === undefined ? '' : o[c])); }
