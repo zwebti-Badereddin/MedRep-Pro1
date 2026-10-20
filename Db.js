@@ -109,13 +109,23 @@ function findReportRow_(match) {
 function findReport_(match) { const x = findReportRow_(match); return x && x.r; }
 // A report whose id is known: ONE TextFinder call on the id column (exact, case-sensitive) instead of the 3-column index,
 // then that single row. The row's id is re-checked, so a wrong match can never be returned.
+// The row number found last time is remembered as a hint only: it is used when that row still holds this id (rows moved by a
+// cleanup or by hand fall back to the search), which saves the TextFinder round trips on every autosave.
+const REPORT_ROW_KEY = 'rr_';
 function findReportRowById_(id) {
   id = String(id == null ? '' : id); if (!id) return null;
-  const sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return null;
+  const sh = sheet_('Reports'), c = CacheService.getScriptCache();
+  let hint = 0; try { hint = +c.get(REPORT_ROW_KEY + id) || 0; } catch (e) {}
+  if (hint >= 2) {
+    try { const h = rowObj_('Reports', sh.getRange(hint, 1, 1, T.Reports.length).getValues()[0]); if (String(h.id) === id) return { r: h, rowNo: hint }; } catch (e) {}
+  }
+  const last = sh.getLastRow(); if (last < 2) return null;
   const cell = sh.getRange(2, 1, last - 1, 1).createTextFinder(id).matchEntireCell(true).matchCase(true).findNext();
   if (!cell) return null;
   const rowNo = cell.getRow(), r = rowObj_('Reports', sh.getRange(rowNo, 1, 1, T.Reports.length).getValues()[0]);
-  return String(r.id) === id ? { r: r, rowNo: rowNo } : null;
+  if (String(r.id) !== id) return null;
+  try { c.put(REPORT_ROW_KEY + id, String(rowNo), CACHE_LONG_SEC); } catch (e) {}
+  return { r: r, rowNo: rowNo };
 }
 function findReportById_(id) { const x = findReportRowById_(id); return x && x.r; }
 // Writes only the listed columns of a known row (adjacent columns in one call) after confirming the row still holds this
