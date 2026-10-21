@@ -198,7 +198,7 @@ function openReportLocations(x){
   rows.push('<div class="row" style="display:block;padding:8px 10px"><b>'+esc(label)+'</b> · '+esc(kind+" — "+((v&&v.name)||""))+(v&&(v.place||v.loc)?" · "+esc(v.place||v.loc):"")+'<div style="font-size:12px;color:var(--mut)">'+(ok?esc((g.acc!=null&&g.acc!==""&&isFinite(+g.acc)?"دقة الموقع ±"+Math.round(+g.acc)+" م":"دقة الموقع غير متاحة")+(when?" · "+when:"")):"لا توجد إحداثيات محفوظة لهذه الزيارة")+'</div></div>')});
  add(x&&x.doctors,"زيارة طبيب","ط","#b91c1c");add(x&&x.pharmacies,"زيارة صيدلية","ص","#7c3aed");
  clearVisitGpsMap();const seq=++visitGpsDrawSeq;
- $("#modal").innerHTML='<h3>مواقع الزيارات المسجلة</h3><div class="empty" style="margin:6px 0;color:var(--mut)">موقع هاتف المندوب وقت تسجيل كل زيارة (ط: طبيب، ص: صيدلية). للمراجعة فقط، وليس دليلًا على التقصير.</div><div id="rlMap" style="height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div><div id="rlMsg" class="empty" style="margin-top:6px">جارٍ تحميل الخريطة…</div><div style="max-height:220px;overflow:auto;margin-top:8px">'+rows.join("")+'</div><button class="btn full" id="rlClose" type="button" style="margin-top:10px">إغلاق</button>';
+ $("#modal").innerHTML='<h3>مواقع الزيارات المسجلة</h3><div style="margin:4px 0 8px;font-size:12.5px;line-height:1.6;color:var(--mut)">موقع هاتف المندوب وقت تسجيل كل زيارة (ط: طبيب، ص: صيدلية). للمراجعة فقط، وليس دليلًا على التقصير.</div><div id="rlMap" class="mapbox"></div><div id="rlMsg" class="empty" style="margin-top:6px">جارٍ تحميل الخريطة…</div><div style="max-height:220px;overflow:auto;margin-top:8px">'+rows.join("")+'</div><button class="btn full" id="rlClose" type="button" style="margin-top:10px">إغلاق</button>';
  $("#ov").classList.add("on");$("#rlClose").onclick=closeVisitGpsComparison;
  if(!pts.length){$("#rlMap").style.display="none";$("#rlMsg").textContent="لا توجد إحداثيات محفوظة لزيارات هذا التقرير. قد يكون الموقع غير مسجل أو انتهت مدة الاحتفاظ بالإحداثيات.";return}
  if(typeof loadWorkplaceMapLib!=="function"){$("#rlMsg").textContent="تعذر تحميل أداة الخريطة.";return}
@@ -217,7 +217,7 @@ function installGpsCompareButton(report){
  const old=$("#pvgeo");if(old)old.remove();
  const visits=(report.doctors||[]).length+(report.pharmacies||[]).length;if(!visits)return;
  const bar=document.querySelector(".pvbar");if(!bar)return;
- const b=document.createElement("button");b.id="pvgeo";b.className="btn";b.type="button";b.textContent="مقارنة موقع الزيارة";
+ const b=document.createElement("button");b.id="pvgeo";b.className="btn";b.type="button";b.textContent="مقارنة الموقع";
  b.onclick=openGpsComparison;bar.insertBefore(b,$("#pvok"));
 }
 function collectGpsCompareVisits(report){
@@ -249,7 +249,7 @@ function openGpsComparison(){
   <div class="empty" style="margin:8px 0;color:var(--mut)">هذه المعلومات للتحقق والمراجعة فقط، وليست دليلًا على التقصير أو الإهمال.</div>
   <label for="vgVisit">اختر الزيارة</label><select id="vgVisit">${options}</select>
   <div id="vgSummary" style="font-size:13px;line-height:1.8;margin:8px 0"></div>
-  <div id="visitGpsMap" style="display:none;height:340px;min-height:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft)"></div>
+  <div id="visitGpsMap" class="mapbox" style="display:none"></div>
   <div id="visitGpsMapMsg" class="empty" style="margin-top:8px">جارٍ تجهيز بيانات الموقع…</div>
   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px"><button class="btn" id="vgClose" type="button">إغلاق</button><span style="font-size:11px;color:var(--mut);align-self:center">الأحمر: موقع المندوب · الأزرق: موقع المنشأة المعتمد</span></div>`;
  $("#ov").classList.add("on");

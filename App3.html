@@ -206,8 +206,12 @@ function render(d,printable){
  <div class="rf"><span>${esc(c.name)}</span><span>${esc(d.no)}</span></div></div>`;
 }
 function snapshot(){const di=dateInfo(S.date);return JSON.parse(JSON.stringify({company:CFG.company,no:S.no,rep:rep.name,day:di.day,date:di.date,notes:S.notes,docs:S.docs,phs:S.phs}))}
-function fit(){const st=$("#stage"),w=document.querySelector(".pvscroll").clientWidth-20,pw=st.firstElementChild.offsetWidth,k=Math.min(1,w/pw);
- st.style.transform=`scale(${k})`;st.style.width=pw+"px";st.style.height=(st.firstElementChild.offsetHeight*k)+"px";st.style.marginInline=k<1?"0":"auto";st.style.transformOrigin="top right"}
+/* The A4 report opens fitted to the screen width; + / − zoom up to 125% (PVZ = zoom relative to the fitted size). */
+let PVZ=1;const PV_MAX=1.25;
+function fit(){const st=$("#stage"),r=st.firstElementChild;if(!r)return;const w=document.querySelector(".pvscroll").clientWidth-20,pw=r.offsetWidth,base=Math.min(1,w/pw),k=Math.max(base,Math.min(PV_MAX,base*PVZ));PVZ=k/base;
+ r.style.transform=`scale(${k})`;st.style.width=Math.ceil(pw*k)+"px";st.style.height=Math.ceil(r.offsetHeight*k)+"px";
+ $("#pvzin").disabled=k>=PV_MAX-1e-3;$("#pvzout").disabled=k<=base+1e-3}
+$("#pvzin").onclick=()=>{PVZ*=1.4;fit()};$("#pvzout").onclick=()=>{PVZ/=1.4;fit()};
 async function preview(){
  const staleGpsButton=$("#pvgeo");if(staleGpsButton)staleGpsButton.remove();
  if(!S.docs.length&&!S.phs.length){toast("أضف زيارة واحدة على الأقل");return}
@@ -216,8 +220,8 @@ async function preview(){
  $("#stage").innerHTML=render(snapshot());$("#pv").classList.add("on");fit();
 }
 addEventListener("resize",()=>{if($("#pv").classList.contains("on"))fit()});
-$("#pvx").onclick=()=>{$("#pv").classList.remove("on");const b=$("#pvgeo");if(b)b.remove();};
-$("#pvp").onclick=()=>{const st=$("#stage");st.style.transform="none";print();fit()};
+$("#pvx").onclick=()=>{$("#pv").classList.remove("on");PVZ=1;const b=$("#pvgeo");if(b)b.remove();};
+$("#pvp").onclick=()=>print(); // print CSS shows the report unscaled
 $("#pvs").onclick=()=>{const d=snapshot(),txt=`${d.company.title}\n${d.company.name}\n${d.no} — ${d.rep}\n${d.day} ${d.date}\nالزيارات: ${d.docs.length+d.phs.length} (${d.docs.length} أطباء، ${d.phs.length} صيدليات)`;
  navigator.share?navigator.share({title:d.no,text:txt}).catch(()=>{}):(navigator.clipboard&&navigator.clipboard.writeText(txt),toast("تم نسخ الملخص"))};
 let sendingReport=false;
