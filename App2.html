@@ -236,9 +236,9 @@ function banner(){
  return h
 }
 /* Long Arabic date for the header: "الثلاثاء · 13 أكتوبر 2026" */
-function longDate(ds){
+function longDate(ds,noYear){
  const d=ds?new Date(ds+"T12:00:00"):new Date();
- return DAYS[d.getDay()]+" · "+d.getDate()+" "+MN[d.getMonth()]+" "+d.getFullYear();
+ return DAYS[d.getDay()]+" · "+d.getDate()+" "+MN[d.getMonth()]+(noYear?"":" "+d.getFullYear());
 }
 /* Save state shown in the header: ok | dirty | saving | offline | err. Tapping it saves at once. */
 let SAVE_ST="ok";
