@@ -41,7 +41,10 @@ function reportsLight_() {
   return reportsLightRead_();
 }
 function reportsLightRead_() {
-  const sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return [];
+  const t0 = Date.now(), sh = sheet_('Reports'), last = sh.getLastRow(); if (last < 2) return [];
+  try { return reportsLightRows_(sh, last); } finally { phase_('reportIndex', t0); if (_PH) _PH.reportRows = last - 1; } // [MedRepPerf]: index cost vs. size
+}
+function reportsLightRows_(sh, last) {
   const H = T.Reports, n = last - 1, c1 = H.indexOf('createdAt') + 1, c2 = H.indexOf('reopens') + 1;
   const a = sh.getRange(2, 1, n, 5).getValues(), b = sh.getRange(2, c1, n, 4).getValues(), d = sh.getRange(2, c2, n, 1).getValues(), out = [];
   for (let i = 0; i < n; i++) {

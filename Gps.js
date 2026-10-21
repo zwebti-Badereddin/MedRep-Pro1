@@ -75,7 +75,7 @@ function geo_(v, ent, sheet, s, st) {
  * distance and facility-reference snapshot remain for auditability.
  * Run installGpsRetentionTrigger() once as the spreadsheet owner.
  */
-const GPS_RETENTION_DAYS = 90;
+const GPS_RETENTION_DAYS = 90, GPS_RETENTION_MARGIN_DAYS = 7, GPS_RETENTION_SCAN_KEY = 'GPS_RETENTION_SCAN_FROM';
 function gpsCapturedAt_(gps, reportDate) {
   const raw = gps && gps.ts;
   let ms = NaN;
@@ -115,12 +115,22 @@ function reduceExpiredGpsData_() {
   try {
     const sh = sheet_('Reports');
     if (!sh || sh.getLastRow() < 2) return { reportsUpdated: 0, visitsReduced: 0 };
-    const values = sh.getDataRange().getValues(), ix = key => T.Reports.indexOf(key);
+    const ix = key => T.Reports.indexOf(key);
     const cutoff = Date.now() - GPS_RETENTION_DAYS * 86400000, reducedAt = new Date().toISOString();
+    // A report last written before the previous run's cutoff had all its locations reduced by that run (every location in a
+    // row is captured before the row's updatedAt), so only rows written since then are read in full. The mark keeps a margin
+    // for phone clock drift; a missing mark or an unreadable updatedAt means a full read, as before.
+    const props = PropertiesService.getScriptProperties(), mark = Date.parse(props.getProperty(GPS_RETENTION_SCAN_KEY) || '');
+    const rows = reportsLight_().filter(r => !isFinite(mark) || !(Date.parse(r.updatedAt) < mark));
     let reportsUpdated = 0, visitsReduced = 0;
     const parseJson = raw => { try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } };
+    // values[i] = sheet row i + 1, as before; rows not selected stay empty. Nearby rows are read together, distant ones apart
+    // (a reopened old report must not pull in every row between it and the recent ones).
+    const values = [[]], groups = [];
+    rows.forEach(r => { const g = groups[groups.length - 1]; if (g && r.rowNo - g.hi <= 20) { g.hi = r.rowNo; g.want.push(r.rowNo); } else groups.push({ lo: r.rowNo, hi: r.rowNo, want: [r.rowNo] }); });
+    groups.forEach(g => { const block = sh.getRange(g.lo, 1, g.hi - g.lo + 1, T.Reports.length).getValues(); g.want.forEach(rn => { values[rn - 1] = block[rn - g.lo]; }); });
     for (let i = 1; i < values.length; i++) {
-      if (!values[i][ix('id')]) continue;
+      if (!values[i] || !values[i][ix('id')]) continue;
       const date = String(values[i][ix('date')] || '');
       let rowChanged = false;
       ['doctors', 'pharmacies'].forEach(key => {
@@ -149,7 +159,8 @@ function reduceExpiredGpsData_() {
       if (rowChanged) reportsUpdated++;
     }
     if (reportsUpdated) audit_({ uid: 'SYSTEM', role: 'system' }, 'gps_retention_reduce', String(reportsUpdated), 'visits=' + visitsReduced + '; retentionDays=' + GPS_RETENTION_DAYS);
-    return { reportsUpdated: reportsUpdated, visitsReduced: visitsReduced, retentionDays: GPS_RETENTION_DAYS };
+    props.setProperty(GPS_RETENTION_SCAN_KEY, new Date(cutoff - GPS_RETENTION_MARGIN_DAYS * 86400000).toISOString()); // only after a complete run
+    return { reportsUpdated: reportsUpdated, visitsReduced: visitsReduced, retentionDays: GPS_RETENTION_DAYS, reportsRead: rows.length };
   } finally {
     lock.releaseLock();
   }

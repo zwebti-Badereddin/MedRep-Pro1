@@ -62,10 +62,12 @@ function masterList_(s, p) {
 }
 // Update operational report names only; immutable submitted snapshots remain unchanged.
 function rewriteNames_(sheet, from, to, fromId, toId, wpMap) {
-  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), idKey = sheet === 'Doctors' ? 'doctorId' : 'pharmacyId', sh = sheet_('Reports'), vals = sh.getDataRange().getValues();
+  const ci = T.Reports.indexOf(sheet === 'Doctors' ? 'doctors' : 'pharmacies'), idKey = sheet === 'Doctors' ? 'doctorId' : 'pharmacyId', sh = sheet_('Reports'), last = sh.getLastRow();
+  // Only the visits column is read (row 1 = header placeholder keeps vals[i] aligned with sheet row i + 1); snapshots stay untouched.
+  const vals = [[]].concat(last >= 2 ? sh.getRange(2, ci + 1, last - 1, 1).getValues() : []);
   let n = 0;
   for (let i = 1; i < vals.length; i++) {
-    let arr; try { arr = JSON.parse(vals[i][ci] || '[]'); } catch (e) { continue; }
+    let arr; try { arr = JSON.parse(vals[i][0] || '[]'); } catch (e) { continue; }
     let changed = false;
     arr.forEach(v => { const byId = fromId != null && v[idKey]; if (byId ? String(v[idKey]) === String(fromId) : v.name === from) { v.name = to; if (byId) v[idKey] = toId; changed = true; } if (wpMap && v.workplaceId && wpMap[v.workplaceId]) { v.workplaceId = wpMap[v.workplaceId]; changed = true; } });
     if (changed) { sh.getRange(i + 1, ci + 1).setValue(JSON.stringify(arr)); n++; }

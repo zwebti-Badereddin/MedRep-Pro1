@@ -61,8 +61,10 @@ function approveFacilityLocation_(s, entity, legacyId) {
 }
 
 function reverify_(sheet, ent) {
-  const st = settings_(), geoEnt = facilityGeoEntity_('Pharmacies', ent.id) || ent, rad = Math.max(20, +geoEnt.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), vals = rs.getDataRange().getValues();
+  const st = settings_(), geoEnt = facilityGeoEntity_('Pharmacies', ent.id) || ent, rad = Math.max(20, +geoEnt.radius || +st.gpsRadius || 150), refAcc = Math.max(1, +st.gpsRefAcc || 50), rs = sheet_('Reports'), last = rs.getLastRow();
   const ix = k => T.Reports.indexOf(k), mine = sheet === 'Doctors' ? 'doctors' : 'pharmacies';
+  // Only the visits column is read; vals[i][ix(mine)] keeps its meaning (row 1 = header placeholder).
+  const col = last >= 2 ? rs.getRange(2, ix(mine) + 1, last - 1, 1).getValues() : [], vals = [[]].concat(col.map(r => { const a = []; a[ix(mine)] = r[0]; return a; }));
   const parse = t => { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } };
   let n = 0;
   const fix = list => { let ch = false; (list || []).forEach(v => { const g = v.gps;
