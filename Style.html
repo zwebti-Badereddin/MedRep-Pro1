@@ -231,3 +231,53 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 .ap-t{flex:1;min-width:0;font-weight:700;font-size:14px}.ap-t small{display:block;color:var(--mut);font-weight:500;font-size:12.5px}
 .ap-check{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:14px;margin-top:10px}.ap-check input{width:22px;min-height:22px;height:22px}
 </style>
+<style id="polish">
+/* 2026-10: compact headers, tactile buttons (raised face, light top edge, pressed state), soft card depth */
+:root{--hi:rgba(255,255,255,.75);--sh:rgba(15,35,38,.10);--sh2:rgba(15,35,38,.22)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--hi:rgba(255,255,255,.06);--sh:rgba(0,0,0,.30);--sh2:rgba(0,0,0,.55)}}
+:root[data-theme="dark"]{--hi:rgba(255,255,255,.06);--sh:rgba(0,0,0,.30);--sh2:rgba(0,0,0,.55)}
+/* Buttons */
+.btn{background:linear-gradient(180deg,var(--card),color-mix(in srgb,var(--card) 93%,var(--ink)));box-shadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh),0 4px 10px -6px var(--sh2);transition:transform .1s,box-shadow .1s,filter .15s}
+.btn:active{transform:translateY(1px) scale(.985);box-shadow:inset 0 2px 4px var(--sh)}
+.btn.pri{background:linear-gradient(180deg,color-mix(in srgb,var(--brand) 80%,#fff),var(--brand) 60%,color-mix(in srgb,var(--brand) 82%,#000));border-color:color-mix(in srgb,var(--brand) 78%,#000);
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 2px 0 color-mix(in srgb,var(--brand) 55%,#000),0 10px 18px -10px color-mix(in srgb,var(--brand) 80%,transparent);text-shadow:0 1px 1px rgba(0,0,0,.2)}
+.btn.pri:active{transform:translateY(2px);box-shadow:inset 0 2px 5px rgba(0,0,0,.28),0 0 0 color-mix(in srgb,var(--brand) 55%,#000)}
+.btn:disabled,.btn:disabled:active{transform:none;filter:saturate(.6)}
+@media (hover:hover){.btn:hover{filter:brightness(1.04)}}
+.mini,.fchip,.sheetbtn,.rhd .out,.notice button{box-shadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh),0 3px 8px -6px var(--sh2);transition:transform .1s,box-shadow .1s}
+.mini:active,.fchip:active,.sheetbtn:active,.rhd .out:active,.notice button:active,.vcard .more:active,.pvzoom button:active{transform:translateY(1px) scale(.97);box-shadow:inset 0 2px 4px var(--sh)}
+.fchip.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 0 color-mix(in srgb,var(--brand) 55%,#000)}
+.row button:not(.del){box-shadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh)}.row button:active{transform:translateY(1px)}
+/* Cards */
+.row,.vcard,.rstat,.setupc{box-shadow:0 1px 2px var(--sh),0 8px 18px -14px var(--sh2)}
+.rstat.tot{background:linear-gradient(160deg,color-mix(in srgb,var(--brand) 85%,#fff),var(--brand) 55%,color-mix(in srgb,var(--brand) 85%,#000));box-shadow:0 10px 20px -12px color-mix(in srgb,var(--brand) 85%,transparent)}
+.tabs{box-shadow:inset 0 1px 3px var(--sh)}
+/* Six admin tabs do not fit a narrow phone: the tab bar scrolls by itself instead of widening the whole page */
+.tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}.tabs::-webkit-scrollbar{display:none}
+.tabs .btn{flex:1 0 auto;white-space:nowrap;padding:0 10px}
+.tabs .btn.on{box-shadow:0 1px 0 var(--hi) inset,0 2px 6px var(--sh2)}
+/* Bottom navigation: the current page gets a soft pill behind its icon */
+.bnav button{position:relative;isolation:isolate}
+.bnav button.on:before{content:"";position:absolute;top:5px;left:50%;width:52px;height:30px;border-radius:99px;background:var(--soft);transform:translateX(-50%);z-index:-1}
+/* Rep header: one compact block with a light brand tint */
+.rhd{padding:10px 16px 12px;gap:8px;background:linear-gradient(180deg,var(--soft),var(--card) 85%)}
+.rhd h1{font-size:20px}.rhd .dt{font-size:13px}
+.rhd .lg{box-shadow:0 4px 10px -5px color-mix(in srgb,var(--brand) 80%,transparent)}
+/* Rep stat cards: icon beside the number instead of above it */
+.rstats{padding-top:10px}
+.rstat{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:8px;row-gap:2px;padding:8px 10px}
+.rstat i{grid-row:1/3}.rstat b{font-size:20px}.rstat span{font-size:12px;line-height:1.2}
+/* Admin header: one row (logo, company, page and date, logout) */
+.top.adm{padding:12px 14px 14px;border-radius:0 0 22px 22px}
+.top.adm .brandrow{gap:12px}
+.top.adm .alogo{height:52px;min-width:52px;max-width:120px;padding:5px;border-radius:14px}
+.top.adm .alogo img{max-height:42px}.top.adm .mk.alogo{font-size:19px}
+.top.adm .co b{font-size:17.5px}
+.top.adm .co small{display:block;font-size:12.5px;font-weight:700;opacity:.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top.adm .lo{padding:8px 11px;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.top.adm .adm-ecg{top:auto;bottom:0;height:46px;opacity:.13}
+.top.adm .adm-ecg path{stroke-dasharray:1;stroke-dashoffset:1;animation:ecgdraw 1.6s ease-out .2s forwards}
+@keyframes ecgdraw{to{stroke-dashoffset:0}}
+@media (max-width:380px){.top.adm .alogo{height:46px;min-width:46px}.top.adm .alogo img{max-height:36px}.top.adm .co b{font-size:16px}.top.adm .lo span{display:none}}
+@media (prefers-reduced-motion:reduce){.top.adm .adm-ecg path{animation:none;stroke-dashoffset:0}.btn,.mini,.fchip{transition:none}}
+</style>

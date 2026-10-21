@@ -131,20 +131,16 @@ function showInstallHelp(){
 /* ===== Admin ===== */
 const pad=n=>String(n).padStart(2,"0"),isoD=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 let adminNavSeq=0;
-/* Admin header art: a faint ECG line across the header, and a stethoscope along the bottom edge. The tube stretches with the
-   header width (non-scaling stroke keeps it even) between a fixed-size head on the left and the chest piece under the title. */
-const ADM_ART='<svg class="art adm-ecg" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M0 58H330L345 58 355 30 368 86 380 40 392 58H610L622 58 630 44 640 70 650 58H1000"/></svg>'+
- '<svg class="art adm-head" viewBox="0 0 70 90" aria-hidden="true" focusable="false"><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"><path stroke="#a6ec8a" d="M13 10C4 30 12 46 29 50M45 10C54 30 46 46 29 50"/><path stroke="#fff" d="M29 50V62C29 86 8 86 12 74C15 66 40 72 70 74"/></g><g fill="#a6ec8a"><rect x="8" y="2" width="10" height="8" rx="3"/><rect x="40" y="2" width="10" height="8" rx="3"/></g></svg>'+
- '<svg class="art adm-tube" viewBox="0 0 1000 44" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M0 28C160 44 320 6 520 24S860 40 1000 24"/></svg>'+
- '<svg class="art adm-chest" viewBox="0 0 32 44" aria-hidden="true" focusable="false"><g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M0 24H5"/><circle cx="16" cy="22" r="11"/><circle cx="16" cy="22" r="3.5"/></g></svg>';
+/* Admin header art: a faint ECG line across the compact header, drawn once when the dashboard opens. */
+const ADM_ART='<svg class="art adm-ecg" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path pathLength="1" vector-effect="non-scaling-stroke" d="M0 58H330L345 58 355 30 368 86 380 40 392 58H610L622 58 630 44 640 70 650 58H1000"/></svg>';
 const LOGOUT_ICON='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 8l-4 4 4 4M5 12h11"/></svg>';
 function adminHome(){
  const n=new Date();
- $("#app").innerHTML=`<div class="top adm">${ADM_ART}<div class="brandrow">${CFG.company.logo?`<span class="alogo"><img src="${esc(CFG.company.logo)}" alt=""></span>`:`<span class="mk alogo">${esc(CFG.company.short)}</span>`}<span class="co"><b>${esc(CFG.company.name)}</b></span><a href="#" id="lo" class="lo">${LOGOUT_ICON}<span>خروج</span></a></div><h2 style="margin-top:16px">لوحة الإدارة</h2><div class="meta"><span>${esc(longDate())}</span>${rep&&rep.name&&rep.id!=="ADMIN"?`<span>${esc(rep.name)}</span>`:""}</div></div>
+ $("#app").innerHTML=`<div class="top adm">${ADM_ART}<div class="brandrow">${CFG.company.logo?`<span class="alogo"><img src="${esc(CFG.company.logo)}" alt=""></span>`:`<span class="mk alogo">${esc(CFG.company.short)}</span>`}<span class="co"><b>${esc(CFG.company.name)}</b><small>لوحة الإدارة · ${esc(longDate())}${rep&&rep.name&&rep.id!=="ADMIN"?" · "+esc(rep.name):""}</small></span><a href="#" id="lo" class="lo" aria-label="خروج">${LOGOUT_ICON}<span>خروج</span></a></div></div>
  <div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>
  <div class="wrap">${licNotice()}<div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};
- const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
+ const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);if(b.dataset.t===t){const bar=b.parentNode,r=b.getBoundingClientRect(),q=bar.getBoundingClientRect();if(r.left<q.left||r.right>q.right)bar.scrollLeft+=r.left<q.left?r.left-q.left-8:r.right-q.right+8}});({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show("d");
 }
 /* CSV for Excel: UTF-8 with BOM (Arabic opens correctly), cells quoted when needed, formula-like cells neutralised. */
