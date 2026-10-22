@@ -5,7 +5,15 @@
 let CFG={company:{name:"",short:"",color:"#0b6b6f",title:"",prefix:"MR"},doctors:[],specialties:[],products:[],samples:["—"]},TOKEN=null;
 let NB=0;const bz=()=>{const e=document.getElementById("busy");if(e)e.style.display=NB?"block":"none"};
 function srv(a,p){NB++;bz();return _srv(a,p).finally(()=>{NB--;bz()})}
-function _call(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>{const x=new Error((e&&e.message)||"تعذر الاتصال بالخادم");x.net=true;rej(x)}).api(TOKEN,a,p||{}))}
+/* Transport: inside Apps Script google.script.run; in the installed web app (window.MEDREP_API = the web app URL) a fetch
+   POST to doPost. Both return the same {ok,data|error}. Only failures to reach the server are marked .net (retry, offline). */
+function _call(a,p){
+ const api=window.MEDREP_API;if(!api)return _callGas(a,p);
+ const net=()=>{const x=new Error("تعذر الاتصال بالخادم");x.net=true;return x};
+ return fetch(api,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:TOKEN,action:a,p:p||{}}),cache:"no-store",redirect:"follow"})
+  .then(r=>r.ok?r.text():Promise.reject(net()),()=>Promise.reject(net()))
+  .then(t=>{let r;try{r=JSON.parse(t)}catch(e){throw net()}if(r&&r.ok)return r.data;throw new Error(r&&r.error?r.error:"خطأ في الاتصال")})}
+function _callGas(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>{const x=new Error((e&&e.message)||"تعذر الاتصال بالخادم");x.net=true;rej(x)}).api(TOKEN,a,p||{}))}
 /* ---- resilience layer: automatic retry when the server is busy + re-login when the session ends ---- */
 const devKey=x=>"mr_dev_"+(x?"a":"r");
 function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
@@ -114,15 +122,19 @@ function login(adm){
  $("#app").innerHTML=`<div class="login"><div class="box"><div class="mk lg">✚</div><h1>MedRep Pro</h1><div style="color:var(--mut)">${adm?"دخول الإدارة":"أدخل رمز الدخول المكوّن من 5 أرقام"}</div>
  ${adm?'<input id="admin_user" autocomplete="username" style="font-size:16px" aria-label="اسم المستخدم" placeholder="اسم المستخدم"><input id="code" type="password" autocomplete="current-password" style="letter-spacing:0;font-size:18px;margin-top:8px" aria-label="كلمة المرور" placeholder="كلمة المرور">':'<input id="code" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="رمز الدخول">'}
  <div class="err" id="err"></div><button class="btn pri full" id="go">دخول</button>
- <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a><a href="#" id="inst" style="display:block;text-align:center;margin-top:4px;color:var(--mut);font-size:14px;padding:8px">📲 تثبيت النظام على الهاتف</a>${support()?'<div class="supl">'+esc(support())+'</div>':""}</div></div>`;
- $("#sw").onclick=e=>{e.preventDefault();login(!adm)};$("#inst").onclick=e=>{e.preventDefault();showInstallHelp()};
+ <a href="#" id="sw" style="display:block;text-align:center;margin-top:16px;color:var(--brand);padding:8px">${adm?"دخول المندوب":"دخول الإدارة"}</a>${installed()?"":'<a href="#" id="inst" style="display:block;text-align:center;margin-top:4px;color:var(--mut);font-size:14px;padding:8px">📲 تثبيت النظام على الهاتف</a>'}${support()?'<div class="supl">'+esc(support())+'</div>':""}</div></div>`;
+ $("#sw").onclick=e=>{e.preventDefault();login(!adm)};if($("#inst"))$("#inst").onclick=e=>{e.preventDefault();showInstallHelp()};
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
   try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
    if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;restoreDraft();home();consent()}}
   catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
  $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();
 }
+/* Already running as the installed app: no install link. On Android the installed web app gets the browser's own install
+   prompt (captured as window.__bip by the web build); everywhere else the written steps are shown. */
+function installed(){try{return !!(matchMedia("(display-mode: standalone)").matches||navigator.standalone)}catch(e){return false}}
 function showInstallHelp(){
+ if(window.__bip){const p=window.__bip;window.__bip=null;p.prompt();if(p.userChoice)p.userChoice.then(c=>{if(c&&c.outcome==="accepted"&&$("#inst"))$("#inst").remove()}).catch(()=>{});return}
  const ua=navigator.userAgent||"",ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1),android=/Android/i.test(ua);
  const iosSteps='<b>iPhone / iPad</b><ol style="line-height:1.9;margin:6px 0 12px;padding-inline-start:22px"><li>افتح رابط النظام في متصفح <b>Safari</b>.</li><li>اضغط زر المشاركة (مربع يخرج منه سهم).</li><li>اختر «إضافة إلى الشاشة الرئيسية» ثم «إضافة».</li></ol>',androidSteps='<b>Android</b><ol style="line-height:1.9;margin:6px 0 12px;padding-inline-start:22px"><li>افتح رابط النظام في متصفح <b>Chrome</b>.</li><li>اضغط القائمة ⋮ أعلى الشاشة.</li><li>اختر «إضافة إلى الشاشة الرئيسية» أو «تثبيت التطبيق» ثم «إضافة».</li></ol>';
  $("#modal").innerHTML='<h3>تثبيت النظام على الهاتف</h3>'+(ios?iosSteps:android?androidSteps:'<p style="color:var(--mut);margin:0 0 10px">افتح رابط النظام من هاتفك ثم اتبع الخطوات المناسبة:</p>'+iosSteps+androidSteps)+'<p style="font-size:13px;color:var(--mut);line-height:1.7;margin:0 0 12px">ستظهر أيقونة على الشاشة الرئيسية تفتح النظام مباشرة، وقد يظهر شريط المتصفح أعلاها.</p><button class="btn pri full" id="instx" type="button">إغلاق</button>';

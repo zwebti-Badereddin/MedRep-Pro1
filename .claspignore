@@ -1,6 +1,7 @@
 # Local-only files that must never be pushed to Apps Script.
 tests/**
 tools/**
+web/**
 **/*.md
 **/node_modules/**
 .git/**

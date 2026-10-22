@@ -14,7 +14,12 @@ const tests = [];
 const test = (name, f) => tests.push({ name, fn: f });
 
 test('no browser prompt()/confirm() is left in any client file', () => {
-  ['App1.html', 'App2.html', 'App3.html', 'App4.html'].forEach(f => assert.ok(!/\b(prompt|confirm)\(/.test(read(f)), f));
+  // The blocking dialogs, called bare or through window/self. A method of the same name on another object is allowed
+  // (BeforeInstallPromptEvent.prompt() opens the phone's install sheet, not a dialog).
+  ['App1.html', 'App2.html', 'App3.html', 'App4.html'].forEach(f => {
+    const src = read(f);
+    assert.ok(!/(^|[^.\w$])(prompt|confirm)\(/m.test(src) && !/\b(window|self|globalThis)\.(prompt|confirm)\(/.test(src), f);
+  });
 });
 test('approval sheet: lists location exceptions with distance, asks a reason; lists new links with a confirmation box', () => {
   const h = api.approveDialogHtml([{ kind: 'طبيب', name: 'د. <b>أحمد</b>', place: 'مصحة الشفاء', status: 'خارج النطاق', distance: 250 }, { kind: 'صيدلية', name: 'صيدلية', status: 'غير حاسم', distance: null }],

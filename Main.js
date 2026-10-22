@@ -17,6 +17,24 @@ function doGet(e) {
   return out;
 }
 
+// The installed web app (PWA served from its own domain) reaches the same api() with fetch: POST, body = JSON text
+// {token, action, p} sent as text/plain (no CORS preflight, which Apps Script cannot answer), reply = the same {ok, data|error}.
+// {cfg: true} returns what doGet injects into the page before login (theme, support line) and nothing else.
+function doPost(e) {
+  let req;
+  try { req = JSON.parse((e && e.postData && e.postData.contents) || ''); } catch (err) { req = null; }
+  if (!req || typeof req !== 'object') return jsonOut_({ ok: false, error: 'طلب غير صالح' });
+  if (req.cfg === true) return jsonOut_({ ok: true, data: publicConfig_() });
+  return jsonOut_(api(typeof req.token === 'string' ? req.token : null, req.action, req.p && typeof req.p === 'object' ? req.p : {}));
+}
+function publicConfig_() {
+  const out = { theme: '', support: '' };
+  try { out.support = supportContact_(); } catch (err) {}
+  try { const t = String(settings_().theme || ''); out.theme = t === 'light' || t === 'dark' ? t : ''; } catch (err) {}
+  return out;
+}
+function jsonOut_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
 // Single entry point called by google.script.run.api(token, action, payload)
 // Temporary performance instrumentation: logs action, elapsed time and outcome only.
 // Never log tokens, payloads, user identifiers, or error messages.

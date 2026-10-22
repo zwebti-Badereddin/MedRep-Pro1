@@ -1,0 +1,7 @@
+{
+  "comment": "Installed web app (PWA) for production. api = the Apps Script web app URL (same as tools/release.config.json webAppUrl). color = brand color of the icons and the phone status bar.",
+  "name": "MedRep Pro",
+  "shortName": "MedRep",
+  "color": "#0b6b6f",
+  "api": "https://script.google.com/macros/s/AKfycbxVPNFcNHzTBgki4qQrbeS4qef1wuzM4VPaVyAbZxtVbT9kbiM2MiP60tEa9UqSN1lW/exec"
+}
