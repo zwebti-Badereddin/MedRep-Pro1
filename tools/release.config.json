@@ -7,6 +7,7 @@
   "web": {
     "comment": "Installed web app on Netlify, published by release.js after Apps Script. Empty netlifySiteId = not set up yet (skipped).",
     "config": "web/config.json",
-    "netlifySiteId": ""
+    "netlifySiteId": "48dc5308-fb44-42c1-8a09-e23b24c6b452",
+    "url": "https://medrep-pro.netlify.app"
   }
 }
