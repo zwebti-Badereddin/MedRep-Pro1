@@ -288,5 +288,22 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 .top.adm .adm-ecg path{stroke-dasharray:1;stroke-dashoffset:1;animation:ecgdraw 1.6s ease-out .2s forwards}
 @keyframes ecgdraw{to{stroke-dashoffset:0}}
 @media (max-width:380px){.top.adm .alogo{height:46px;min-width:46px}.top.adm .alogo img{max-height:36px}.top.adm .co b{font-size:16px}.top.adm .lo span{display:none}}
+/* Phone report view (#pv.phone, set by fit()): the report reflows to the screen; print and PDF keep the A4 page (screen only) */
+.pvmodebar{display:none;text-align:center;margin:0 0 10px}
+@media screen and (max-width:700px){.pvmodebar{display:block}}
+@media screen{
+ #pv.phone .pvzoom{display:none}
+ #pv.phone #stage{width:auto!important;height:auto!important;overflow:visible}
+ #pv.phone #stage>.report{width:auto;min-height:0;padding:16px 14px;border-radius:12px;font-size:13.5px;line-height:1.55;transform:none!important}
+ #pv.phone .rh .co{font-size:17px}#pv.phone .rh .ti{font-size:13px}
+ #pv.phone .rinfo{grid-template-columns:1fr 1fr;font-size:13px}#pv.phone .rinfo div{padding:6px 10px}#pv.phone .rinfo b{font-size:11.5px}
+ #pv.phone .rnote{font-size:13.5px}
+ #pv.phone .rsec{font-size:15px;margin:16px 0 8px}
+ #pv.phone .v{border-radius:10px;margin-bottom:8px}
+ #pv.phone .v .h{font-size:14px;padding:7px 10px}
+ #pv.phone .v .c{flex:1 1 44%;min-width:44%;font-size:13px;padding:6px 10px}#pv.phone .v .c small{font-size:11.5px}
+ #pv.phone .sum div{font-size:12.5px;padding:8px}#pv.phone .sum b{font-size:19px}
+ #pv.phone .rf{font-size:11px}
+}
 @media (prefers-reduced-motion:reduce){.top.adm .adm-ecg path{animation:none;stroke-dashoffset:0}.btn,.mini,.fchip{transition:none}}
 </style>

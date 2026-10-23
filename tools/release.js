@@ -79,6 +79,11 @@ if (!run(process.execPath, [path.join(root, 'tests', 'run-all.js')])) stop('A ch
 step('Files clasp will push');
 if (!run('clasp', ['show-file-status'])) stop('clasp show-file-status failed (is clasp logged in?).');
 
+// 4b. The installed web app (Netlify) builds from these same files; its config must point to THIS server.
+const web = cfg.web && cfg.web.config ? cfg.web : null;
+const webArgs = web ? [path.join(__dirname, 'release-web.js'), '--config', web.config, '--expect-api', cfg.webAppUrl] : [];
+if (web) { step('Installed web app (build check)'); if (!run(process.execPath, webArgs.concat('--dry'))) stop('The installed web app does not build for this server.'); }
+
 if (!deploy) { console.log('\n✔ Dry run passed. To publish: node tools/release.js --deploy'); process.exit(0); }
 
 // 5. Push, version, update the existing deployment (same URL for the reps), tag, verify.
@@ -108,4 +113,14 @@ if (!run(process.execPath, [path.join(__dirname, 'verify-deploy.js')])) {
   console.log('\n✖ The published page differs from the pushed code. Roll back now: node tools/release.js --rollback <previous version>');
   process.exit(1);
 }
+// 6. Only now the installed web app: it calls doPost, which this Apps Script version has. If it fails, Apps Script stays
+// published and the phones keep the previous web app, which still works against it.
+if (web && web.netlifySiteId) {
+  step('Publishing the installed web app');
+  if (!run(process.execPath, webArgs.concat('--site', web.netlifySiteId))) {
+    console.log('\n✖ Apps Script version ' + version + ' is live, but the installed web app was NOT updated (phones keep the previous one, which still works).' +
+      '\n  Fix the cause, then publish it alone: node tools/release-web.js --config ' + web.config + ' --site ' + web.netlifySiteId + ' --expect-api ' + cfg.webAppUrl);
+    process.exit(1);
+  }
+} else console.log('\n  (installed web app: not set up yet, skipped; set web.netlifySiteId in tools/release.config.json)');
 console.log('\n✔ Published version ' + version + ' (' + label + ').');

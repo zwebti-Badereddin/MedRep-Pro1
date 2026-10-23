@@ -3,5 +3,10 @@
   "scriptId": "1W7mHRTz3UdfFTIVJy1YViwMebMitpbZNRAVpjKfNZwan0RcQrLDVsJia",
   "deploymentId": "AKfycbxVPNFcNHzTBgki4qQrbeS4qef1wuzM4VPaVyAbZxtVbT9kbiM2MiP60tEa9UqSN1lW",
   "webAppUrl": "https://script.google.com/macros/s/AKfycbxVPNFcNHzTBgki4qQrbeS4qef1wuzM4VPaVyAbZxtVbT9kbiM2MiP60tEa9UqSN1lW/exec",
-  "releaseBranch": "master"
+  "releaseBranch": "master",
+  "web": {
+    "comment": "Installed web app on Netlify, published by release.js after Apps Script. Empty netlifySiteId = not set up yet (skipped).",
+    "config": "web/config.json",
+    "netlifySiteId": ""
+  }
 }

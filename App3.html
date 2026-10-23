@@ -206,12 +206,17 @@ function render(d,printable){
  <div class="rf"><span>${esc(c.name)}</span><span>${esc(d.no)}</span></div></div>`;
 }
 function snapshot(){const di=dateInfo(S.date);return JSON.parse(JSON.stringify({company:CFG.company,no:S.no,rep:rep.name,day:di.day,date:di.date,notes:S.notes,docs:S.docs,phs:S.phs}))}
-/* The A4 report opens fitted to the screen width; + / − zoom up to 125% (PVZ = zoom relative to the fitted size). */
-let PVZ=1;const PV_MAX=1.25;
-function fit(){const st=$("#stage"),r=st.firstElementChild;if(!r)return;const w=document.querySelector(".pvscroll").clientWidth-20,pw=r.offsetWidth,base=Math.min(1,w/pw),k=Math.max(base,Math.min(PV_MAX,base*PVZ));PVZ=k/base;
+/* On a phone the report opens as a phone page (readable without zooming; print and PDF stay A4). "عرض كصفحة A4" switches to the
+   A4 page fitted to the screen width, where + / − zoom up to 125% (PVZ = zoom relative to the fitted size). */
+let PVZ=1,PVA4=false;const PV_MAX=1.25,PV_NARROW=matchMedia("(max-width: 700px)");
+const pvPhone=()=>PV_NARROW.matches&&!PVA4;
+function fit(){const st=$("#stage"),r=st.firstElementChild;if(!r)return;const ph=pvPhone();
+ $("#pv").classList.toggle("phone",ph);$("#pvmode").textContent=ph?"عرض كصفحة A4":"عرض الهاتف";
+ if(ph){r.style.transform="";st.style.width="";st.style.height="";return}
+ const w=document.querySelector(".pvscroll").clientWidth-20,pw=r.offsetWidth,base=Math.min(1,w/pw),k=Math.max(base,Math.min(PV_MAX,base*PVZ));PVZ=k/base;
  r.style.transform=`scale(${k})`;st.style.width=Math.ceil(pw*k)+"px";st.style.height=Math.ceil(r.offsetHeight*k)+"px";
  $("#pvzin").disabled=k>=PV_MAX-1e-3;$("#pvzout").disabled=k<=base+1e-3}
-$("#pvzin").onclick=()=>{PVZ*=1.4;fit()};$("#pvzout").onclick=()=>{PVZ/=1.4;fit()};
+$("#pvzin").onclick=()=>{PVZ*=1.4;fit()};$("#pvzout").onclick=()=>{PVZ/=1.4;fit()};$("#pvmode").onclick=()=>{PVA4=!PVA4;PVZ=1;fit()};
 async function preview(){
  const staleGpsButton=$("#pvgeo");if(staleGpsButton)staleGpsButton.remove();
  if(!S.docs.length&&!S.phs.length){toast("أضف زيارة واحدة على الأقل");return}
