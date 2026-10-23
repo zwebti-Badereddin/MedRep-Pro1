@@ -13,6 +13,8 @@ function _call(a,p){
  return fetch(api,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:TOKEN,action:a,p:p||{}}),cache:"no-store",redirect:"follow"})
   .then(r=>r.ok?r.text():Promise.reject(net()),()=>Promise.reject(net()))
   .then(t=>{let r;try{r=JSON.parse(t)}catch(e){throw net()}if(r&&r.ok)return r.data;throw new Error(r&&r.error?r.error:"خطأ في الاتصال")})}
+/* Sign-in error text: a failure to reach the server says why (no internet on the phone, or the server did not answer). */
+const loginErr=e=>e&&e.net?(navigator.onLine===false?"لا يوجد اتصال بالإنترنت. تحتاج الإنترنت لتسجيل الدخول.":"تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مجددًا."):((e&&e.message)||"تعذر تسجيل الدخول");
 function _callGas(a,p){return new Promise((res,rej)=>google.script.run.withSuccessHandler(r=>r&&r.ok?res(r.data):rej(new Error(r?r.error:"خطأ في الاتصال"))).withFailureHandler(e=>{const x=new Error((e&&e.message)||"تعذر الاتصال بالخادم");x.net=true;rej(x)}).api(TOKEN,a,p||{}))}
 /* ---- resilience layer: automatic retry when the server is busy + re-login when the session ends ---- */
 const devKey=x=>"mr_dev_"+(x?"a":"r");
@@ -37,7 +39,7 @@ function reauth(){
    try{const r=await _call("login",adm?{role:"admin",username:q("#ra_u").value.trim(),password:q("#ra_c").value,device:getDev(true)}:{code:q("#ra_c").value.trim(),device:getDev(false)});
     if(uid&&r.user&&r.user.id!==uid)throw new Error("هذا الرمز لا يخص الحساب المفتوح حاليًا.");
     TOKEN=r.token;setDev(adm,r.device);close();res()}
-   catch(e){q("#ra_e").textContent=e.message;b.disabled=false}};
+   catch(e){q("#ra_e").textContent=loginErr(e);b.disabled=false}};
   q("#ra_go").onclick=go;q("#ra_c").onkeydown=e=>{if(e.key==="Enter")go()};
   q("#ra_x").onclick=()=>{close();TOKEN=null;login();rej(new Error("تم تسجيل الخروج"))};
   (q("#ra_u")||q("#ra_c")).focus()});
@@ -127,7 +129,7 @@ function login(adm){
  const go=async()=>{const b=$("#go");b.disabled=true;b.textContent="جارٍ الدخول…";$("#err").textContent="";
   try{const r=await srv("login",adm?{role:"admin",username:$("#admin_user").value.trim(),password:$("#code").value,device:getDev(true)}:{code:$("#code").value.trim(),device:getDev(false)});TOKEN=r.token;setDev(adm,r.device);rep=r.user;applyBoot(r.boot);srv("loginAudit").catch(()=>{});
    if(adm){REPS=r.boot.reps||[];STAT=r.boot.statuses;adminHome()}else{S=mapRep(r.report);PREV=r.prev;TD=S.date;restoreDraft();home();consent()}}
-  catch(e){$("#err").textContent=e.message;b.disabled=false;b.textContent="دخول"}};
+  catch(e){$("#err").textContent=loginErr(e);b.disabled=false;b.textContent="دخول"}};
  $("#go").onclick=go;$("#code").onkeydown=e=>{if(e.key==="Enter")go()};if(adm){$("#admin_user").onkeydown=e=>{if(e.key==="Enter")$("#code").focus()};$("#admin_user").focus()}else $("#code").focus();
 }
 /* Already running as the installed app: no install link. On Android the installed web app gets the browser's own install

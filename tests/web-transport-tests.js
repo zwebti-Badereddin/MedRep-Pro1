@@ -83,6 +83,14 @@ test('client: offline, HTTP error and a non-JSON page (Google error page) are ne
     await assert.rejects(c.ctx._call('saveReport'), e => e.net === true && /تعذر الاتصال بالخادم/.test(e.message));
   }
 });
+test('sign-in error text: no internet / server not answering / the server\'s own message', () => {
+  const line = app1.match(/const loginErr=[^\n]*/)[0];
+  const at = online => { const c = { navigator: { onLine: online } }; vm.createContext(c); vm.runInContext(line.replace('const loginErr=', 'this.loginErr='), c); return c.loginErr; };
+  const net = Object.assign(new Error('x'), { net: true });
+  assert.match(at(false)(net), /لا يوجد اتصال بالإنترنت/);
+  assert.match(at(true)(net), /تعذر الاتصال بالخادم/);
+  assert.strictEqual(at(false)(new Error('بيانات الدخول غير صحيحة')), 'بيانات الدخول غير صحيحة');
+});
 test('client code keeps the project rule: no // or /* inside client strings', () => {
   assert.ok(!/["'`][^"'`\n]*(\/\/|\/\*)[^"'`\n]*["'`]/.test(pick('_call')));
 });
