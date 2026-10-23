@@ -40,7 +40,9 @@ const tail = `<script>
 (function(){fetch(window.MEDREP_API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({cfg:true}),cache:"no-store"})
  .then(function(r){return r.ok?r.json():null}).then(function(r){if(!r||!r.ok||!r.data)return;try{localStorage.setItem("mr_cfg",JSON.stringify(r.data))}catch(e){}
   var m=document.querySelector('meta[name="medrep-support"]');if(m)m.setAttribute("content",r.data.support||"");
-  if(typeof TOKEN!=="undefined"&&!TOKEN&&typeof applyTheme==="function")applyTheme(r.data.theme)}).catch(function(){});
+  if(typeof TOKEN!=="undefined"&&!TOKEN){if(typeof applyTheme==="function")applyTheme(r.data.theme);
+   var box=document.querySelector(".login .box"),s=box&&box.querySelector(".supl"),t=r.data.support||"";
+   if(box&&t){if(!s){s=document.createElement("div");s.className="supl";box.appendChild(s)}s.textContent=t}else if(s&&!t)s.remove()}}).catch(function(){});
  if("serviceWorker" in navigator)window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})});
 })();
 </script>

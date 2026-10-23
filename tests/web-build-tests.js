@@ -22,6 +22,10 @@ test('page = Index.html with Style and App1-4 included, no template tag left, tr
   assert.ok(html.includes('rel="manifest"') && html.includes('rel="apple-touch-icon"') && html.includes('name="theme-color"'));
   assert.ok(html.indexOf('navigator.serviceWorker.register("sw.js")') > html.lastIndexOf('push("App4")'), 'service worker registered after the app');
 });
+test('support line from the server is shown on the login screen at once (not only at the next start), as plain text', () => {
+  const html = read('index.html'), tail = html.slice(html.lastIndexOf('<script>'));
+  assert.ok(/\.login \.box/.test(tail) && /s\.textContent=t/.test(tail) && !/innerHTML/.test(tail));
+});
 test('manifest: standalone, RTL Arabic, any + maskable icons', () => {
   const m = JSON.parse(read('manifest.webmanifest'));
   assert.strictEqual(m.display, 'standalone'); assert.strictEqual(m.dir, 'rtl'); assert.strictEqual(m.lang, 'ar');
