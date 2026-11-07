@@ -254,6 +254,7 @@ function visitChips(v,k){
   if(v.intro)c.push(chip("تعريف: "+v.intro));
   if(v.remind&&v.remind!=="—")c.push(chip("تذكير: "+v.remind));
   const sm=sampleText(v);if(sm)c.push(chip("عينات: "+sm));
+  if(v.drNote)c.push(chip("ملاحظة الطبيب: "+(v.drNote.length>40?v.drNote.slice(0,40)+"…":v.drNote)));
  }else{
   if(v.product)c.push(chip(v.product));
   if(v.order)c.push(chip("طلبية: "+v.order));

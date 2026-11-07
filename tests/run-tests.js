@@ -86,6 +86,14 @@ test('regression: pharmacy visit still saves and validates its ID', () => {
   expectError(() => env.call(rep, 'saveReport', { date: env.today, pharmacies: [{ name: 'صيدلية الشفاء', pharmacyId: 'PH-0999' }] }), /الصيدلية/);
 });
 
+test('visit notes (drNote): trimmed, cut at 500 characters, dropped when empty', () => {
+  const env = makeEnv(SEED()), rep = env.session('REP-0001', 'rep'), ph = o => Object.assign({ name: 'صيدلية الشفاء', pharmacyId: 'PH-0001', loc: '' }, o);
+  env.call(rep, 'saveReport', { date: env.today, pharmacies: [ph({ drNote: '  ' + 'ن'.repeat(600) + '  ' }), ph({ drNote: '   ' }), ph({})] });
+  const saved = JSON.parse(env.rows('Reports')[0].pharmacies);
+  assert.strictEqual(saved[0].drNote, 'ن'.repeat(500));
+  assert.ok(!('drNote' in saved[1]) && !('drNote' in saved[2]));
+});
+
 let pass = 0, fail = 0;
 tests.forEach(t => { try { t.fn(); pass++; console.log('PASS  ' + t.name); } catch (e) { fail++; console.log('FAIL  ' + t.name + '\n      ' + e.message); } });
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -4,7 +4,7 @@ const assert = require('assert'), fs = require('fs'), path = require('path'), vm
 const { makeEnv } = require('./gas-harness');
 
 const NOW = new Date().toISOString(), A = { lat: 32.89, lng: 13.2 };
-const docs = [{ name: 'د. أحمد', specialty: 'باطنة', place: 'مصحة الشفاء', sector: 'خاص', time: 'صباحًا', intro: 'Cardio', remind: '—',
+const docs = [{ name: 'د. أحمد', specialty: 'باطنة', place: 'مصحة الشفاء', sector: 'خاص', time: 'صباحًا', intro: 'Cardio', remind: '—', drNote: 'طلب عينات إضافية',
   samples: [{ product: 'Neuro', qty: 2 }, { product: 'Neuro', qty: 1 }, { product: 'Gastro', qty: 1 }], gps: { status: 'تم التحقق', dist: 42.6 } },
   { name: 'د. سالم', specialty: 'قلب', place: 'عيادة', s1: 'Old', gps: { status: 'غير متاح' } }];
 const phs = [{ name: 'صيدلية "النور"', loc: 'شارع 1', near: 'مصحة', time: 'مساءً', product: 'Cardio', act: 'عرض', order: '=2 علب' }];
@@ -30,7 +30,8 @@ test('export: one row per visit with rep name, merged samples, legacy samples, G
   const { env, adm } = setup(), out = env.call(adm, 'exportVisits', { from: '2026-10-01', to: '2026-10-31' });
   assert.deepStrictEqual([out.visits, out.reports], [3, 1]);
   const [h, d1, d2, p1] = out.rows, col = n => h.indexOf(n);
-  assert.strictEqual(h.length, 20);
+  assert.strictEqual(h.length, 21);
+  assert.deepStrictEqual([d1[col('ملاحظات الطبيب')], d2[col('ملاحظات الطبيب')], p1[col('ملاحظات الطبيب')]], ['طلب عينات إضافية', '', ''], 'doctor notes column');
   assert.deepStrictEqual([d1[col('المندوب')], d1[col('نوع الزيارة')], d1[col('العينات المجانية')], d1[col('التحقق من الموقع')], d1[col('المسافة (م)')], d1[col('ملاحظة اليوم')]],
     ['مندوب أول', 'طبيب', 'Neuro ×3 · Gastro', 'تم التحقق', 43, 'يوم جيد']);
   assert.strictEqual(d1[col('المنتج المذكَّر به')], '');

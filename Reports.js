@@ -96,6 +96,9 @@ function prepareReport_(s, p) {
       if (Array.isArray(v.samples)) o.samples = v.samples.slice(0, 20).map(x => ({ product: String((x && x.product) || '').trim().slice(0, 80),
         qty: Math.max(1, Math.min(99, Math.round(+(x && x.qty)) || 1)) })).filter(x => x.product && x.product !== '—');
       else delete o.samples;
+      // What the doctor said (doctor visits): plain text up to 500 characters; empty is dropped.
+      const note = String(v.drNote == null ? '' : v.drNote).trim().slice(0, 500);
+      if (note) o.drNote = note; else delete o.drNote;
       const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
       if (pv) o.gps = pv.gps;
       else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }
