@@ -65,7 +65,7 @@ function bootstrap_(s) {
   const lk = lookups_();
   return {
     settings: (function () { const x = settings_(); if (s.role !== 'admin') { delete x.reportEmail; delete x.gpsRadius; delete x.gpsRefAcc; delete x.mapKey; } return x; })(), statuses: STATUS,
-    reps: s.role === 'admin' ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
+    reps: reviewer_(s) ? dbAll_('Reps').map(r => ({ id: r.id, name: r.name })) : null,
     doctors: lk.doctors,
     facilities: lk.facilities || [], pharmacies: lk.pharmacies, products: lk.products, specialties: lk.specialties || [],
     rep: s.role === 'rep' ? { id: s.uid, name: s.name } : null,

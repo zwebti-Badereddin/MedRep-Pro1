@@ -61,9 +61,9 @@ async function screenPerf(ym){
 let SS="co",settingsViewSeq=0;
 function tabSet(){
  const view=++settingsViewSeq;
- $("#av").innerHTML=`<div class="tabs" style="margin:0 0 12px"><button class="btn" data-s="co">الشركة والنظام</button><button class="btn" data-s="kpi">المؤشرات</button><button class="btn" data-s="prod">المنتجات</button><button class="btn" data-s="hol">العطل</button></div><div id="sv2"></div>`;
+ $("#av").innerHTML=`<div class="tabs" style="margin:0 0 12px"><button class="btn" data-s="co">الشركة والنظام</button><button class="btn" data-s="kpi">المؤشرات</button><button class="btn" data-s="prod">المنتجات</button><button class="btn" data-s="hol">العطل</button><button class="btn" data-s="sup">المشرفون</button></div><div id="sv2"></div>`;
  document.querySelectorAll("[data-s]").forEach(b=>{b.classList.toggle("on",b.dataset.s===SS);b.onclick=()=>{SS=b.dataset.s;tabSet()}});
- ({co:tabCo,kpi:()=>tabKpi(view),prod:()=>tabProd(view),hol:()=>tabHol(view)})[SS]();
+ ({co:tabCo,kpi:()=>tabKpi(view),prod:()=>tabProd(view),hol:()=>tabHol(view),sup:()=>tabSup(view)})[SS]();
 }
 function tabCo(){
  const view=settingsViewSeq,live=()=>view===settingsViewSeq&&!!$("#sv2");
@@ -131,6 +131,24 @@ async function tabHol(view=settingsViewSeq){
   +`<div class="sec"><h3>إضافة عطلة</h3></div><label>التاريخ</label><input type="date" id="h_d" value="${isoD(new Date())}"><label>الاسم</label><input id="h_n" placeholder="مثل: عيد الفطر"><div class="err" id="h_err"></div><button class="btn pri full" id="h_go" style="margin-top:14px">إضافة</button>`;
   document.querySelectorAll("#sv2 button.del").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("holidayDelete",{id:b.dataset.id});if(view===settingsViewSeq&&$("#sv2"))tabHol(view)}catch(e){if(view===settingsViewSeq&&$("#sv2"))toast(e.message)}});
   $("#h_go").onclick=async()=>{try{await srv("holidaySave",{row:{date:$("#h_d").value,name:$("#h_n").value}});if(!host())return;toast("تمت الإضافة");tabHol(view)}catch(e){const err=host()&&$("#h_err");if(err)err.textContent=e.message}}}catch(e){if(host())toast(e.message)}}
+/* Supervisors: review-only accounts (reports, approve / return, visit locations). Edit = same form, password optional. */
+async function tabSup(view=settingsViewSeq){
+ const host=()=>view===settingsViewSeq?$("#sv2"):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ try{const a=await srv("supervisorsList");if(!host())return;let edit=null;
+  const draw=()=>{const t=host();if(!t)return;
+   t.innerHTML='<div class="empty">المشرف يرى تقارير كل المندوبين، ويعتمدها أو يعيدها، ويرى مواقع الزيارات. لا يرى الإعدادات ولا الأداء ولا التصدير، ويدخل من «دخول الإدارة» باسم المستخدم وكلمة المرور.</div>'
+    +a.map(x=>`<div class="row"><div class="t"><b>${esc(x.name)}</b><small dir="ltr" style="text-align:right">${esc(x.username)}${x.active?"":" · معطّل"}</small></div><div class="acts"><button class="mini" type="button" data-e="${esc(x.id)}">تعديل</button></div></div>`).join("")
+    +`<div class="sec"><h3>${edit?"تعديل المشرف":"إضافة مشرف"}</h3></div><label>الاسم</label><input id="u_n" value="${esc(edit?edit.name:"")}"><label>اسم المستخدم</label><input id="u_u" dir="ltr" autocomplete="off" spellcheck="false" value="${esc(edit?edit.username:"")}">`
+    +`<label>${edit?"كلمة مرور جديدة (اتركها فارغة للإبقاء على الحالية)":"كلمة المرور (10 أحرف على الأقل)"}</label><input id="u_p" type="password" dir="ltr" autocomplete="new-password">`
+    +(edit?`<label class="ap-check"><input type="checkbox" id="u_a" ${edit.active?"checked":""}> الحساب مفعّل</label>`:"")
+    +`<div class="err" id="u_err"></div><button class="btn pri full" id="u_go" style="margin-top:14px">${edit?"حفظ التعديل":"إضافة المشرف"}</button>${edit?'<button class="btn full" id="u_cx" style="margin-top:8px">إلغاء</button>':""}`;
+   t.querySelectorAll("[data-e]").forEach(b=>b.onclick=()=>{edit=a.find(x=>x.id===b.dataset.e);draw()});
+   if($("#u_cx"))$("#u_cx").onclick=()=>{edit=null;draw()};
+   $("#u_go").onclick=async()=>{const b=$("#u_go");b.disabled=true;
+    try{const out=await srv("supervisorSave",{id:edit?edit.id:"",name:$("#u_n").value,username:$("#u_u").value,password:$("#u_p").value,active:edit?$("#u_a").checked:true});
+     if(!host())return;toast(edit?"تم حفظ التعديل":"تمت إضافة المشرف "+out.username);tabSup(view)}
+    catch(e){const err=host()&&$("#u_err");if(err)err.textContent=e.message;b.disabled=false}}};
+  draw()}catch(e){if(host())toast(e.message)}}
 /* ===== Admin dashboard: four cards, daily visits, compliance per rep, GPS verdicts, top facilities, latest reports =====
    Note: never put two slashes or slash-star inside a string here; Apps Script's comment stripper may cut the line. */
 const DASH_CSS='#av .dg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}'+

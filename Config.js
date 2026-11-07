@@ -11,6 +11,8 @@ const T = {
   Settings: ['key', 'value'],
   Reps: ['id', 'name', 'codeHash', 'phone', 'active', 'email'],
   Admins: ['id', 'username', 'name', 'passwordHash', 'active', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
+  // Supervisors: review only (reports, approve / return, visit locations). Created by an admin in the app.
+  Supervisors: ['id', 'username', 'name', 'passwordHash', 'active', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Doctors: ['id', 'name', 'specialty', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed'],
   // Facility model V2: the last four DoctorWorkplaces columns and the last nine Facilities columns are appended by migrateFacilityModelV2.
   DoctorWorkplaces: ['id', 'doctorId', 'doctorName', 'workplace', 'sector', 'lat', 'lng', 'radius', 'active', 'refState', 'refBy', 'addedBy', 'reviewed',

@@ -112,6 +112,11 @@ function login_(p) {
     } else if (hash_(p.password || '') === PropertiesService.getScriptProperties().getProperty('ADMIN_HASH')) {
       user = { id: 'ADMIN', name: 'الإدارة (حساب قديم)', username: '', role: 'admin' };
     }
+    // Not an administrator: a supervisor signs in on the same screen (same throttle, same username rules).
+    if (!user && sheet_('Supervisors')) {
+      const sv = dbAll_('Supervisors').find(x => String(x.username || '').trim().toLowerCase() === username && String(x.active) !== 'false');
+      if (sv && hash_(p.password || '') === String(sv.passwordHash || '')) user = { id: sv.id, name: sv.name, username: sv.username, role: 'supervisor' };
+    }
   } else {
     const code = String(p.code || '').trim();
     const r = /^\d{5}$/.test(code)
@@ -207,6 +212,33 @@ function setAdminAccountActive() {
   ui.alert('تم ' + (nextActive ? 'تفعيل' : 'تعطيل') + ' الحساب.');
   return { id: account.id, active: nextActive };
 }
+/* ---------- supervisors: review-only accounts, managed by an admin in the app ---------- */
+const reviewer_ = s => s.role === 'admin' || s.role === 'supervisor'; // may read every rep's reports and review them
+function supervisorsList_() {
+  ensureSheet_('Supervisors');
+  return dbAll_('Supervisors').map(a => ({ id: a.id, username: a.username, name: a.name, active: String(a.active) !== 'false' }));
+}
+// Create (no id) or update a supervisor. A password is required on create and optional on update (= reset); never returned.
+function supervisorSave_(s, p) {
+  ensureSheet_('Supervisors');
+  const rows = dbAll_('Supervisors'), now = new Date().toISOString(), id = String(p.id || '');
+  const name = String(p.name || '').trim().slice(0, 80), username = String(p.username || '').trim().toLowerCase(), password = String(p.password || '');
+  if (name.length < 2) throw new Error('اكتب اسم المشرف.');
+  if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new Error('اسم المستخدم: 3–40 حرفًا من الإنجليزية أو الأرقام أو . _ -');
+  const taken = rows.some(a => String(a.username).toLowerCase() === username && String(a.id) !== id) ||
+    (sheet_('Admins') ? dbAll_('Admins') : []).some(a => String(a.username).toLowerCase() === username);
+  if (taken) throw new Error('اسم المستخدم مستخدم لحساب آخر.');
+  if ((!id || password) && password.length < 10) throw new Error('كلمة المرور يجب ألا تقل عن 10 أحرف.');
+  let row = id ? rows.find(a => String(a.id) === id) : null;
+  if (id && !row) throw new Error('حساب المشرف غير موجود.');
+  if (!row) row = { id: 'SUP-' + ('0000' + (rows.reduce((m, a) => Math.max(m, +(String(a.id).match(/(\d+)$/) || [0, 0])[1]), 0) + 1)).slice(-4), createdAt: now, createdBy: s.uid };
+  Object.assign(row, { name: name, username: username, active: p.active !== false, updatedAt: now, updatedBy: s.uid });
+  if (password) row.passwordHash = hash_(password);
+  dbUpsert_('Supervisors', 'id', row);
+  CacheService.getScriptCache().remove('sup_ok_' + row.id); // disabled or new password: re-checked at the next request
+  audit_(s, id ? 'update_supervisor' : 'create_supervisor', row.id, username + (row.active ? '' : ' (معطل)') + (password && id ? ' · كلمة مرور جديدة' : ''));
+  return { id: row.id, username: row.username, name: row.name, active: row.active };
+}
 function assertIndependentLocationApproval_(s, entityId) {
   const rows = dbAll_('Audit');
   const proposals = rows.filter(a => String(a.ref) === String(entityId) && ['workplace_setLoc', 'master_setLoc'].indexOf(String(a.action)) >= 0);
@@ -229,6 +261,15 @@ function session_(token) {
       throw new Error('تم تعطيل حساب الإدارة أو لم يعد موجودًا. سجّل الدخول بحساب نشط.');
     }
     try { cache.put('adm_ok_' + s.uid, '1', 300); } catch (e) {}
+  }
+  // Supervisors: same re-check (at most every 5 minutes); supervisorSave_ drops the mark when an account is disabled.
+  if (s.role === 'supervisor' && !cache.get('sup_ok_' + s.uid)) {
+    const account = sheet_('Supervisors') ? dbAll_('Supervisors').find(a => String(a.id) === String(s.uid)) : null;
+    if (!account || String(account.active) === 'false') {
+      cache.remove('s_' + token);
+      throw new Error('تم تعطيل حساب المشرف أو لم يعد موجودًا.');
+    }
+    try { cache.put('sup_ok_' + s.uid, '1', 300); } catch (e) {}
   }
   // Sliding session: renewed while the user is active, with an absolute cap per login.
   // The cache TTL cannot exceed 6h, so the rep account is re-checked at every renewal (the 'off_' flag also expires).

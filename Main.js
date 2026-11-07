@@ -56,7 +56,8 @@ function api(token, action, p) {
     const s = session_(token); phase_('session', tS);
     const route = routes_()[action];
     if (!route) throw new Error('عملية غير معروفة');
-    if (route.role !== 'any' && route.role !== s.role) throw new Error('غير مصرح');
+    // route.role: 'any', one role, or a list of roles (e.g. ['admin', 'supervisor'] for report review)
+    if (route.role !== 'any' && (Array.isArray(route.role) ? route.role.indexOf(s.role) < 0 : route.role !== s.role)) throw new Error('غير مصرح');
     licenseGuard_(action);
     const result = ok(route.fn(s, p));
     outcome = 'ok';
@@ -87,7 +88,7 @@ function routes_() {
   masterList:    { role: 'admin', fn: masterList_ },
   masterAct:     { role: 'admin', fn: masterAct_ },
   facilitiesList:{ role: 'admin', fn: facilitiesList_ },
-  gpsReference:  { role: 'admin', fn: gpsReference_ },
+  gpsReference:  { role: ['admin', 'supervisor'], fn: gpsReference_ },
   facilityAct:   { role: 'admin', fn: facilityAct_ },
   linkAct:       { role: 'admin', fn: linkAct_ },
   proposeFacility: { role: 'rep', fn: proposeFacility_ },
@@ -118,8 +119,10 @@ function routes_() {
   myReport:      { role: 'rep',   fn: myReport_ },
   getReport:     { role: 'any',   fn: getReport_ },
   listReports:   { role: 'any',   fn: listReports_ },
-  reviewReport:  { role: 'admin', fn: reviewReport_ },
-  gpsReviewSummary:{ role: 'admin', fn: gpsReviewSummary_ },
+  reviewReport:  { role: ['admin', 'supervisor'], fn: reviewReport_ },
+  gpsReviewSummary:{ role: ['admin', 'supervisor'], fn: gpsReviewSummary_ },
+  supervisorsList: { role: 'admin', fn: supervisorsList_ },
+  supervisorSave:  { role: 'admin', fn: supervisorSave_ },
   list:          { role: 'admin', fn: (s, p) => dbAll_(entity_(p.entity)) },
   // Generic save is for Products only: reps go through repSave_, doctors/pharmacies through masterAct_ (their validated paths).
   save:          { role: 'admin', fn: (s, p) => { if (p.entity !== 'Products') throw new Error('كيان غير مسموح'); return saveEntity_(s, p); } },

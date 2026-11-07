@@ -264,7 +264,7 @@ function listReports_(s, p) {
   let t = Date.now();
   const reps = repNames_(); phase_('reps', t); t = Date.now();
   const rows = reportsLight_().filter(r =>
-    (s.role === 'admin' || r.repId === s.uid) &&
+    (reviewer_(s) || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
     (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to));
   phase_('index', t); t = Date.now();
@@ -275,7 +275,7 @@ function listReportsFull_(s, p) {
   const q = (p.q || '').toLowerCase(), reps = repNames_();
   // Filter on the small-column index first; only the surviving rows' visit columns are read for the text search.
   return reportsBody_(reportsLight_().filter(r =>
-    (s.role === 'admin' || r.repId === s.uid) &&
+    (reviewer_(s) || r.repId === s.uid) &&
     (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status) &&
     (!p.no || String(r.no).indexOf(p.no) >= 0) && (!p.from || r.date >= p.from) && (!p.to || r.date <= p.to))
   ).filter(r => !q || searchText_(r, s.role).indexOf(q) >= 0).map(r => ({ id: r.id, no: r.no, date: r.date, status: r.status, repId: r.repId, repName: reps[r.repId], reopens: +r.reopens || 0,
@@ -336,6 +336,8 @@ function reviewReport_(s, p) {
     const checks = readScope_(() => doctors.map(v => reportVisitGpsCheck_(v, 'doctor', st)).concat(pharmacies.map(v => reportVisitGpsCheck_(v, 'pharmacy', st))));
     const exceptions = checks.filter(x => x.status !== 'تم التحقق');
     if (exceptions.length && note.length < 5) throw new Error('توجد زيارة لم يثبت تطابق موقعها. اكتب سبب الاعتماد الاستثنائي (5 أحرف على الأقل)، أو أعد التقرير للمندوب.');
+    // A pending doctor ↔ facility link changes master data: an administrator approves it, a supervisor cannot.
+    if (doctors.some(v => v.linkPending) && s.role !== 'admin') throw new Error('يتضمن التقرير ارتباط طبيب بمنشأة جديدة بانتظار الاعتماد، وهذا يعتمده المدير. يمكنك إعادة التقرير للمندوب أو تركه للمدير.');
     if (doctors.some(v => v.linkPending) && !p.approveLinks) throw new Error('يتضمن التقرير ارتباطات أطباء بمنشآت بانتظار الاعتماد. أكّد اعتمادها مع التقرير.');
     if (exceptions.length) audit_(s, 'gps_exception_approval', r.no, JSON.stringify(exceptions.map(x => ({status:x.status,distance:x.distance,reference:x.reference}))) + ' · ' + note);
     if (doctors.some(v => v.linkPending)) { approveVisitLinks_(s, doctors); r.doctors = JSON.stringify(doctors); linksChanged = true; } // operational copy only; snapshots stay frozen
