@@ -308,5 +308,12 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 }
 /* Doctor's notes: one full-width cell under the visit's fields (screen, phone view and print) */
 .v .c.wide{flex:1 1 100%;min-width:100%;font-weight:500;white-space:pre-wrap}
+/* Prescription photo: button on screen, the word «مرفقة» on paper; thumbnail in the visit form; full-screen viewer */
+.rxprint{display:none}
+@media print{.rxbtn{display:none!important}.rxprint{display:inline}}
+.rxbox{margin-top:4px}.rxthumb{display:block;max-width:160px;max-height:200px;border-radius:10px;border:1px solid var(--line);margin-bottom:6px;object-fit:cover}
+.rxview{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.92);display:flex;flex-direction:column}
+.rxview .rxbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-top,0px) * 0);color:#fff}
+.rxview .rxbody{flex:1;overflow:auto;display:grid;place-items:center;padding:8px}.rxview .rxbody img{max-width:100%;height:auto;border-radius:6px}.rxview .geo{color:#dfe8e8}
 @media (prefers-reduced-motion:reduce){.top.adm .adm-ecg path{animation:none;stroke-dashoffset:0}.btn,.mini,.fchip{transition:none}}
 </style>

@@ -99,6 +99,8 @@ function prepareReport_(s, p) {
       // What the doctor said (doctor visits): plain text up to 500 characters; empty is dropped.
       const note = String(v.drNote == null ? '' : v.drNote).trim().slice(0, 500);
       if (note) o.drNote = note; else delete o.drNote;
+      const rx = cleanRx_(v.rx); // prescription photo: only {id, at} of a well-formed Drive id (read back through getRx)
+      if (rx) o.rx = rx; else delete o.rx;
       const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
       if (pv) o.gps = pv.gps;
       else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }

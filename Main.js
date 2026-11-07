@@ -121,6 +121,8 @@ function routes_() {
   listReports:   { role: 'any',   fn: listReports_ },
   reviewReport:  { role: ['admin', 'supervisor'], fn: reviewReport_ },
   gpsReviewSummary:{ role: ['admin', 'supervisor'], fn: gpsReviewSummary_ },
+  uploadRx:      { role: 'rep',   fn: uploadRx_ },
+  getRx:         { role: 'any',   fn: getRx_ },
   supervisorsList: { role: 'admin', fn: supervisorsList_ },
   supervisorSave:  { role: 'admin', fn: supervisorSave_ },
   list:          { role: 'admin', fn: (s, p) => dbAll_(entity_(p.entity)) },

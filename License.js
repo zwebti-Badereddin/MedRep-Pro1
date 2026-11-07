@@ -8,7 +8,7 @@
  * After the grace period the routes in LICENSE_WRITE_ROUTES are refused. Login, reading, review and export keep working,
  * and no data is ever deleted. Changes apply within LICENSE_CACHE_SEC, or at once after refreshAppCache.
  */
-const LICENSE_WRITE_ROUTES = ['saveReport', 'submitReport', 'reopenReport', 'proposeFacility', 'requestDoctorLink', 'addDoctor', 'addPharmacy', 'addSpecialty'];
+const LICENSE_WRITE_ROUTES = ['saveReport', 'submitReport', 'reopenReport', 'proposeFacility', 'requestDoctorLink', 'addDoctor', 'addPharmacy', 'addSpecialty', 'uploadRx'];
 const LICENSE_KEY = 'lic', LICENSE_CACHE_SEC = 600;
 const LICENSE_EXPIRED_MSG = 'انتهى ترخيص النظام، ولا يمكن إنشاء التقارير أو تعديلها حتى التجديد. راجع الإدارة.';
 

@@ -180,6 +180,7 @@ function gpsRetentionTriggerHandler(e) {
   const startedAt = new Date().toISOString();
   try {
     const result = reduceExpiredGpsData_();
+    try { result.rxTrashed = reduceExpiredRx_(); } catch (e) { result.rxError = String(e && e.message || e); } // prescription photos, same daily run
     gpsRetentionStatus_({ ok: true, startedAt: startedAt, finishedAt: new Date().toISOString(), triggerUid: triggerUid, result: result });
     return result;
   } catch (err) {
@@ -193,6 +194,7 @@ function reduceExpiredGpsData() {
   const startedAt = new Date().toISOString();
   try {
     const result = reduceExpiredGpsData_();
+    try { result.rxTrashed = reduceExpiredRx_(); } catch (e) { result.rxError = String(e && e.message || e); }
     gpsRetentionStatus_({ ok: true, manual: true, startedAt: startedAt, finishedAt: new Date().toISOString(), result: result });
     return result;
   } catch (err) {
