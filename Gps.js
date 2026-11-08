@@ -214,6 +214,11 @@ function installGpsRetentionTrigger() {
   PropertiesService.getScriptProperties().setProperty('GPS_RETENTION_TRIGGER_ID', trigger.getUniqueId());
   return { installed: true, created: created, duplicatesRemoved: Math.max(0, triggers.length - 1), handler: GPS_RETENTION_HANDLER, triggerId: trigger.getUniqueId(), retentionDays: GPS_RETENTION_DAYS };
 }
+// Sheet menu: the same, with a message (the owner no longer needs the script editor).
+function installGpsRetentionTriggerMenu() {
+  const r = installGpsRetentionTrigger();
+  SpreadsheetApp.getUi().alert(r.created ? 'تم تثبيت مشغّل حذف بيانات الموقع وصور الوصفات بعد ' + r.retentionDays + ' يومًا. يعمل يوميًا الساعة 3 فجرًا.' : 'المشغّل مثبّت مسبقًا ويعمل يوميًا الساعة 3 فجرًا.' + (r.duplicatesRemoved ? ' (حُذفت نسخ مكررة: ' + r.duplicatesRemoved + ')' : ''));
+}
 function verifyGpsRetentionTrigger() {
   ownerOnly_();
   const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === GPS_RETENTION_HANDLER);

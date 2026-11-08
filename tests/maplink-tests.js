@@ -60,6 +60,14 @@ test('products import: name + category, preview first, duplicates skipped, new o
   assert.ok(env.rows('Audit').some(a => a.action === 'import_products'));
 });
 
+test('a missing owner permission (the English Google message) becomes an Arabic instruction; other errors pass unchanged', () => {
+  const { env, adm } = setup();
+  env.ctx.UrlFetchApp = { fetch: () => { throw new Error('You do not have permission to call UrlFetchApp.fetch. Required permissions: https://www.googleapis.com/auth/script.external_request'); } };
+  expectError(() => env.call(adm, 'resolveMapLink', { text: 'https://maps.app.goo.gl/Abc' }), /موافقة مالك النظام.*فحص النظام الآن/);
+  env.ctx.UrlFetchApp = { fetch: () => { throw new Error('ليس لديك إذن لاستدعاء UrlFetchApp.fetch.'); } };
+  expectError(() => env.call(adm, 'resolveMapLink', { text: 'https://maps.app.goo.gl/Abc' }), /موافقة مالك النظام/);
+  expectError(() => env.call(adm, 'resolveMapLink', { text: 'nothing here' }), /لم أجد إحداثيات/);
+});
 let failed = 0;
 tests.forEach(t => { try { t.fn(); console.log('PASS  ' + t.name); } catch (e) { failed++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      ')); } });
 console.log('\n' + (tests.length - failed) + ' passed, ' + failed + ' failed');

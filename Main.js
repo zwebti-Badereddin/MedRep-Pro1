@@ -65,7 +65,7 @@ function api(token, action, p) {
     outcome = 'ok';
     return result;
   } catch (e) {
-    return { ok: false, error: String(e.message || e) };
+    return { ok: false, error: friendlyError_(e) };
   } finally {
     try {
       console.log('[MedRepPerf] ' + JSON.stringify({
@@ -79,6 +79,14 @@ function api(token, action, p) {
   }
 }
 const ok = d => ({ ok: true, data: d });
+// Google's own messages for a permission the owner has not granted yet (e.g. after an update adds external requests) are
+// technical and in English: say what to do instead.
+function friendlyError_(e) {
+  const msg = String((e && e.message) || e);
+  if (/script\.external_request|auth\/script|Authorization is required|required permissions|لا تملك الإذن|ليس لديك إذن/i.test(msg))
+    return 'هذه الميزة تحتاج موافقة مالك النظام على صلاحية جديدة. على المالك فتح شيت الشركة، ثم قائمة MedRep Pro ← «فحص النظام الآن»، والموافقة على الصلاحيات، ثم إعادة المحاولة.';
+  return msg;
+}
 
 // Built on first use (not at load time): it references functions from every server file, and Apps Script loads files in
 // project order. Building it lazily makes the load order irrelevant.

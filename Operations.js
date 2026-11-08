@@ -2,7 +2,7 @@
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addItem('تفعيل تجهيز البيانات التلقائي (أسرع دخول)', 'installCacheWarmTrigger').addSeparator().addItem('ربط بوت تيليجرام', 'tgSetup').addItem('إيقاف تنبيهات تيليجرام', 'tgDisable').addSeparator().addItem('فحص النظام الآن', 'healthNow').addItem('ربط بوت المزوّد (كاشف الأعطال)', 'vendorSetup').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addItem('تفعيل تجهيز البيانات التلقائي (أسرع دخول)', 'installCacheWarmTrigger').addSeparator().addItem('ربط بوت تيليجرام', 'tgSetup').addItem('إيقاف تنبيهات تيليجرام', 'tgDisable').addItem('تثبيت مشغّل حذف بيانات الموقع والصور (90 يومًا)', 'installGpsRetentionTriggerMenu').addSeparator().addItem('فحص النظام الآن', 'healthNow').addItem('ربط بوت المزوّد (كاشف الأعطال)', 'vendorSetup').addToUi();
 }
 
 /* ---------- leaves, permissions and official holidays (admin only) ---------- */
