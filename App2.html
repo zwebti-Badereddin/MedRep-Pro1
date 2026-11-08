@@ -424,4 +424,50 @@ async function stockHistoryView(repId){
   $("#sh_b").innerHTML=a.length?'<table class="kt sktab"><tr><th>التاريخ</th><th>النوع</th><th>المنتج</th><th>الكمية</th></tr>'+a.map(m=>'<tr><td>'+esc(m.date)+'</td><td>'+esc(m.type)+'</td><td>'+esc(m.product)+(m.note?'<div class="skn">'+esc(m.note)+'</div>':'')+'</td><td dir="ltr">'+(m.type==="إرجاع"?"-":(+m.qty>0&&m.type==="جرد"?"+":""))+esc(m.qty)+'</td></tr>').join("")+'</table>':'<div class="empty">لا توجد حركات.</div>'}
  catch(e){if($("#sh_b"))$("#sh_b").textContent=e.message}
 }
+
+/* ===== Monthly report in English for the principal company (admin). English names are optional and saved for next time. ===== */
+const EN_MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const enMonth=ym=>EN_MONTHS[+ym.slice(5)-1]+" "+ym.slice(0,4);
+async function openReportEn(){
+ $("#modal").innerHTML='<h3>التقرير الشهري بالإنجليزية</h3><div class="empty" id="en_b">جارٍ التحميل…</div>';$("#ov").classList.add("on");
+ let s;try{s=await srv("reportEnSetup")}catch(e){$("#en_b").textContent=e.message;return}
+ const n=new Date(),months=[];for(let i=0;i<12;i++){const d=new Date(n.getFullYear(),n.getMonth()-i,1);months.push(d.getFullYear()+"-"+pad(d.getMonth()+1))}
+ const inp=(cls,id,ar,en)=>'<div class="enname"><span>'+esc(ar)+'</span><input class="'+cls+'" data-id="'+esc(id)+'" dir="ltr" maxlength="80" placeholder="English name" value="'+esc(en)+'"></div>';
+ $("#modal").innerHTML='<h3>التقرير الشهري بالإنجليزية</h3><p class="tgtx">ملخص أداء المندوبين ونشاط المنتجات لشهر واحد، من التقارير المرسلة والمعتمدة. الأطباء يظهرون كأعداد فقط، دون أسماء.</p>'+
+  '<label>الشهر</label><select id="en_m">'+months.map((m,i)=>'<option value="'+m+'"'+(i===(n.getDate()<=7?1:0)?" selected":"")+'>'+MN[+m.slice(5)-1]+" "+m.slice(0,4)+' — '+enMonth(m)+'</option>').join("")+'</select>'+
+  '<label>اسم الشركة بالإنجليزية</label><input id="en_c" dir="ltr" maxlength="80" placeholder="'+esc(s.companyName)+'" value="'+esc(s.companyNameEn)+'">'+
+  '<details class="ennames"><summary>الأسماء بالإنجليزية (اختياري، تُحفظ للمرات القادمة)</summary><b>المندوبون</b>'+s.reps.map(r=>inp("en_r",r.id,r.name,r.en)).join("")+
+  '<b>المنتجات</b>'+s.products.map(p=>inp("en_p",p.id,p.name+(p.off?" (متوقف)":""),p.en)).join("")+'<div class="empty">الاسم الفارغ يظهر بالعربية.</div></details>'+
+  '<div class="err" id="en_e"></div><div class="two" style="margin-top:12px"><button class="btn pri" id="en_pdf">عرض وطباعة PDF</button><button class="btn" id="en_csv">تنزيل Excel (CSV)</button></div><button class="sheetbtn" id="en_x">إغلاق</button>';
+ $("#en_x").onclick=()=>$("#ov").classList.remove("on");
+ const go=async(kind,b)=>{const map=c=>{const o={};document.querySelectorAll("."+c).forEach(i=>{if(i.value.trim())o[i.dataset.id]=i.value.trim()});return o};
+  b.disabled=true;$("#en_e").textContent="";
+  try{const r=await srv("reportEn",{ym:$("#en_m").value,names:{companyNameEn:$("#en_c").value,reps:map("en_r"),products:map("en_p")}});
+   $("#ov").classList.remove("on");if(kind==="pdf")enShow(r);else downloadCsv("MedRep-"+r.ym+"-EN.csv",enCsv(r))}
+  catch(e){$("#en_e").textContent=e.message}finally{b.disabled=false}};
+ $("#en_pdf").onclick=()=>go("pdf",$("#en_pdf"));$("#en_csv").onclick=()=>go("csv",$("#en_csv"));
+}
+const EN_REP_H=["Representative","Working days","Reports on time","Compliance %","Doctor visits","Pharmacy visits","Total visits","Doctors reached","Plan coverage %","Score %"];
+const EN_PROD_H=["Product","Detailing","Reminders","Samples (units)","Pharmacy visits","Pharmacy orders"];
+const enRepRow=x=>[x.name,x.workDays,x.onTime+" / "+x.expected,x.compliance,x.doctorVisits,x.pharmacyVisits,x.doctorVisits+x.pharmacyVisits,x.uniqueDoctors,x.coverage==null?"—":x.coverage,x.score==null?"—":x.score];
+const enProdRow=x=>[x.name,x.detailing,x.reminders,x.samples,x.pharmacyVisits,x.orders];
+const EN_NOTES=["Visits are counted from submitted and approved daily reports only.","Working days exclude official holidays and approved leave.","Reports on time: daily reports submitted before the company's closing hour, out of the working days required.","Doctors reached: number of different doctors visited (names are not shared).","Plan coverage: required visits per doctor class (A/B/C) achieved, capped per doctor; — means no approved visit plan.","Detailing / reminders: doctor visits where the product was presented or reminded. Samples: free sample units handed to doctors."];
+function enCsv(r){const t=r.totals;
+ return [[r.company],["Monthly Medical Promotion Report — "+enMonth(r.ym)],["Period",r.from+" to "+r.to],["Generated",r.generatedAt.slice(0,10)],[],
+  ["1. Medical representatives"],EN_REP_H].concat(r.reps.map(enRepRow),[["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""],[],
+  ["2. Product activity"],EN_PROD_H],r.products.map(enProdRow),[["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders],[],["Notes"]],EN_NOTES.map(x=>[x]))}
+function enShow(r){
+ const t=r.totals,tbl=(h,rows,tot)=>'<table><thead><tr>'+h.map(x=>'<th>'+esc(x)+'</th>').join("")+'</tr></thead><tbody>'+rows.map(c=>'<tr>'+c.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>').join("")+'</tbody>'+(tot?'<tfoot><tr>'+tot.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr></tfoot>':'')+'</table>';
+ const old=$("#enrep");if(old)old.remove();
+ const el=document.createElement("div");el.id="enrep";el.setAttribute("dir","ltr");el.setAttribute("lang","en");
+ el.innerHTML='<div class="enbar"><button class="btn pri" id="enp">Print / Save as PDF</button><button class="btn" id="enc">إغلاق</button></div><div class="enpage">'+
+  '<div class="enhead"><div><h1>'+esc(r.company)+'</h1><h2>Monthly Medical Promotion Report</h2></div><div class="enmeta"><b>'+esc(enMonth(r.ym))+'</b><span>'+esc(r.from)+' to '+esc(r.to)+'</span><span>Generated '+esc(r.generatedAt.slice(0,10))+'</span></div></div>'+
+  '<div class="enkpi"><div><b>'+t.reps+'</b><span>Representatives</span></div><div><b>'+t.doctorVisits+'</b><span>Doctor visits</span></div><div><b>'+t.pharmacyVisits+'</b><span>Pharmacy visits</span></div><div><b>'+t.samples+'</b><span>Sample units</span></div></div>'+
+  '<h3>1. Medical representatives</h3>'+tbl(EN_REP_H,r.reps.map(enRepRow),["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""])+
+  '<h3>2. Product activity</h3>'+tbl(EN_PROD_H,r.products.map(enProdRow),["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders])+
+  '<h3>Notes</h3><ul class="ennotes">'+EN_NOTES.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><div class="enfoot">Prepared with MedRep Pro</div></div>';
+ document.body.appendChild(el);document.body.classList.add("enprint");
+ const close=()=>{el.remove();document.body.classList.remove("enprint")};
+ $("#enc").onclick=close;$("#enp").onclick=()=>window.print();
+}
 </script>

@@ -131,6 +131,8 @@ function routes_() {
   planAct:       { role: 'admin', fn: planAct_ },
   planSaveFreq:  { role: 'admin', fn: planSaveFreq_ },
   planImport:    { role: 'admin', fn: planImport_ },
+  reportEnSetup: { role: 'admin', fn: reportEnSetup_ },
+  reportEn:      { role: 'admin', fn: reportEn_ },
   myStock:       { role: 'rep',   fn: myStock_ },
   stockList:     { role: ['admin', 'supervisor'], fn: stockList_ },
   stockHistory:  { role: ['admin', 'supervisor'], fn: stockHistory_ },

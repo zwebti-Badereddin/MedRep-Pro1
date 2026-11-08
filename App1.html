@@ -172,7 +172,8 @@ function downloadCsv(name,rows){const a=document.createElement("a");a.href=URL.c
 function tabR(){
  $("#av").innerHTML=`<div class="two"><div><label>المندوب</label><select id="fr"><option value="">الكل</option>${REPS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
  <div><label>الحالة</label><select id="fs"><option value="">الكل</option>${STAT.map(x=>`<option>${x}</option>`).join("")}</select></div></div>
- <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div>${isSup()?"":'<button class="btn full" id="fexp" style="margin-top:12px">تصدير زيارات الفترة إلى Excel</button>'}`;
+ <label>بحث: رقم التقرير أو طبيب أو صيدلية أو منتج</label><input id="fq"><button class="btn pri full" id="fgo" style="margin:12px 0">بحث</button><div id="rl"></div>${isSup()?"":'<button class="btn full" id="fexp" style="margin-top:12px">تصدير زيارات الفترة إلى Excel</button><button class="btn full" id="fen" style="margin-top:8px">التقرير الشهري بالإنجليزية (للشركة الأم)</button>'}`;
+ if($("#fen"))$("#fen").onclick=openReportEn;
  if($("#fexp"))$("#fexp").onclick=async()=>{const b=$("#fexp"),from=$("#fa").value,to=$("#fb").value;b.disabled=true;
   try{const out=await srv("exportVisits",{from:from,to:to,repId:$("#fr").value,status:$("#fs").value});
    if(!out.visits){toast("لا توجد زيارات في هذه الفترة.");return}
