@@ -348,6 +348,7 @@ function reviewReport_(s, p) {
   // Only the changed cells are written (the visits cell only when links were approved); snapshots are never rewritten.
   dbWriteCells_('Reports', hit.rowNo, 'id', r, linksChanged ? ['status', 'doctors', 'reviewNote'] : ['status', 'reviewNote']);
   audit_(s, p.approve ? 'approve_report' : 'return_report', r.no, r.reviewNote);
+  if (!p.approve) tgNotifyUser_(r.repId, '↩️ أُعيد تقريرك ليوم ' + String(r.date).split('-').reverse().join('/') + ' للتصحيح.' + (note ? '\nملاحظة: ' + note : '') + '\nصحّحه وأرسله من جديد من MedRep Pro.');
   return { status: r.status };
 }
 function parseReport_(r) {

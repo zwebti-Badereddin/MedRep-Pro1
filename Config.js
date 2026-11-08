@@ -28,6 +28,8 @@ const T = {
   Audit: ['ts', 'userId', 'role', 'action', 'ref', 'details'],
   Leaves: ['id', 'repId', 'from', 'to', 'type', 'note', 'createdAt', 'createdBy'],
   Holidays: ['id', 'date', 'name'],
+  // TgLinks: Telegram chats linked to an account (Telegram.js). One account may have several chats; one chat, one account.
+  TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']
 };
 const PREFIX = { Reps: 'REP', Doctors: 'DOC', Pharmacies: 'PH', Products: 'PROD' };

@@ -20,14 +20,39 @@ const IC={
 };
 function repTop(t,o){
  o=o||{};const logo=CFG.company.logo?'<span class="lg"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="lg">'+esc(CFG.company.short)+'</span>';
- return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+'<button type="button" class="out" id="lo">خروج</button></div>'+
+ return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+tgBell()+'<button type="button" class="out" id="lo">خروج</button></div>'+
   '<div class="r2"><div style="flex:1;min-width:0"><h1>'+t+'</h1>'+(o.sub?'<div class="dt">'+esc(o.sub)+'</div>':'')+'</div>'+(o.chip?'<span class="stchip">'+esc(o.chip)+'</span>':'')+'</div></header>';
+}
+/* Telegram alerts: the bell shows only when the company has a bot (settings.tgBot). Linking: a one-time t.me link,
+   Start in Telegram, then «تحقق». The server reads Telegram's messages; nothing is sent from the phone to Telegram. */
+const tgOn=()=>!!(CFG.st&&CFG.st.tgBot);
+function tgBell(){return tgOn()?'<button type="button" class="tgb" id="tgb" aria-label="تنبيهات تيليجرام" title="تنبيهات تيليجرام">🔔</button>':""}
+function tgBind(){const b=$("#tgb");if(b)b.onclick=tgOpen}
+let tgSeq=0;
+async function tgOpen(){
+ const seq=++tgSeq,m=$("#modal"),close=()=>$("#ov").classList.remove("on");
+ m.innerHTML='<h3>🔔 تنبيهات تيليجرام</h3><div class="empty" id="tg_b">جارٍ التحميل…</div>';$("#ov").classList.add("on");
+ const sup=rep&&rep.role!=="rep",what=sup?"ملخص يومي بالتقارير: من أرسل ومن لم يرسل، والزيارات، وما ينتظر الاعتماد.":"تذكير قبل موعد إرسال التقرير، وتنبيه فوري إذا أُعيد تقريرك للتصحيح.";
+ const draw=async st=>{if(seq!==tgSeq||!m.isConnected)return;
+  if(!st.enabled){m.innerHTML='<h3>🔔 تنبيهات تيليجرام</h3><div class="empty">التنبيهات غير مفعّلة لهذه الشركة.</div><button type="button" class="sheetbtn" id="tg_x">إغلاق</button>';$("#tg_x").onclick=close;return}
+  if(st.linked){m.innerHTML='<h3>🔔 تنبيهات تيليجرام</h3><div class="tgok">✅ حسابك مربوط بتيليجرام</div><p class="tgtx">'+esc(what)+'</p><button type="button" class="sheetbtn danger" id="tg_un">إلغاء الربط</button><button type="button" class="sheetbtn" id="tg_x">إغلاق</button>';
+   $("#tg_x").onclick=close;
+   $("#tg_un").onclick=async()=>{const b=$("#tg_un");if(!b.dataset.c){b.dataset.c=1;b.textContent="اضغط مرة أخرى لتأكيد إلغاء الربط";return}b.disabled=true;try{draw(await srv("tgUnlink"));toast("تم إلغاء الربط")}catch(e){b.disabled=false;toast(e.message)}};return}
+  let link;try{link=await srv("tgLinkStart")}catch(e){if(seq===tgSeq&&$("#tg_b"))$("#tg_b").textContent=e.message;return}
+  if(seq!==tgSeq||!m.isConnected)return;
+  m.innerHTML='<h3>🔔 تنبيهات تيليجرام</h3><p class="tgtx">'+esc(what)+'</p><ol class="tgsteps"><li>اضغط «فتح تيليجرام» ثم <b>Start</b> (أو «ابدأ»).</li><li>عُد إلى هنا واضغط «تحقق من الربط».</li></ol>'+
+   '<a class="btn pri full" id="tg_go" target="_blank" rel="noopener">فتح تيليجرام</a><div class="err" id="tg_e"></div><button type="button" class="sheetbtn" id="tg_ck">تحقق من الربط</button><button type="button" class="sheetbtn" id="tg_x">إغلاق</button>';
+  $("#tg_go").href=link.url;$("#tg_x").onclick=close;
+  $("#tg_ck").onclick=async()=>{const b=$("#tg_ck");b.disabled=true;$("#tg_e").textContent="";
+   try{const st2=await srv("tgLinkCheck");if(st2.linked){draw(st2);toast("تم الربط")}else{b.disabled=false;$("#tg_e").textContent="لم يصل تأكيد بعد. تأكد أنك ضغطت Start في تيليجرام ثم حاول مجددًا."}}
+   catch(e){b.disabled=false;$("#tg_e").textContent=e.message}}};
+ try{await draw(await srv("tgStatus"))}catch(e){if(seq===tgSeq&&$("#tg_b"))$("#tg_b").textContent=e.message}
 }
 function repNav(a){
  const items=[["t","اليوم"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);
  return '<nav class="bnav" aria-label="التنقل">'+items.map(x=>'<button type="button" class="rn'+(x[0]===a?' on" aria-current="page':'')+'" data-n="'+x[0]+'">'+IC[x[0]]+x[1]+'</button>').join("")+'</nav>';
 }
-function bindNav(){document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
+function bindNav(){tgBind();document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();
   if(draftKeys().length&&!l.dataset.c){const h0=l.innerHTML;l.dataset.c=1;l.textContent="تعديلات لم تُحفظ بعد — اضغط مجددًا للخروج";saveBg().then(()=>{if(!draftKeys().length&&l.isConnected){l.dataset.c="";l.innerHTML=h0}});return}
   draftDropAll();cancelAuto();try{await srv("logout")}catch(x){}TOKEN=null;login()}}

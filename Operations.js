@@ -2,7 +2,7 @@
 
 /* ---------- add reps from the Sheet (menu: MedRep Pro). Not reachable from the web app. ---------- */
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addItem('تفعيل تجهيز البيانات التلقائي (أسرع دخول)', 'installCacheWarmTrigger').addToUi();
+  SpreadsheetApp.getUi().createMenu('MedRep Pro').addItem('إضافة المندوبين من ورقة NewReps', 'addRepsFromSheet').addItem('نسخة احتياطية الآن', 'backupNow').addItem('تفعيل النسخ الاحتياطي الأسبوعي', 'installBackupTrigger').addItem('إعادة ضبط عدّادات الدخول', 'resetLoginThrottle').addItem('تحديث بيانات التطبيق (بعد تعديل الشيت يدويًا)', 'refreshAppCache').addItem('تفعيل تجهيز البيانات التلقائي (أسرع دخول)', 'installCacheWarmTrigger').addSeparator().addItem('ربط بوت تيليجرام', 'tgSetup').addItem('إيقاف تنبيهات تيليجرام', 'tgDisable').addToUi();
 }
 
 /* ---------- leaves, permissions and official holidays (admin only) ---------- */
@@ -67,7 +67,7 @@ function delRow_(s, sheet, id, action) {
   throw new Error('السجل غير موجود');
 }
 
-/* ---------- reminders (daily trigger): rep with email + summary to the manager ---------- */
+/* ---------- reminders (daily trigger): rep by email and Telegram + summary email to the manager ---------- */
 // One engine for all reminders: sends only to active reps who are not on leave/holiday and have not sent that day's report.
 function remindCore_(day, subject, bodyFn, tellManager) {
   const st = settings_(); if (String(st.remindEnabled) !== 'true') return;
@@ -79,6 +79,7 @@ function remindCore_(day, subject, bodyFn, tellManager) {
     const r = reports.find(x => x.repId === rep.id);
     if (r && ['مرسل', 'معتمد'].indexOf(r.status) >= 0) return;
     missing.push(rep.name);
+    tgNotifyUser_(rep.id, subject + '\n' + bodyFn(rep, url, hh)); // linked Telegram chats (never throws)
     if (!rep.email) return;
     try { MailApp.sendEmail({ to: rep.email, name: st.companyName || 'MedRep Pro', subject: subject, body: bodyFn(rep, url, hh) }); }
     catch (e) { audit_({ uid: 'SYSTEM', role: 'system' }, 'reminder_failed', rep.id, String(e.message)); }
