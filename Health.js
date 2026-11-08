@@ -43,6 +43,11 @@ function healthChecks_() {
     const cells = SpreadsheetApp.getActive().getSheets().reduce((n, sh) => n + sh.getMaxRows() * sh.getMaxColumns(), 0);
     return cells > HEALTH_CELLS_LIMIT * HEALTH_CELLS_WARN ? 'حجم الشيت ' + Math.round(cells / HEALTH_CELLS_LIMIT * 100) + '% من حد Google' : null;
   });
+  add('external', () => {
+    // The owner may not have granted "connect to an external service" (needed by Telegram, the vendor bot and Google Maps links).
+    try { UrlFetchApp.fetch('https://api.telegram.org', { muteHttpExceptions: true, followRedirects: false }); return null; }
+    catch (e) { return /permission|external_request|إذن/i.test(String(e && e.message)) ? 'صلاحية الاتصال بالخدمات الخارجية غير ممنوحة: من القائمة اختر «منح الصلاحيات»' : null; }
+  });
   add('setup', () => {
     if (!props.getProperty('SALT')) return 'الإعداد السري SALT مفقود';
     const bad = ['Settings', 'Reps', 'Reports', 'Audit'].filter(n => { const sh = sheet_(n); if (!sh) return true; const h = sh.getRange(1, 1, 1, T[n].length).getValues()[0]; return T[n].some((c, i) => h[i] !== c); });
@@ -156,9 +161,17 @@ function vendorSetup() {
   vendorSend_('✅ تم ربط كاشف الأعطال بهذه النسخة.\n' + healthText_(healthChecks_()));
   ui.alert('تم الربط. ستصلك رسالة الآن، ثم تنبيه عند أي عطل وتقرير كل صباح.');
 }
+// Sheet menu: uses every Google service the system needs, so Google asks the owner for any permission not granted yet
+// (with Google's per-permission screen, tick every box). Then shows the result.
+function grantPermissions() {
+  ownerOnly_();
+  UrlFetchApp.fetch('https://api.telegram.org', { muteHttpExceptions: true, followRedirects: false });
+  DriveApp.getRootFolder(); MailApp.getRemainingDailyQuota(); ScriptApp.getProjectTriggers();
+  SpreadsheetApp.getUi().alert('✅ كل الصلاحيات ممنوحة: الاتصال بالخدمات الخارجية، وDrive، والبريد، والمشغّلات.');
+}
 function healthNow() {
   ownerOnly_();
-  const checks = healthChecks_(), names = { backup: 'النسخ الاحتياطي', gps: 'حذف بيانات الموقع', telegram: 'تيليجرام', reminders: 'التذكيرات', mail: 'حصة البريد', size: 'حجم الشيت', setup: 'الإعدادات والجداول', errors: 'أخطاء الخادم', phones: 'أخطاء الهواتف' };
+  const checks = healthChecks_(), names = { external: 'صلاحية الاتصال الخارجي', backup: 'النسخ الاحتياطي', gps: 'حذف بيانات الموقع', telegram: 'تيليجرام', reminders: 'التذكيرات', mail: 'حصة البريد', size: 'حجم الشيت', setup: 'الإعدادات والجداول', errors: 'أخطاء الخادم', phones: 'أخطاء الهواتف' };
   const c = clientErrSummary_(24), last = +PropertiesService.getScriptProperties().getProperty(HEALTH_LAST_KEY) || 0;
   SpreadsheetApp.getUi().alert('فحص النظام', checks.map(x => (x.ok ? '✅ ' : '⚠️ ') + names[x.key] + (x.ok ? '' : ': ' + x.msg)).join('\n') +
     '\n\nأخطاء الهواتف خلال 24 ساعة: ' + c.total + '\nآخر فحص تلقائي: ' + (last ? new Date(last).toLocaleString() : 'لم يُفعّل بعد (ربط بوت المزوّد)'), SpreadsheetApp.getUi().ButtonSet.OK);

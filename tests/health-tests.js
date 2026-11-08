@@ -25,7 +25,7 @@ function setup(o) {
   env.ctx.DriveApp = { getFoldersByName: () => iter([{ getFiles: () => iter(files) }]) };
   env.ctx.MailApp.getRemainingDailyQuota = () => o.quota;
   const ss = env.ctx.SpreadsheetApp.getActive(); ss.getSheets = () => [{ getMaxRows: () => o.cells, getMaxColumns: () => 1 }];
-  env.ctx.UrlFetchApp = { fetch: (url, opt) => { const b = JSON.parse(opt.payload); sent.push({ url, text: b.text, chat: b.chat_id }); return { getContentText: () => '{"ok":true,"result":true}', getResponseCode: () => 200 }; } };
+  env.ctx.UrlFetchApp = { fetch: (url, opt) => { if (!opt.payload) return { getResponseCode: () => 404 }; const b = JSON.parse(opt.payload); sent.push({ url, text: b.text, chat: b.chat_id }); return { getContentText: () => '{"ok":true,"result":true}', getResponseCode: () => 200 }; } };
   const fmt = env.ctx.Utilities.formatDate; env.ctx.Utilities.formatDate = (d, tz, f) => (f === 'H' ? String(o.hour) : fmt(d, tz, f));
   return { env, sent, o };
 }
@@ -108,6 +108,11 @@ test('phone errors are trimmed to the last 5,000 rows', () => {
   assert.strictEqual(env.rows('ClientErrors')[0].msg, 'e3');
 });
 
+test('the external-connection permission: missing → reported with the menu item to use', () => {
+  const { env } = setup();
+  env.ctx.UrlFetchApp = { fetch: () => { throw new Error('You do not have permission to call UrlFetchApp.fetch. Required permissions: https://www.googleapis.com/auth/script.external_request'); } };
+  assert.match(env.ctx.healthChecks_().find(c => c.key === 'external').msg, /منح الصلاحيات/);
+});
 let failed = 0;
 tests.forEach(t => { try { t.fn(); console.log('PASS  ' + t.name); } catch (e) { failed++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      ')); } });
 console.log('\n' + (tests.length - failed) + ' passed, ' + failed + ' failed');
