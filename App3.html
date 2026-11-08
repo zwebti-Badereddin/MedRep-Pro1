@@ -80,6 +80,7 @@ function form(k,idx){
  $("#ov").classList.add("on");startGeo();
  if($("#np_gps")){document.querySelectorAll("input[name=np_where]").forEach(x=>x.onchange=npStatus);$("#np_retry").onclick=()=>{const prev=GEO;startGeo();if(prev&&!GEO)GEO=prev;npStatus()};$("#np_manual_t").onclick=()=>{const m=$("#np_manual");m.style.display=m.style.display==="none"?"block":"none";npStatus()};$("#f_newlat").oninput=$("#f_newlng").oninput=npStatus;npStatus()}
  let smp=k==="d"?mergeSamples(normSamples(cur)):[];
+ const smp0={};smp.forEach(x=>{smp0[x.product]=x.qty});if(k==="d")stockRefresh(()=>{if($("#f_samples"))drawSamples()});
  if(k==="d"){
  const specWrap=$("#f_spec_new_wrap"),specInput=$("#f_spec_new"),specMsg=$("#f_spec_msg"),specToggle=$("#f_spec_toggle"),specSave=$("#f_spec_save");
  specToggle.onclick=()=>{specWrap.style.display=specWrap.style.display==="none"?"block":"none";specMsg.textContent="";if(specWrap.style.display==="block")specInput.focus()};
@@ -101,8 +102,8 @@ function form(k,idx){
  // Step 4: one row per sample product with a quantity stepper.
  const drawSamples=()=>{
   const prods=CFG.products||[];
-  $("#f_samples").innerHTML=smp.map((x,i)=>`<div class="srow"><select data-sp="${i}" aria-label="صنف العينة ${i+1}">${opts(prods.indexOf(x.product)>=0?prods:prods.concat([x.product]),x.product)}</select><div class="stepper"><button type="button" data-sm="${i}" aria-label="إنقاص العدد">−</button><output aria-label="العدد">${x.qty}</output><button type="button" class="plus" data-sa="${i}" aria-label="زيادة العدد">+</button></div></div>`).join("");
-  document.querySelectorAll("#f_samples [data-sp]").forEach(s=>s.onchange=()=>{smp[+s.dataset.sp].product=s.value});
+  $("#f_samples").innerHTML=smp.map((x,i)=>`<div class="srow"><select data-sp="${i}" aria-label="صنف العينة ${i+1}">${opts(prods.indexOf(x.product)>=0?prods:prods.concat([x.product]),x.product)}</select><div class="stepper"><button type="button" data-sm="${i}" aria-label="إنقاص العدد">−</button><output aria-label="العدد">${x.qty}</output><button type="button" class="plus" data-sa="${i}" aria-label="زيادة العدد">+</button></div></div>${stockHint(x.product,x.qty,smp0[x.product]||0)}`).join("");
+  document.querySelectorAll("#f_samples [data-sp]").forEach(s=>s.onchange=()=>{smp[+s.dataset.sp].product=s.value;drawSamples()});
   document.querySelectorAll("#f_samples [data-sm]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sm;if(smp[i].qty>1)smp[i].qty--;else smp.splice(i,1);drawSamples()});
   document.querySelectorAll("#f_samples [data-sa]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sa;smp[i].qty=Math.min(99,smp[i].qty+1);drawSamples()});
  };
@@ -280,4 +281,15 @@ $("#ov").onclick=e=>{if(e.target.id==="ov"){stopGeo();if(typeof closeVisitGpsCom
 addEventListener("error",e=>toast("خطأ: "+e.message));addEventListener("unhandledrejection",e=>toast("خطأ: "+((e.reason&&e.reason.message)||e.reason)));
 login();window.__ok=true;
 
+
+/* Sample stock (admin-issued): the rep sees the balance left after this visit. Fetched in the background when a doctor visit opens,
+   kept per rep on the device for offline use. A quantity above the balance is allowed (the admin is told), never blocked. */
+let MYSTOCK=null;
+const stockKey=()=>"mr_stock_"+((rep&&rep.id)||"");
+function stockRefresh(cb){if(navigator.onLine===false)return;srv("myStock").then(a=>{MYSTOCK={};(a||[]).forEach(x=>{MYSTOCK[x.product]=x.balance});try{localStorage.setItem(stockKey(),JSON.stringify(MYSTOCK))}catch(e){}if(cb)cb()}).catch(()=>{})}
+function stockHint(p,q,q0){
+ if(!MYSTOCK){try{MYSTOCK=JSON.parse(localStorage.getItem(stockKey())||"null")}catch(e){MYSTOCK=null}}
+ if(!MYSTOCK||!Object.prototype.hasOwnProperty.call(MYSTOCK,p))return"";
+ const avail=MYSTOCK[p]+q0,left=avail-q;
+ return '<div class="shint'+(left<0?" over":"")+'">'+(left<0?"⚠️ الكمية أكثر من رصيدك ("+Math.max(0,avail)+"). يمكنك الحفظ، وسيظهر ذلك للإدارة.":"رصيدك بعد هذه الزيارة: "+left)+'</div>'}
 </script>

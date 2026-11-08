@@ -31,6 +31,8 @@ const T = {
   // TgLinks: Telegram chats linked to an account (Telegram.js). One account may have several chats; one chat, one account.
   // RepDoctors: each rep's visit-plan list (Plan.js). cls = approved class, pendingCls = class waiting for an admin.
   RepDoctors: ['id', 'repId', 'doctorId', 'doctorName', 'cls', 'pendingCls', 'requestedAt', 'approvedBy', 'approvedAt', 'active'],
+  // SampleMoves: free-sample stock moves per rep (Stock.js): تسليم (+), إرجاع (−), جرد (signed difference).
+  SampleMoves: ['id', 'repId', 'product', 'qty', 'type', 'note', 'date', 'createdAt', 'createdBy'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']
 };

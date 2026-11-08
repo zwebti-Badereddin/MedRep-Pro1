@@ -20,7 +20,7 @@ function _callGas(a,p){return new Promise((res,rej)=>google.script.run.withSucce
 const devKey=x=>"mr_dev_"+(x?"a":"r");
 function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
 function setDev(x,t){try{if(t)localStorage.setItem(devKey(x),t)}catch(e){}}
-const NOREAUTH=["login","logout","loginAudit"];let REAUTH=null;
+const NOREAUTH=["login","logout","loginAudit","myStock"];let REAUTH=null;
 function _callRetry(a,p,n){return _call(a,p).catch(e=>{if(n<3&&/النظام مشغول/.test(e.message))return new Promise(r=>setTimeout(r,1200*(n+1)+Math.random()*800)).then(()=>_callRetry(a,p,n+1));throw e})}
 function _srv(a,p){return _callRetry(a,p,0).catch(e=>{if(TOKEN&&NOREAUTH.indexOf(a)<0&&/انتهت الجلسة/.test(e.message))return reauth().then(()=>_callRetry(a,p,0));throw e})}
 function reauth(){
@@ -158,10 +158,10 @@ const isSup=()=>!!(rep&&rep.role==="supervisor");
 function adminHome(){
  const n=new Date(),sup=isSup();
  $("#app").innerHTML=`<div class="top adm">${ADM_ART}<div class="brandrow">${CFG.company.logo?`<span class="alogo"><img src="${esc(CFG.company.logo)}" alt=""></span>`:`<span class="mk alogo">${esc(CFG.company.short)}</span>`}<span class="co"><b>${esc(CFG.company.name)}</b><small><span class="pg">${sup?"لوحة المشرف":"لوحة الإدارة"} · </span>${esc(longDate("",true))}</small></span><span class="docfig"${rep&&rep.name&&rep.id!=="ADMIN"?` title="${esc(rep.name)}"`:""}>${DOC_FIG}</span>${tgBell()}<a href="#" id="lo" class="lo" aria-label="خروج">${LOGOUT_ICON}<span>خروج</span></a></div></div>
- ${sup?'<div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="v">تغطية الخطة</button></div>':'<div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>'}
+ ${sup?'<div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="v">تغطية الخطة</button><button class="btn" data-t="k">العينات</button></div>':'<div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>'}
  <div class="wrap">${licNotice()}<div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
  $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};tgBind();
- const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);if(b.dataset.t===t){const bar=b.parentNode,r=b.getBoundingClientRect(),q=bar.getBoundingClientRect();if(r.left<q.left||r.right>q.right)bar.scrollLeft+=r.left<q.left?r.left-q.left-8:r.right-q.right+8}});({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet,v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)}})[t]()};
+ const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);if(b.dataset.t===t){const bar=b.parentNode,r=b.getBoundingClientRect(),q=bar.getBoundingClientRect();if(r.left<q.left||r.right>q.right)bar.scrollLeft+=r.left<q.left?r.left-q.left-8:r.right-q.right+8}});({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet,v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)},k:()=>{$("#av").innerHTML='<div id="skv"></div>';stockView("skv",true)}})[t]()};
  document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show(sup?"r":"d");
 }
 /* CSV for Excel: UTF-8 with BOM (Arabic opens correctly), cells quoted when needed, formula-like cells neutralised. */

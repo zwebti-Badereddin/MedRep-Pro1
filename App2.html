@@ -6,9 +6,10 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans" style="grid-column:1 \/ -1">خطط الزيارات</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans">خطط الزيارات</button><button class="btn" data-e="Stock">مخزون العينات</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
+ if(MS.ent==="Stock"){$("#mf").parentNode.outerHTML='<div id="skv" style="margin-top:10px"></div>';$("#ml").remove();stockView("skv",false);return}
  if(MS.ent==="Plans"){$("#mf").parentNode.outerHTML='<div id="plv" style="margin-top:10px"></div>';$("#ml").remove();planView("plv",false);return}
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
@@ -382,4 +383,45 @@ function planDrawRows(r,hostId){
  if($("#pf_go"))$("#pf_go").onclick=async()=>{try{await srv("planSaveFreq",{freq:{A:+$("#pf_A").value,B:+$("#pf_B").value,C:+$("#pf_C").value}});toast("تم الحفظ");planView(hostId,false)}catch(e){toast(e.message)}};
 }
 async function planDo(p,hostId){try{const n=await srv("planAct",p);toast("تم ("+n+")");planView(hostId,false)}catch(e){toast(e.message)}}
+
+/* ===== Sample stock (admin: السجلات › مخزون العينات; supervisor: read-only tab). Balances below zero are listed first, in red. ===== */
+let SK={rep:""},stockSeq=0;
+async function stockView(hostId,readonly){
+ const seq=++stockSeq,host=()=>seq===stockSeq?$("#"+hostId):null;if(!host())return;
+ host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ let r;try{r=await srv("stockList",{})}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}
+ if(!host())return;
+ const reps=REPS.slice(),over=r.balances.filter(b=>b.balance<0),shown=r.balances.filter(b=>!SK.rep||b.repId===SK.rep);
+ const byRep={};shown.forEach(b=>{(byRep[b.repId]=byRep[b.repId]||[]).push(b)});
+ host().innerHTML=(readonly?'':'<div class="skacts"><button class="btn pri" data-op="issue">تسليم عينات</button><button class="btn" data-op="ret">إرجاع</button><button class="btn" data-op="count">جرد</button></div>')+
+  (over.length?'<div class="skover"><b>⚠️ تجاوزوا الرصيد ('+over.length+')</b>'+over.map(b=>'<div>'+esc(b.repName)+' · '+esc(b.product)+' <b dir="ltr">'+b.balance+'</b></div>').join("")+'</div>':'')+
+  '<label>المندوب</label><select id="sk_r"><option value="">الكل</option>'+reps.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===SK.rep?" selected":"")+'>'+esc(x.name)+'</option>').join("")+'</select>'+
+  (Object.keys(byRep).length?Object.keys(byRep).map(id=>{const a=byRep[id];return '<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(a[0].repName)+'</b><button class="mini" data-h="'+esc(id)+'">سجل الحركات</button></div>'+
+   '<table class="kt sktab"><tr><th>المنتج</th><th>المُسلَّم</th><th>الموزَّع</th><th>الرصيد</th></tr>'+a.map(b=>'<tr'+(b.balance<0?' class="neg"':'')+'><td>'+esc(b.product)+'</td><td>'+(b.issued-b.returned+b.adjusted)+'</td><td>'+b.used+'</td><td dir="ltr"><b>'+b.balance+'</b></td></tr>').join("")+'</table></div>'}).join("")
+  :'<div class="empty">'+(r.balances.length?"لا توجد أرصدة لهذا المندوب.":"لم تُسجَّل أي عينات بعد. ابدأ بـ«تسليم عينات» لكل مندوب: الحساب يبدأ من تاريخ أول تسليم.")+'</div>')+
+  '<div class="empty" style="margin-top:8px">المُسلَّم = التسليم − الإرجاع ± الجرد. الموزَّع من عينات زيارات الأطباء، ومنها التقارير التي لم تُرسل بعد.</div>';
+ $("#sk_r").onchange=()=>{SK.rep=$("#sk_r").value;stockView(hostId,readonly)};
+ host().querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>stockHistoryView(b.dataset.h));
+ if(!readonly)host().querySelectorAll("[data-op]").forEach(b=>b.onclick=()=>stockForm(b.dataset.op,r.products,hostId));
+}
+function stockForm(op,products,hostId){
+ const t={issue:"تسليم عينات لمندوب",ret:"إرجاع عينات من مندوب",count:"جرد: العدد الفعلي عند المندوب"}[op];
+ $("#modal").innerHTML='<h3>'+t+'</h3><label>المندوب</label><select id="sf_r">'+REPS.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===SK.rep?" selected":"")+'>'+esc(x.name)+'</option>').join("")+'</select>'+
+  '<label>المنتج</label><select id="sf_p">'+products.map(p=>'<option>'+esc(p)+'</option>').join("")+'</select>'+
+  '<div class="two"><div><label>'+(op==="count"?"العدد الفعلي":"الكمية")+'</label><input id="sf_q" type="number" min="'+(op==="count"?0:1)+'" step="1" inputmode="numeric"></div><div><label>التاريخ</label><input id="sf_d" type="date" value="'+isoD(new Date())+'"></div></div>'+
+  '<label>ملاحظة (اختياري)</label><input id="sf_n" maxlength="200">'+(op==="count"?'<div class="empty" style="margin-top:6px">يسجّل النظام الفرق بين العدد الفعلي والرصيد الحالي.</div>':'')+
+  '<div class="err" id="sf_e"></div><div class="mfoot"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">حفظ</button></div>';
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");$("#sf_q").focus();
+ $("#sv").onclick=async()=>{const b=$("#sv"),q=$("#sf_q").value.trim();$("#sf_e").textContent="";if(!/^\d+$/.test(q)){$("#sf_e").textContent="أدخل رقمًا صحيحًا.";return}
+  b.disabled=true;try{const out=await srv("stockMove",{op:op,repId:$("#sf_r").value,product:$("#sf_p").value,qty:+q,date:$("#sf_d").value,note:$("#sf_n").value});
+   $("#ov").classList.remove("on");toast(out.changed?"تم · الرصيد الآن "+out.balance:"لا فرق: الرصيد "+out.balance);SK.rep=$("#sf_r")?SK.rep:SK.rep;stockView(hostId,false)}
+  catch(e){b.disabled=false;$("#sf_e").textContent=e.message}};
+}
+async function stockHistoryView(repId){
+ $("#modal").innerHTML='<h3>سجل حركات العينات</h3><div id="sh_b" class="empty">جارٍ التحميل…</div><button class="sheetbtn" id="sh_x">إغلاق</button>';
+ $("#ov").classList.add("on");$("#sh_x").onclick=()=>$("#ov").classList.remove("on");
+ try{const a=await srv("stockHistory",{repId});if(!$("#sh_b"))return;$("#sh_b").className="";
+  $("#sh_b").innerHTML=a.length?'<table class="kt sktab"><tr><th>التاريخ</th><th>النوع</th><th>المنتج</th><th>الكمية</th></tr>'+a.map(m=>'<tr><td>'+esc(m.date)+'</td><td>'+esc(m.type)+'</td><td>'+esc(m.product)+(m.note?'<div class="skn">'+esc(m.note)+'</div>':'')+'</td><td dir="ltr">'+(m.type==="إرجاع"?"-":(+m.qty>0&&m.type==="جرد"?"+":""))+esc(m.qty)+'</td></tr>').join("")+'</table>':'<div class="empty">لا توجد حركات.</div>'}
+ catch(e){if($("#sh_b"))$("#sh_b").textContent=e.message}
+}
 </script>
