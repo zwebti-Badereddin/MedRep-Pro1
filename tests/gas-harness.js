@@ -61,6 +61,7 @@ function makeEnv(seed, opts) {
     const p = n => String(n).padStart(2, '0'), y = d.getUTCFullYear(), m = p(d.getUTCMonth() + 1), dd = p(d.getUTCDate());
     if (f === 'yyyy-MM') return y + '-' + m;
     if (f === 'H') return String(d.getUTCHours());
+    if (f === 'HH:mm') return p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
     if (f === 'yyyy-MM-dd HH:mm') return y + '-' + m + '-' + dd + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
     return y + '-' + m + '-' + dd;
   };

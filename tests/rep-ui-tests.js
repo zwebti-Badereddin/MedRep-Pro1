@@ -12,9 +12,9 @@ const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
 const client = (() => {
   const src = ['const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, '') + ';', line(app1, 'const DAYS='), line(app1, 'const MN='),
     line(app4, 'const svgI='), app4.match(/const IC=\{[\s\S]*?\r?\n\};/)[0],
-    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'),
+    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'), fn(app3, 'vtHM'), fn(app3, 'vtFlagsC'), fn(app3, 'vtCell'),
     fn(app2, 'longDate'), fn(app2, 'visitChips'), fn(app2, 'visitCard')].join('\n');
-  const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={normSamples,mergeSamples,sampleText,render,longDate,visitChips,visitCard}', c);
+  const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={normSamples,mergeSamples,sampleText,render,longDate,visitChips,visitCard,vtFlagsC}', c);
   return c.api;
 })();
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -78,6 +78,17 @@ test('server: samples are cleaned (trim, 1–99, no empty or "—", at most 20 r
 });
 
 let pass = 0, fail = 0;
+test('check-in / check-out: the report shows "in ← out · minutes"; warnings only on the reviewer view', () => {
+  const at = (h, m) => new Date(2026, 9, 13, h, m).toISOString();
+  const base = { company: { name: 'X', color: '#000', short: 'X', title: 'T' }, no: '1', rep: 'r', day: 'd', date: 'd', notes: '', phs: [] };
+  const v = { name: 'a', ci: { t: at(9, 30) }, co: { t: at(9, 31) }, dur: 1 };
+  const rep = client.render(Object.assign({}, base, { docs: [v] })), adm = client.render(Object.assign({}, base, { adm: true, docs: [v] }));
+  assert.ok(rep.includes('09:30 ← 09:31 · 1 دقيقة') && !rep.includes('قصيرة'));
+  assert.ok(adm.includes('زيارة قصيرة جدًا'));
+  const a = { ci: { t: at(10, 0) }, co: { t: at(10, 20) }, dur: 20 }, b = { ci: { t: at(10, 10) }, co: { t: at(10, 30) }, dur: 20, sk: -9 };
+  assert.strictEqual(JSON.stringify(client.vtFlagsC(b, [a, b])), JSON.stringify(['ساعة الهاتف غير دقيقة (9 د)', 'متداخلة مع زيارة أخرى']));
+  assert.ok(!client.render(Object.assign({}, base, { docs: [{ name: 'old' }] })).includes('الدخول والخروج'), 'older visits without times show nothing');
+});
 tests.forEach(t => { try { t.fn(); pass++; console.log('PASS  ' + t.name); } catch (e) { fail++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 3).join('\n      ')); } });
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

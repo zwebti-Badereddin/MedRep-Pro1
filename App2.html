@@ -252,6 +252,7 @@ function setSave(st){
 function visitChips(v,k){
  const c=[],chip=(t,cls,ic)=>'<span class="chip'+(cls?" "+cls:"")+'">'+(ic||"")+esc(t)+'</span>';
  if(v.time)c.push(chip(v.time));
+ if(v.dur!=null&&v.ci)c.push(chip("⏱ "+v.dur+" د")); // check-in → check-out (both visit kinds)
  if(k==="d"){
   if(v.intro)c.push(chip("تعريف: "+v.intro));
   if(v.remind&&v.remind!=="—")c.push(chip("تذكير: "+v.remind));
@@ -293,7 +294,7 @@ function home(){
  const stat=(ic,n,l,cls)=>'<div class="rstat'+(cls?" "+cls:"")+'"><i>'+ic+'</i><b>'+n+'</b><span>'+l+'</span></div>';
  $("#app").innerHTML=repTop(title,{sub:longDate(S.date),chip:S.status,save:!lk})+
  '<div class="rstats">'+stat(IC.doc,S.docs.length,"أطباء")+stat(IC.ph,S.phs.length,"صيدليات")+stat(IC.ok,S.docs.length+S.phs.length,"إجمالي الزيارات","tot")+'</div>'+
- '<div class="wrap rwrap">'+banner()+
+ '<div class="wrap rwrap">'+banner()+ciBanner()+
  '<div class="sec"><h3>زيارات الأطباء</h3><span>'+S.docs.length+'</span></div>'+
  (S.docs.length?S.docs.map((v,i)=>visitCard("d",v,i,lk)).join(""):'<div class="empty">لا توجد زيارات أطباء بعد.</div>')+
  (lk?'':'<button type="button" class="btn dash" data-add="d">'+IC.plus+' زيارة طبيب</button>')+
@@ -306,7 +307,7 @@ function home(){
  document.querySelectorAll("[data-more]").forEach(b=>b.onclick=()=>openVisitMenu(b.dataset.more[0],+b.dataset.more.slice(1)));
  $("#notebtn").onclick=openNote;
  if($("#savest"))$("#savest").onclick=async()=>{if(SAVE_ST==="saving")return;try{await saveNow();toast("تم الحفظ")}catch(e){toast(e.message)}};
- $("#review").onclick=preview;bindNav();if($("#rh"))$("#rh").onclick=screenHistory;
+ $("#review").onclick=preview;bindNav();ciBind();if($("#rh"))$("#rh").onclick=screenHistory;
  if($("#bk"))$("#bk").onclick=()=>loadDay(TD);if($("#py"))$("#py").onclick=()=>loadDay(PREV.date);
  if($("#ro"))$("#ro").onclick=async()=>{if(!RO){RO=true;$("#ro").textContent="اضغط للتأكيد";return}RO=false;try{const out=await srv("reopenReport",{id:S.id});if(out&&out.report){reportContextSeq++;cancelAuto();S=mapRep(out.report);PREV=out.prev||PREV;home()}else await loadDay(S.date)}catch(e){toast(e.message)}};
 }

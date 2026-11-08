@@ -30,7 +30,7 @@ test('export: one row per visit with rep name, merged samples, legacy samples, G
   const { env, adm } = setup(), out = env.call(adm, 'exportVisits', { from: '2026-10-01', to: '2026-10-31' });
   assert.deepStrictEqual([out.visits, out.reports], [3, 1]);
   const [h, d1, d2, p1] = out.rows, col = n => h.indexOf(n);
-  assert.strictEqual(h.length, 21);
+  assert.strictEqual(h.length, 25);
   assert.deepStrictEqual([d1[col('ملاحظات الطبيب')], d2[col('ملاحظات الطبيب')], p1[col('ملاحظات الطبيب')]], ['طلب عينات إضافية', '', ''], 'doctor notes column');
   assert.deepStrictEqual([d1[col('المندوب')], d1[col('نوع الزيارة')], d1[col('العينات المجانية')], d1[col('التحقق من الموقع')], d1[col('المسافة (م)')], d1[col('ملاحظة اليوم')]],
     ['مندوب أول', 'طبيب', 'Neuro ×3 · Gastro', 'تم التحقق', 43, 'يوم جيد']);

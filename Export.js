@@ -2,7 +2,8 @@
 
 const EXPORT_MAX_DAYS = 366, EXPORT_MAX_ROWS = 20000;
 const EXPORT_HEADER = ['رقم التقرير', 'التاريخ', 'المندوب', 'حالة التقرير', 'نوع الزيارة', 'م', 'الاسم', 'التخصص', 'مكان العمل / العنوان', 'أقرب منشأة',
-  'القطاع', 'وقت الزيارة', 'المنتج المعرَّف به', 'المنتج المذكَّر به', 'العينات المجانية', 'النشاط داخل الصيدلية', 'الطلبية', 'التحقق من الموقع', 'المسافة (م)', 'ملاحظة اليوم', 'ملاحظات الطبيب'];
+  'القطاع', 'وقت الزيارة', 'المنتج المعرَّف به', 'المنتج المذكَّر به', 'العينات المجانية', 'النشاط داخل الصيدلية', 'الطلبية', 'التحقق من الموقع', 'المسافة (م)', 'ملاحظة اليوم', 'ملاحظات الطبيب',
+  'الدخول', 'الخروج', 'مدة الزيارة (دقيقة)', 'تنبيهات الوقت'];
 
 // Samples [{product, qty}] (or legacy s1/s2) as "Product ×2 · Other", merged by product.
 function exportSamplesText_(v) {
@@ -13,17 +14,20 @@ function exportSamplesText_(v) {
   return order.map(p => p + (sum[p] > 1 ? ' ×' + sum[p] : '')).join(' · ');
 }
 // Pure: report rows (as stored) -> [header, ...visit rows].
-function exportVisitRows_(reports, repNames) {
+function exportVisitRows_(reports, repNames, tz) {
+  tz = tz || 'UTC';
   const S = x => (x == null || x === '—' ? '' : String(x));
   const out = [EXPORT_HEADER.slice()];
   reports.forEach(r => {
     const base = [S(r.no), S(r.date), S(repNames[r.repId] || r.repId), S(r.status)];
     const json = t => { try { const a = JSON.parse(t || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
     const gps = v => { const g = v.gps || {}; return [g.status ? S(g.status) : 'لم يُتحقق بعد', isFinite(+g.dist) && g.dist !== '' && g.dist != null ? Math.round(+g.dist) : '']; };
+    const all = json(r.doctors).concat(json(r.pharmacies));
+    const vt = v => [vtClock_(v.ci && v.ci.t, tz), vtClock_(v.co && v.co.t, tz), v.dur == null ? '' : v.dur, vtFlags_(v, all).join(' · ')];
     json(r.doctors).forEach((v, i) => out.push(base.concat(['طبيب', i + 1, S(v.name), S(v.specialty), S(v.place), '', S(v.sector), S(v.time), S(v.intro), S(v.remind),
-      exportSamplesText_(v), '', ''], gps(v), [i === 0 ? S(r.notes) : '', S(v.drNote)])));
+      exportSamplesText_(v), '', ''], gps(v), [i === 0 ? S(r.notes) : '', S(v.drNote)], vt(all[i]))));
     json(r.pharmacies).forEach((v, i) => out.push(base.concat(['صيدلية', i + 1, S(v.name), '', S(v.loc), S(v.near), '', S(v.time), S(v.product), '',
-      '', S(v.act), S(v.order)], gps(v), [i === 0 && !json(r.doctors).length ? S(r.notes) : '', ''])));
+      '', S(v.act), S(v.order)], gps(v), [i === 0 && !json(r.doctors).length ? S(r.notes) : '', ''], vt(all[json(r.doctors).length + i]))));
   });
   return out;
 }
@@ -35,7 +39,7 @@ function exportVisits_(s, p) {
   // Small-column index first, then only notes + visits of the matching rows (never the snapshots).
   const rows = reportsBody_(reportsLight_().filter(r => r.date >= p.from && r.date <= p.to && (!p.repId || r.repId === p.repId) && (!p.status || r.status === p.status)))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.no).localeCompare(String(b.no))));
-  const out = exportVisitRows_(rows, reps);
+  const out = exportVisitRows_(rows, reps, settings_().timezone || Session.getScriptTimeZone());
   if (out.length - 1 > EXPORT_MAX_ROWS) throw new Error('عدد الزيارات أكبر من ' + EXPORT_MAX_ROWS + '. قسّم الفترة إلى أجزاء أصغر.');
   audit_(s, 'export_visits', p.from + '..' + p.to, String(out.length - 1));
   return { rows: out, visits: out.length - 1, reports: rows.length };
