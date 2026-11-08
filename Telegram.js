@@ -113,13 +113,15 @@ function tgSummaryText_(day) {
       .forEach(c => { if (c.status !== 'تم التحقق') unverified++; }); } catch (e) {}
   }));
   const waiting = reportsLight_().filter(r => r.status === 'مرسل').length;
+  let planWaiting = 0; try { planWaiting = planRows_().filter(r => r.pendingCls).length; } catch (e) {}
   return ['📊 ملخص تقارير يوم ' + day.split('-').reverse().join('/') + (st.companyName ? ' — ' + st.companyName : ''),
     '',
     'أُرسل: ' + sent.length + ' من ' + expected.length,
     missing.length ? 'لم يُرسل: ' + missing.join('، ') : 'كل المندوبين أرسلوا ✅',
     'الزيارات: ' + (docs + phs) + ' (أطباء ' + docs + '، صيدليات ' + phs + ')',
     unverified ? '📍 زيارات لم يثبت موقعها: ' + unverified : '',
-    'بانتظار الاعتماد (كل الأيام): ' + waiting].filter(x => x !== '').join('\n');
+    'بانتظار الاعتماد (كل الأيام): ' + waiting,
+    planWaiting ? 'تصنيفات أطباء بانتظار الاعتماد: ' + planWaiting : ''].filter(x => x !== '').join('\n');
 }
 // Hourly trigger: reads Telegram messages, and once a day, in the closing hour or later, sends yesterday's summary
 // (only on a working day that is not a holiday). Re-reading closeHour every run means a changed setting needs no new trigger.

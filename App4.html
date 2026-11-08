@@ -16,7 +16,8 @@ const IC={
  more:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>',
  t:svgI('<rect x="3" y="4" width="18" height="17" rx="3"></rect><path d="M3 9h18M8 2v4M16 2v4"></path>',22),
  h:svgI('<path d="M8 6h13M8 12h13M8 18h13"></path><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle>',22),
- p:svgI('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path>',22)
+ p:svgI('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path>',22),
+ d:svgI('<circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c0-3.6 3-5.5 6.5-5.5s6.5 1.9 6.5 5.5"></path><path d="M16 4.5h5M16 9h5M18 13.5h3"></path>',22)
 };
 function repTop(t,o){
  o=o||{};const logo=CFG.company.logo?'<span class="lg"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="lg">'+esc(CFG.company.short)+'</span>';
@@ -49,10 +50,10 @@ async function tgOpen(){
  try{await draw(await srv("tgStatus"))}catch(e){if(seq===tgSeq&&$("#tg_b"))$("#tg_b").textContent=e.message}
 }
 function repNav(a){
- const items=[["t","اليوم"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);
+ const items=[["t","اليوم"],["d","أطبائي"],["h","تقاريري"]];if(String((CFG.st||{}).repPerformanceEnabled)!=="false")items.push(["p","أدائي"]);
  return '<nav class="bnav" aria-label="التنقل">'+items.map(x=>'<button type="button" class="rn'+(x[0]===a?' on" aria-current="page':'')+'" data-n="'+x[0]+'">'+IC[x[0]]+x[1]+'</button>').join("")+'</nav>';
 }
-function bindNav(){tgBind();document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
+function bindNav(){tgBind();document.querySelectorAll(".rn").forEach(b=>b.onclick=()=>{const n=b.dataset.n;if(n==="t")home();else if(n==="h")screenHistory();else if(n==="d")screenPlan();else if(n==="p"&&String((CFG.st||{}).repPerformanceEnabled)!=="false")screenPerf();else home()});
  const l=$("#lo");if(l)l.onclick=async e=>{e.preventDefault();
   if(draftKeys().length&&!l.dataset.c){const h0=l.innerHTML;l.dataset.c=1;l.textContent="تعديلات لم تُحفظ بعد — اضغط مجددًا للخروج";saveBg().then(()=>{if(!draftKeys().length&&l.isConnected){l.dataset.c="";l.innerHTML=h0}});return}
   draftDropAll();cancelAuto();try{await srv("logout")}catch(x){}TOKEN=null;login()}}
@@ -272,5 +273,52 @@ async function tabD(){
  try{const d=await srv("dashboard",{from:$("#fa").value,to:$("#fb").value});if(nav!==adminNavSeq||seq!==dashSeq||!$("#av"))return;
   $("#av").innerHTML=dashHtml(d);document.querySelectorAll("#av tr.dr").forEach(tr=>tr.onclick=()=>openRep(tr.dataset.id));loadSetupCard(nav,seq)}
  catch(e){if(nav===adminNavSeq&&seq===dashSeq){toast(e.message);const av=$("#av");if(av)av.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}
+}
+
+/* ===== Rep: «أطبائي» — my visit-plan list (class A/B/C proposed by me, approved by the admin) and this month's progress ===== */
+let MYPLAN=null;
+const PCLS={A:"A",B:"B",C:"C"};
+function planBar(p){const v=p==null?0:Math.max(0,Math.min(100,p));return '<div class="pb"><i style="width:'+v+'%"></i></div>'}
+async function screenPlan(){
+ const seq=++repScreenSeq;
+ $("#app").innerHTML=repTop("أطبائي",{sub:"خطة زيارات هذا الشهر"})+'<div class="wrap rwrap"><div id="plb"><div class="empty">جارٍ التحميل…</div></div></div><div class="rdock">'+repNav("d")+'</div>';bindNav();
+ try{const r=await srv("myPlan");if(seq!==repScreenSeq||!$("#plb"))return;MYPLAN=r;drawMyPlan()}
+ catch(e){if(seq===repScreenSeq&&$("#plb"))$("#plb").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+function drawMyPlan(){
+ const host=$("#plb");if(!host||!MYPLAN)return;const c=MYPLAN.coverage,f=MYPLAN.freq,docs=c?c.doctors:[];
+ const head=c&&c.pct!=null?'<div class="row plsum" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>تغطية الخطة</b><span class="sc">'+c.pct+'%</span></div>'+planBar(c.pct)+
+   '<div class="plcls">'+["A","B","C"].filter(k=>c.cls[k].doctors).map(k=>'<span><span class="clsb c'+k+'">'+k+'</span> '+c.cls[k].done+' من '+c.cls[k].req+'</span>').join("")+'</div>'+
+   '<div style="color:var(--mut);font-size:13px">'+c.done+' من '+c.req+' زيارة مطلوبة هذا الشهر'+(c.never?' · لم تزر بعد: <b style="color:var(--bad,#b42318)">'+c.never+'</b>':'')+'</div></div>'
+  :'<div class="empty" style="text-align:right">'+(docs.length?"قائمتك بانتظار اعتماد الإدارة.":"أضف الأطباء الذين تتابعهم، واقترح فئة كل طبيب. بعد اعتماد الإدارة تظهر هنا نسبة تغطيتك.")+'</div>';
+ host.innerHTML=head+'<div class="empty" style="margin:6px 0 10px">الزيارات المطلوبة شهريًا: A = '+f.A+' · B = '+f.B+' · C = '+f.C+'. تشمل زيارات اليوم قبل الإرسال.</div>'+
+  '<button type="button" class="btn dash" id="pladd">'+IC.plus+' إضافة طبيب لقائمتي</button>'+
+  (docs.length?docs.map(d=>{const st=d.cls?(d.req&&!d.visits?" plnone":d.visits>=d.req?" plfull":""):" plwait";
+   return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>'+esc(d.name)+'</b>'+
+    (d.cls?'<span class="clsb c'+d.cls+'">'+d.cls+'</span>':'')+'</div>'+
+    (d.cls?'<div class="plprog"><span>'+d.visits+' من '+d.req+'</span>'+planBar(d.req?Math.round(Math.min(d.visits,d.req)/d.req*100):100)+'</div>':'')+
+    (d.pendingCls?'<div class="plpend">'+(d.cls?'تغيير مقترح إلى '+d.pendingCls:'مقترح: الفئة '+d.pendingCls)+' — بانتظار الاعتماد</div>':'')+
+    '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'</div></div>'}).join(""):'');
+ $("#pladd").onclick=planAddDoctor;
+ host.querySelectorAll(".plrow .mini").forEach(b=>b.onclick=async()=>{const d=docs.find(x=>x.id===b.closest(".plrow").dataset.id);if(!d)return;
+  if(b.dataset.a==="cls")return planPickClass(d.name,d.pendingCls||d.cls,async k=>{MYPLAN=await srv("planPropose",{doctorId:d.doctorId,cls:k});drawMyPlan();toast(k===d.cls?"تم سحب طلب التغيير":"أُرسل للاعتماد")});
+  b.disabled=true;try{MYPLAN=await srv("planWithdraw",{id:d.id});drawMyPlan();toast("تم سحب الطلب")}catch(e){b.disabled=false;toast(e.message)}});
+}
+function planPickClass(name,cur,done){
+ $("#modal").innerHTML='<h3>'+esc(name)+'</h3><p class="tgtx">اختر الفئة. A للأطباء الأكثر أهمية (زيارات أكثر)، وC للأقل.</p><div class="clspick">'+["A","B","C"].map(k=>'<button type="button" class="btn'+(k===cur?" pri":"")+'" data-k="'+k+'">'+k+'</button>').join("")+'</div><div class="err" id="pc_e"></div><button type="button" class="sheetbtn" id="pc_x">إلغاء</button>';
+ $("#ov").classList.add("on");$("#pc_x").onclick=()=>$("#ov").classList.remove("on");
+ document.querySelectorAll(".clspick .btn").forEach(b=>b.onclick=async()=>{document.querySelectorAll(".clspick .btn").forEach(x=>x.disabled=true);
+  try{await done(b.dataset.k);$("#ov").classList.remove("on")}catch(e){$("#pc_e").textContent=e.message;document.querySelectorAll(".clspick .btn").forEach(x=>x.disabled=false)}});
+}
+function planAddDoctor(){
+ const mine={};((MYPLAN&&MYPLAN.coverage&&MYPLAN.coverage.doctors)||[]).forEach(d=>mine[d.doctorId]=1);
+ const pool=(CFG.docs||[]).filter(d=>!mine[d.id]);
+ $("#modal").innerHTML='<h3>إضافة طبيب لقائمتي</h3><input id="pa_q" placeholder="ابحث باسم الطبيب أو التخصص"><div id="pa_l" class="palist"></div><button type="button" class="sheetbtn" id="pa_x">إغلاق</button>';
+ $("#ov").classList.add("on");$("#pa_x").onclick=()=>$("#ov").classList.remove("on");
+ const draw=()=>{const q=norm($("#pa_q").value),a=pool.filter(d=>!q||norm(d.name+" "+(d.specialty||"")).indexOf(q)>=0).slice(0,40);
+  $("#pa_l").innerHTML=a.length?a.map(d=>'<button type="button" class="sheetbtn" data-id="'+esc(d.id)+'">'+esc(d.name)+(d.specialty?' <small>· '+esc(d.specialty)+'</small>':'')+'</button>').join(""):'<div class="empty">'+(pool.length?"لا نتائج. الطبيب غير الموجود يُضاف من «زيارة طبيب» أولًا.":"كل الأطباء في قائمتك.")+'</div>';
+  $("#pa_l").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>{const d=pool.find(x=>x.id===b.dataset.id);
+   planPickClass(d.name,"",async k=>{MYPLAN=await srv("planPropose",{doctorId:d.id,cls:k});drawMyPlan();toast("أُرسل للاعتماد")})})};
+ $("#pa_q").oninput=draw;draw();$("#pa_q").focus();
 }
 </script>

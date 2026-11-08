@@ -11,12 +11,18 @@ function performance_(s, p) {
   const availOf = id => allDays.reduce((a, d) => a + (1 - offWeight_(off, id, d)), 0);
   const reports = reportsBody_(reportsLight_().filter(r => r.date >= from && r.date <= to && ['مرسل', 'معتمد'].indexOf(r.status) >= 0)).map(parseReport_);
   const totalW = cfg.reduce((a, k) => a + (+k.weight || 0), 0) || 1;
+  // Visit-plan coverage (Plan.js), from the same sent / approved reports. A rep without an approved list scores 0 on it.
+  const planCov = {};
+  if (cfg.some(k => k.key === 'plan_cov')) {
+    const vis = {}; reports.forEach(r => { (vis[r.repId] = vis[r.repId] || []).push.apply(vis[r.repId], r.doctors || []); });
+    planCoverageCore_(dbAll_('Reps'), planRows_(), vis, from, to, planCtx_()).forEach(c => { planCov[c.repId] = c.pct; });
+  }
   return dbAll_('Reps').filter(r => String(r.active) !== 'false').map(rep => {
     const rs = reports.filter(r => r.repId === rep.id), docs = [].concat.apply([], rs.map(r => r.doctors)), phs = [].concat.apply([], rs.map(r => r.pharmacies));
     const uniq = a => a.filter((v, i) => a.indexOf(v) === i).length;
     const complete = rs.length ? rs.reduce((a, r) => a + (r.notes ? 1 : 0.8) * (r.doctors.concat(r.pharmacies).filter(v => v.name).length / Math.max(1, r.doctors.length + r.pharmacies.length)), 0) / rs.length : 0;
     const actuals = { visits: docs.length + phs.length, doctor_cov: uniq(docs.map(v => v.name)), pharmacy_cov: uniq(phs.map(v => v.name)),
-      product_activity: uniq(docs.map(v => v.intro).concat(phs.map(v => v.product)).filter(Boolean)), compliance: rs.length, quality: Math.round(complete * 100) };
+      product_activity: uniq(docs.map(v => v.intro).concat(phs.map(v => v.product)).filter(Boolean)), compliance: rs.length, quality: Math.round(complete * 100), plan_cov: planCov[rep.id] == null ? 0 : planCov[rep.id] };
     const rows = cfg.map(k => {
       const cc = comp[rep.id], frac = allDays.length ? availOf(rep.id) / allDays.length : 1, target = k.key === 'compliance' ? cc.expected : (SCALED.indexOf(k.key) >= 0 ? Math.round((+k.target || 0) * frac) : (+k.target || 0)), actual = k.key === 'compliance' ? cc.onTime : (actuals[k.key] || 0), ach = target ? Math.min(100, Math.round(actual / target * 100)) : (SCALED.indexOf(k.key) >= 0 && frac === 0 ? 100 : 0);
       return { key: k.key, name: k.name, target, actual, achievement: ach, weight: +k.weight, weighted: +(ach * k.weight / totalW).toFixed(1) };

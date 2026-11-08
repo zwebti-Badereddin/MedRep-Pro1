@@ -6,9 +6,10 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans" style="grid-column:1 \/ -1">خطط الزيارات</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
+ if(MS.ent==="Plans"){$("#mf").parentNode.outerHTML='<div id="plv" style="margin-top:10px"></div>';$("#ml").remove();planView("plv",false);return}
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
  if(IMPORT_COLS[MS.ent]){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+IMPORT_NAMES[MS.ent]+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
@@ -73,8 +74,8 @@ function similarFacilitiesHtml(list){
  return '<div class="ap-sec"><b>توجد منشأة مسجلة مشابهة — تأكد أنها ليست نفسها:</b>'+list.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'</div>'+(x.distance!=null?'<span class="st">'+x.distance+' م</span>':'')+'</div>').join("")+'</div>';
 }
 /* Bulk import: paste columns copied from Excel (tab-separated), preview, then add. Existing names are never duplicated. */
-const IMPORT_COLS={Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة",Facilities:"الاسم · النوع · العنوان · خط العرض · خط الطول"};
-const IMPORT_NAMES={Doctors:"أطباء",Pharmacies:"صيدليات",Facilities:"منشآت"};
+const IMPORT_COLS={Plans:"المندوب · الطبيب · الفئة (A أو B أو C)",Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة",Facilities:"الاسم · النوع · العنوان · خط العرض · خط الطول"};
+const IMPORT_NAMES={Plans:"خطط الزيارات",Doctors:"أطباء",Pharmacies:"صيدليات",Facilities:"منشآت"};
 const parsePasted=t=>String(t||"").split(/\r?\n/).map(l=>l.split("\t"));
 function importResultHtml(r,committed){
  const li=(a,f)=>a.length?'<ul>'+a.slice(0,50).map(f).join("")+(a.length>50?'<li>… و'+(a.length-50)+' غيرها</li>':"")+'</ul>':"";
@@ -84,7 +85,7 @@ function importResultHtml(r,committed){
   (r.invalid.length?'<b>أسطر غير صالحة:</b>'+li(r.invalid,x=>'<li>سطر '+x.line+': '+esc(x.reason)+'</li>'):"")+'</div>'}
 function openImport(ent){
  $("#modal").innerHTML='<h3>استيراد '+IMPORT_NAMES[ent]+' من Excel</h3>'+
-  '<div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب: <b>'+IMPORT_COLS[ent]+'</b> ثم الصقها هنا. يكفي عمود الاسم وحده. أقصى عدد 1000 سطر.'+(ent==="Facilities"?' الإحداثيات اختيارية، ويمكن لصقها من خرائط Google في عمود واحد بالشكل «32.88, 13.17». المواقع المستوردة لا تُعتمد تلقائيًا: راجع كل منشأة من الخريطة واعتمد موقعها.':"")+'</div>'+
+  '<div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب: <b>'+IMPORT_COLS[ent]+'</b> ثم الصقها هنا. '+(ent==="Plans"?'الاسم أو الرقم للمندوب والطبيب، والطبيب يجب أن يكون في السجل. تُعتمد مباشرة. أقصى عدد 2000 سطر.':'يكفي عمود الاسم وحده. أقصى عدد 1000 سطر.')+(ent==="Facilities"?' الإحداثيات اختيارية، ويمكن لصقها من خرائط Google في عمود واحد بالشكل «32.88, 13.17». المواقع المستوردة لا تُعتمد تلقائيًا: راجع كل منشأة من الخريطة واعتمد موقعها.':"")+'</div>'+
   '<textarea id="im_t" rows="8" dir="auto"></textarea><div id="im_r"></div><div class="err" id="im_e"></div>'+
   '<div class="mfoot"><button type="button" class="btn" id="cx">إغلاق</button><button type="button" class="btn pri" id="sv">معاينة</button></div>';
  $("#ov").classList.add("on");$("#im_t").focus();
@@ -94,9 +95,9 @@ function openImport(ent){
  $("#sv").onclick=async()=>{const b=$("#sv"),rows=parsePasted($("#im_t").value);$("#im_e").textContent="";
   if(!rows.some(r=>r.join("").trim())){$("#im_e").textContent="الصق الأسماء أولًا.";return}
   b.disabled=true;
-  try{const out=await srv("importMaster",{entity:ent,rows:rows,commit:ready});
+  try{const out=ent==="Plans"?await srv("planImport",{rows:rows,commit:ready}):await srv("importMaster",{entity:ent,rows:rows,commit:ready});
    $("#im_r").innerHTML=importResultHtml(out,ready);
-   if(ready){toast("تمت إضافة "+out.added);b.style.display="none";$("#im_t").disabled=true;await loadM();return}
+   if(ready){toast("تمت إضافة "+out.added);b.style.display="none";$("#im_t").disabled=true;if(ent==="Plans")planView("plv",false);else await loadM();return}
    if(out.add.length){ready=true;b.textContent="إضافة "+out.add.length}else $("#im_e").textContent="لا يوجد جديد لإضافته."}
   catch(e){$("#im_e").textContent=e.message}finally{b.disabled=false}};
 }
@@ -322,4 +323,63 @@ const seg=(n,v)=>`<div class="seg">${["صباحًا","مساءً"].map(x=>`<labe
 const norm=t=>String(t||"").toLowerCase().replace(/[\u064B-\u0652\u0640]/g,"").replace(/[أإآ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/^\s*(د\s*\.?|dr\.?)\s*/i,"").replace(/\s+/g," ").trim();
 let PK={rec:null,isNew:false};
 /* searchable list: pick an existing record, or add a new one (saved immediately on visit save) */
+
+/* ===== Visit plan (admin: السجلات › خطط الزيارات; supervisor: coverage only). The period is the من/إلى of the admin screen. ===== */
+let PV={mode:"pend",rep:"",open:{}},planSeq=0;
+async function planView(hostId,readonly){
+ const seq=++planSeq,host=()=>seq===planSeq?$("#"+hostId):null;if(!host())return;
+ if(readonly)PV.mode="cov";
+ const modes=readonly?"":'<div class="two"><div><select id="pv_m"><option value="pend">بانتظار الاعتماد</option><option value="cov">التغطية في الفترة</option><option value="list">قوائم المندوبين</option></select></div><div><button class="btn full" id="pv_imp">استيراد من Excel</button></div></div>';
+ host().innerHTML=modes+'<div id="pv_b" style="margin-top:10px"><div class="empty">جارٍ التحميل…</div></div>';
+ if(!readonly){$("#pv_m").value=PV.mode;$("#pv_m").onchange=()=>{PV.mode=$("#pv_m").value;planView(hostId,false)};$("#pv_imp").onclick=()=>openImport("Plans")}
+ const body=()=>seq===planSeq?$("#pv_b"):null;
+ try{
+  if(PV.mode==="cov"){const r=await srv("planCoverage",{from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""});if(!body())return;planDrawCov(r)}
+  else{const r=await srv("planList",{});if(!body())return;planDrawRows(r,hostId)}
+ }catch(e){if(body())body().innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+function planDrawCov(r){
+ const b=$("#pv_b");
+ b.innerHTML='<div class="empty" style="margin-bottom:8px">من '+esc(r.from)+' إلى '+esc(r.to)+' · التقارير المرسلة والمعتمدة · المطلوب شهريًا: A = '+r.freq.A+' · B = '+r.freq.B+' · C = '+r.freq.C+' (يقلّ مع الإجازات).</div>'+
+  (r.reps.length?r.reps.map(c=>'<div class="row plcov" data-r="'+esc(c.repId)+'" style="display:block;cursor:pointer"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(c.name)+'</b><span class="sc">'+(c.pct==null?"—":c.pct+"%")+'</span></div>'+planBar(c.pct)+
+   '<div class="plcls">'+["A","B","C"].filter(k=>c.cls[k].doctors).map(k=>'<span><span class="clsb c'+k+'">'+k+'</span> '+c.cls[k].done+' من '+c.cls[k].req+' · '+c.cls[k].doctors+' طبيب</span>').join("")+'</div>'+
+   '<div style="color:var(--mut);font-size:13px">'+c.done+' من '+c.req+' زيارة مطلوبة'+(c.never?' · لم يُزاروا: <b style="color:var(--bad,#b42318)">'+c.never+'</b>':'')+(c.pending?' · بانتظار الاعتماد: '+c.pending:'')+'</div>'+
+   (PV.open[c.repId]?'<div class="pldet">'+c.doctors.filter(d=>d.cls).map(d=>'<div class="pld'+(d.req&&!d.visits?" plnone":"")+'"><span class="clsb c'+d.cls+'">'+d.cls+'</span> '+esc(d.name)+'<span>'+d.visits+' من '+d.req+'</span></div>').join("")+'</div>':'<div class="empty" style="font-size:12px">اضغط لعرض الأطباء</div>')+'</div>').join("")
+  :'<div class="empty">لا توجد قوائم أطباء للمندوبين بعد.</div>');
+ b.querySelectorAll(".plcov").forEach(x=>x.onclick=()=>{const id=x.dataset.r;PV.open[id]=!PV.open[id];planDrawCov(r)});
+}
+function planDrawRows(r,hostId){
+ const b=$("#pv_b"),freq='<details class="plfreq"><summary>عدد الزيارات الشهرية لكل فئة: A = '+r.freq.A+' · B = '+r.freq.B+' · C = '+r.freq.C+'</summary><div class="two" style="grid-template-columns:repeat(3,1fr)">'+["A","B","C"].map(k=>'<div><label>'+k+'</label><input type="number" min="0" max="31" id="pf_'+k+'" value="'+r.freq[k]+'"></div>').join("")+'</div><button class="btn pri full" id="pf_go" style="margin-top:8px">حفظ</button><div class="empty" style="margin-top:6px">مؤشر «تغطية خطة الزيارات» في الإعدادات › المؤشرات، ووزنه صفر حتى تحدده.</div></details>';
+ const reps={};r.rows.forEach(x=>reps[x.repId]=x.repName);
+ if(PV.mode==="pend"){
+  const a=r.rows.filter(x=>x.pendingCls);
+  b.innerHTML=freq+(a.length?'<button class="btn pri full" id="pv_all" style="margin:8px 0">اعتماد الكل ('+a.length+')</button>'+a.map(x=>'<div class="row" data-id="'+esc(x.id)+'" style="display:block"><b>'+esc(x.name)+'</b> <span class="clsb c'+x.pendingCls+'">'+x.pendingCls+'</span><div style="color:var(--mut);font-size:13px">'+esc(x.repName)+' · '+(x.cls?'تغيير من '+x.cls+' إلى '+x.pendingCls:'إضافة جديدة')+'</div>'+
+   '<div class="acts"><button class="mini" data-a="approve">اعتماد</button><select class="mini pv_c">'+["A","B","C"].map(k=>'<option'+(k===x.pendingCls?" selected":"")+'>'+k+'</option>').join("")+'</select><button class="mini" data-a="approveAs">اعتماد بهذه الفئة</button><button class="mini" data-a="reject">رفض</button></div></div>').join(""):'<div class="empty">لا توجد طلبات بانتظار الاعتماد.</div>');
+  if($("#pv_all"))$("#pv_all").onclick=()=>planDo({op:"approve",ids:a.map(x=>x.id)},hostId);
+  b.querySelectorAll(".row .mini[data-a]").forEach(x=>x.onclick=()=>{const row=x.closest(".row"),id=row.dataset.id,op=x.dataset.a;
+   planDo(op==="approveAs"?{op:"approve",ids:[id],cls:row.querySelector(".pv_c").value}:{op:op,ids:[id]},hostId)});
+ }else{
+  const ids=Object.keys(reps).concat(REPS.map(x=>x.id)).filter((x,i,a)=>a.indexOf(x)===i);
+  if(!PV.rep||ids.indexOf(PV.rep)<0)PV.rep=ids[0]||"";
+  const name=id=>reps[id]||((REPS.find(x=>x.id===id)||{}).name)||id,a=r.rows.filter(x=>x.repId===PV.rep&&x.cls).sort((p,q)=>p.cls<q.cls?-1:p.cls>q.cls?1:String(p.name).localeCompare(String(q.name),"ar"));
+  b.innerHTML=freq+'<label>المندوب</label><select id="pv_r">'+ids.map(id=>'<option value="'+esc(id)+'"'+(id===PV.rep?" selected":"")+'>'+esc(name(id))+'</option>').join("")+'</select>'+
+   '<button class="btn dash" id="pv_add" style="margin-top:8px">＋ إضافة طبيب لقائمة المندوب</button>'+
+   (a.length?'<div class="empty" style="margin:8px 0">'+a.length+' طبيب · A '+a.filter(x=>x.cls==="A").length+' · B '+a.filter(x=>x.cls==="B").length+' · C '+a.filter(x=>x.cls==="C").length+'</div>'+a.map(x=>'<div class="row" data-id="'+esc(x.id)+'" style="display:flex;align-items:center;gap:8px"><b style="flex:1">'+esc(x.name)+'</b>'+(x.pendingCls?'<span class="st s1">طلب '+x.pendingCls+'</span>':'')+
+    '<select class="mini pv_set">'+["A","B","C"].map(k=>'<option'+(k===x.cls?" selected":"")+'>'+k+'</option>').join("")+'</select><button class="mini" data-a="remove">حذف</button></div>').join(""):'<div class="empty">لا يوجد أطباء معتمدون في قائمة هذا المندوب.</div>');
+  $("#pv_r").onchange=()=>{PV.rep=$("#pv_r").value;planDrawRows(r,hostId)};
+  $("#pv_add").onclick=()=>{if(!PV.rep)return;const have={};r.rows.filter(x=>x.repId===PV.rep).forEach(x=>have[x.doctorId]=1);
+   const pool=(CFG.docs||[]).filter(d=>!have[d.id]);
+   $("#modal").innerHTML='<h3>إضافة طبيب لقائمة '+esc(name(PV.rep))+'</h3><input id="pa_q" placeholder="ابحث باسم الطبيب"><div class="clspick" id="pa_c">'+["A","B","C"].map(k=>'<button type="button" class="btn'+(k==="B"?" pri":"")+'" data-k="'+k+'">'+k+'</button>').join("")+'</div><div id="pa_l" class="palist"></div><button type="button" class="sheetbtn" id="pa_x">إغلاق</button>';
+   $("#ov").classList.add("on");$("#pa_x").onclick=()=>$("#ov").classList.remove("on");let k="B";
+   $("#pa_c").querySelectorAll(".btn").forEach(x=>x.onclick=()=>{k=x.dataset.k;$("#pa_c").querySelectorAll(".btn").forEach(y=>y.classList.toggle("pri",y===x))});
+   const draw=()=>{const q=norm($("#pa_q").value),list=pool.filter(d=>!q||norm(d.name).indexOf(q)>=0).slice(0,40);
+    $("#pa_l").innerHTML=list.map(d=>'<button type="button" class="sheetbtn" data-id="'+esc(d.id)+'">'+esc(d.name)+(d.specialty?' <small>· '+esc(d.specialty)+'</small>':'')+'</button>').join("")||'<div class="empty">لا نتائج.</div>';
+    $("#pa_l").querySelectorAll("[data-id]").forEach(x=>x.onclick=async()=>{x.disabled=true;try{await srv("planAct",{op:"add",repId:PV.rep,doctorId:x.dataset.id,cls:k});$("#ov").classList.remove("on");toast("أُضيف");planView(hostId,false)}catch(e){x.disabled=false;toast(e.message)}})};
+   $("#pa_q").oninput=draw;draw();$("#pa_q").focus()};
+  b.querySelectorAll(".pv_set").forEach(x=>x.onchange=()=>planDo({op:"set",ids:[x.closest(".row").dataset.id],cls:x.value},hostId));
+  b.querySelectorAll(".mini[data-a=remove]").forEach(x=>x.onclick=()=>{if(!x.dataset.c){x.dataset.c=1;x.textContent="تأكيد الحذف؟";return}planDo({op:"remove",ids:[x.closest(".row").dataset.id]},hostId)});
+ }
+ if($("#pf_go"))$("#pf_go").onclick=async()=>{try{await srv("planSaveFreq",{freq:{A:+$("#pf_A").value,B:+$("#pf_B").value,C:+$("#pf_C").value}});toast("تم الحفظ");planView(hostId,false)}catch(e){toast(e.message)}};
+}
+async function planDo(p,hostId){try{const n=await srv("planAct",p);toast("تم ("+n+")");planView(hostId,false)}catch(e){toast(e.message)}}
 </script>
