@@ -52,6 +52,8 @@ function api(token, action, p) {
       outcome = 'ok';
       return result;
     }
+    // Phone error reports are accepted with or without a valid session (an expired session is itself a moment errors happen).
+    if (action === 'clientErr') { let cs = null; try { cs = session_(token); } catch (e) {} const result = ok(clientErr_(cs, p)); outcome = 'ok'; return result; }
     let tS = Date.now();
     const s = session_(token); phase_('session', tS);
     const route = routes_()[action];

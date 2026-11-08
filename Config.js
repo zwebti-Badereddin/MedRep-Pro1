@@ -33,6 +33,8 @@ const T = {
   RepDoctors: ['id', 'repId', 'doctorId', 'doctorName', 'cls', 'pendingCls', 'requestedAt', 'approvedBy', 'approvedAt', 'active'],
   // SampleMoves: free-sample stock moves per rep (Stock.js): تسليم (+), إرجاع (−), جرد (signed difference).
   SampleMoves: ['id', 'repId', 'product', 'qty', 'type', 'note', 'date', 'createdAt', 'createdBy'],
+  // ClientErrors: short error reports from the phones (Health.js): no report content, at most the last 5,000 rows.
+  ClientErrors: ['ts', 'userId', 'role', 'kind', 'screen', 'msg', 'ver', 'ua'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']
 };

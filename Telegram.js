@@ -129,6 +129,7 @@ function tgSummaryText_(day) {
 // (only on a working day that is not a holiday). Re-reading closeHour every run means a changed setting needs no new trigger.
 function tgHourly() {
   if (!tgToken_()) return;
+  PropertiesService.getScriptProperties().setProperty(TG_HOURLY_LAST_KEY, String(Date.now())); // heartbeat for healthChecks_
   try { tgPoll_(); } catch (e) {}
   const st = settings_(), tz = st.timezone || Session.getScriptTimeZone(), hour = +Utilities.formatDate(new Date(), tz, 'H');
   if (hour < closeHour_(st)) return;

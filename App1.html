@@ -20,7 +20,7 @@ function _callGas(a,p){return new Promise((res,rej)=>google.script.run.withSucce
 const devKey=x=>"mr_dev_"+(x?"a":"r");
 function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
 function setDev(x,t){try{if(t)localStorage.setItem(devKey(x),t)}catch(e){}}
-const NOREAUTH=["login","logout","loginAudit","myStock"];let REAUTH=null;
+const NOREAUTH=["login","logout","loginAudit","myStock","clientErr"];let REAUTH=null;
 function _callRetry(a,p,n){return _call(a,p).catch(e=>{if(n<3&&/النظام مشغول/.test(e.message))return new Promise(r=>setTimeout(r,1200*(n+1)+Math.random()*800)).then(()=>_callRetry(a,p,n+1));throw e})}
 function _srv(a,p){return _callRetry(a,p,0).catch(e=>{if(TOKEN&&NOREAUTH.indexOf(a)<0&&/انتهت الجلسة/.test(e.message))return reauth().then(()=>_callRetry(a,p,0));throw e})}
 function reauth(){
@@ -505,4 +505,19 @@ function drawC(){if(!$("#cb"))return;const d=CM.data,k=CM.metric,col=v=>k==="vis
  const body=d.reps.map(rp=>{const vs=d.months.map(m=>{const r=m.rows&&m.rows.find(x=>x.repId===rp.id);return r?r[k]:null}),ok=vs.filter(v=>v!=null),avg=ok.length?Math.round(ok.reduce((a,b)=>a+b,0)/ok.length):null;
   return `<tr><th>${esc(rp.name)}</th>${vs.map(v=>v==null?"<td>—</td>":`<td style="background:${col(v)}">${fmt(v)}</td>`).join("")}<td><b>${avg==null?"—":fmt(avg)}</b></td></tr>`}).join("");
  $("#cb").innerHTML=`<div class="cmp-table-wrap" role="region" aria-label="جدول المقارنة الشهرية" tabindex="0"><table class="cmp-table"><thead><tr><th>المندوب</th>${MN.map((m,i)=>`<th>${i+1}</th>`).join("")}<th>المتوسط</th></tr></thead><tbody>${body}</tbody></table></div><div class="empty cmp-legend">الأخضر: 85% فأكثر · الأصفر: 60–84% · الأحمر: أقل من 60%. الأشهر المغلقة تحتفظ بدرجتها كما حُسبت. اسحب الجدول أفقيًا لرؤية جميع الأشهر.</div>`}
+
+/* Errors on the phone → short reports for the vendor's fault detector: kind, screen, message, app kind, device. Never report
+   content. Kept on the phone while offline (last 20), each message once per session; network and session messages are skipped. */
+const CERR_KEY="mr_cerr",CERR_SEEN={};let cerrBusy=false;
+function cerrScreen(){const h=document.querySelector("#app h1")||document.querySelector(".top .pg");return h?h.textContent.trim().slice(0,40):(rep?String(rep.role||""):"login")}
+function cerrPush(kind,msg){try{
+ msg=String(msg||"").slice(0,240);if(!msg||CERR_SEEN[msg]||/Failed to fetch|NetworkError|Load failed|network|انقطع|غير متصل|انتهت الجلسة|تعذر الاتصال/i.test(msg))return;CERR_SEEN[msg]=1;
+ const a=JSON.parse(localStorage.getItem(CERR_KEY)||"[]");a.push({ts:new Date().toISOString(),kind:kind,screen:cerrScreen(),msg:msg,ver:window.MEDREP_API?"web":"gas",ua:String(navigator.userAgent||"").slice(0,120)});
+ localStorage.setItem(CERR_KEY,JSON.stringify(a.slice(-20)));setTimeout(cerrFlush,3000)}catch(e){}}
+function cerrFlush(){if(cerrBusy||navigator.onLine===false)return;let a;try{a=JSON.parse(localStorage.getItem(CERR_KEY)||"[]")}catch(e){a=[]}if(!a.length)return;
+ const batch=a.slice(0,10);cerrBusy=true;
+ srv("clientErr",{errors:batch}).then(()=>{try{const b=JSON.parse(localStorage.getItem(CERR_KEY)||"[]");localStorage.setItem(CERR_KEY,JSON.stringify(b.slice(batch.length)))}catch(e){}}).catch(()=>{}).then(()=>{cerrBusy=false})}
+addEventListener("error",e=>{if(e&&e.message)cerrPush("js",e.message+(e.filename?" @"+String(e.filename).split("/").pop()+":"+e.lineno:""))});
+addEventListener("unhandledrejection",e=>{const r=e&&e.reason;cerrPush("promise",r&&r.message?r.message:String(r))});
+addEventListener("online",()=>setTimeout(cerrFlush,5000));setTimeout(cerrFlush,15000);
 </script>
