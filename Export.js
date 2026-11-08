@@ -3,7 +3,7 @@
 const EXPORT_MAX_DAYS = 366, EXPORT_MAX_ROWS = 20000;
 const EXPORT_HEADER = ['رقم التقرير', 'التاريخ', 'المندوب', 'حالة التقرير', 'نوع الزيارة', 'م', 'الاسم', 'التخصص', 'مكان العمل / العنوان', 'أقرب منشأة',
   'القطاع', 'وقت الزيارة', 'المنتج المعرَّف به', 'المنتج المذكَّر به', 'العينات المجانية', 'النشاط داخل الصيدلية', 'الطلبية', 'التحقق من الموقع', 'المسافة (م)', 'ملاحظة اليوم', 'ملاحظات الطبيب',
-  'الدخول', 'الخروج', 'مدة الزيارة (دقيقة)', 'تنبيهات الوقت'];
+  'الدخول', 'الخروج', 'مدة الزيارة (دقيقة)', 'تنبيهات الوقت', 'المنافسون', 'مخزون الصيدلية', 'أصناف الطلبية'];
 
 // Samples [{product, qty}] (or legacy s1/s2) as "Product ×2 · Other", merged by product.
 function exportSamplesText_(v) {
@@ -23,7 +23,7 @@ function exportVisitRows_(reports, repNames, tz) {
     const json = t => { try { const a = JSON.parse(t || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
     const gps = v => { const g = v.gps || {}; return [g.status ? S(g.status) : 'لم يُتحقق بعد', isFinite(+g.dist) && g.dist !== '' && g.dist != null ? Math.round(+g.dist) : '']; };
     const all = json(r.doctors).concat(json(r.pharmacies));
-    const vt = v => [vtClock_(v.ci && v.ci.t, tz), vtClock_(v.co && v.co.t, tz), v.dur == null ? '' : v.dur, vtFlags_(v, all).join(' · ')];
+    const vt = v => [vtClock_(v.ci && v.ci.t, tz), vtClock_(v.co && v.co.t, tz), v.dur == null ? '' : v.dur, vtFlags_(v, all).join(' · '), compText_(v), stockText_(v), orderItemsText_(v)];
     json(r.doctors).forEach((v, i) => out.push(base.concat(['طبيب', i + 1, S(v.name), S(v.specialty), S(v.place), '', S(v.sector), S(v.time), S(v.intro), S(v.remind),
       exportSamplesText_(v), '', ''], gps(v), [i === 0 ? S(r.notes) : '', S(v.drNote)], vt(all[i]))));
     json(r.pharmacies).forEach((v, i) => out.push(base.concat(['صيدلية', i + 1, S(v.name), '', S(v.loc), S(v.near), '', S(v.time), S(v.product), '',

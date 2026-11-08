@@ -6,9 +6,10 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans">خطط الزيارات</button><button class="btn" data-e="Stock">مخزون العينات</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans">خطط الزيارات</button><button class="btn" data-e="Stock">مخزون العينات</button><button class="btn" data-e="Comp">المنافسون</button><button class="btn" data-e="PhAlerts">تنبيهات الصيدليات</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
+ if(MS.ent==="Comp"||MS.ent==="PhAlerts"){$("#mf").parentNode.outerHTML='<div id="mkv" style="margin-top:10px"></div>';$("#ml").remove();(MS.ent==="Comp"?compView:phAlertsView)("mkv");return}
  if(MS.ent==="Stock"){$("#mf").parentNode.outerHTML='<div id="skv" style="margin-top:10px"></div>';$("#ml").remove();stockView("skv",false);return}
  if(MS.ent==="Plans"){$("#mf").parentNode.outerHTML='<div id="plv" style="margin-top:10px"></div>';$("#ml").remove();planView("plv",false);return}
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
@@ -264,8 +265,10 @@ function visitChips(v,k){
   if(v.rx&&v.rx.id)c.push(chip("📎 وصفة"));
  }else{
   if(v.product)c.push(chip(v.product));
-  if(v.order)c.push(chip("طلبية: "+v.order));
+  const ot=typeof orderTextC==="function"?orderTextC(v):v.order;if(ot)c.push(chip("طلبية: "+ot));
+  const out=(v.stock||[]).filter(x=>x.st==="out").map(x=>x.product);if(out.length)c.push(chip("نفد: "+out.join("، "),"off"));
  }
+ if((v.comp||[]).length)c.push(chip("منافس: "+v.comp.map(x=>x.p).join("، ")));
  const g=v.gps||{};
  c.push(typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
  return '<div class="chips">'+c.join("")+'</div>';
@@ -452,14 +455,16 @@ async function openReportEn(){
  $("#en_pdf").onclick=()=>go("pdf",$("#en_pdf"));$("#en_csv").onclick=()=>go("csv",$("#en_csv"));
 }
 const EN_REP_H=["Representative","Working days","Reports on time","Compliance %","Doctor visits","Pharmacy visits","Total visits","Doctors reached","Plan coverage %","Score %"];
-const EN_PROD_H=["Product","Detailing","Reminders","Samples (units)","Pharmacy visits","Pharmacy orders"];
+const EN_PROD_H=["Product","Detailing","Reminders","Samples (units)","Pharmacy visits","Pharmacy orders","Ordered (units)"];
+const EN_COMP_H=["Competitor product","Mentions","By type"];
 const enRepRow=x=>[x.name,x.workDays,x.onTime+" / "+x.expected,x.compliance,x.doctorVisits,x.pharmacyVisits,x.doctorVisits+x.pharmacyVisits,x.uniqueDoctors,x.coverage==null?"—":x.coverage,x.score==null?"—":x.score];
-const enProdRow=x=>[x.name,x.detailing,x.reminders,x.samples,x.pharmacyVisits,x.orders];
+const enProdRow=x=>[x.name,x.detailing,x.reminders,x.samples,x.pharmacyVisits,x.orders,x.orderedUnits||0];
+const enCompRow=x=>[x.product,x.mentions,x.types];
 const EN_NOTES=["Visits are counted from submitted and approved daily reports only.","Working days exclude official holidays and approved leave.","Reports on time: daily reports submitted before the company's closing hour, out of the working days required.","Doctors reached: number of different doctors visited (names are not shared).","Plan coverage: required visits per doctor class (A/B/C) achieved, capped per doctor; — means no approved visit plan.","Detailing / reminders: doctor visits where the product was presented or reminded. Samples: free sample units handed to doctors."];
 function enCsv(r){const t=r.totals;
  return [[r.company],["Monthly Medical Promotion Report — "+enMonth(r.ym)],["Period",r.from+" to "+r.to],["Generated",r.generatedAt.slice(0,10)],[],
   ["1. Medical representatives"],EN_REP_H].concat(r.reps.map(enRepRow),[["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""],[],
-  ["2. Product activity"],EN_PROD_H],r.products.map(enProdRow),[["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders],[],["Notes"]],EN_NOTES.map(x=>[x]))}
+  ["2. Product activity"],EN_PROD_H],r.products.map(enProdRow),[["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders,t.orderedUnits||0],[]],(r.competitors||[]).length?[["3. Competitor intelligence"],EN_COMP_H].concat(r.competitors.map(enCompRow),[[]]):[],[["Notes"]],EN_NOTES.map(x=>[x]))}
 function enShow(r){
  const t=r.totals,tbl=(h,rows,tot)=>'<table><thead><tr>'+h.map(x=>'<th>'+esc(x)+'</th>').join("")+'</tr></thead><tbody>'+rows.map(c=>'<tr>'+c.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>').join("")+'</tbody>'+(tot?'<tfoot><tr>'+tot.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr></tfoot>':'')+'</table>';
  const old=$("#enrep");if(old)old.remove();
@@ -468,7 +473,7 @@ function enShow(r){
   '<div class="enhead"><div><h1>'+esc(r.company)+'</h1><h2>Monthly Medical Promotion Report</h2></div><div class="enmeta"><b>'+esc(enMonth(r.ym))+'</b><span>'+esc(r.from)+' to '+esc(r.to)+'</span><span>Generated '+esc(r.generatedAt.slice(0,10))+'</span></div></div>'+
   '<div class="enkpi"><div><b>'+t.reps+'</b><span>Representatives</span></div><div><b>'+t.doctorVisits+'</b><span>Doctor visits</span></div><div><b>'+t.pharmacyVisits+'</b><span>Pharmacy visits</span></div><div><b>'+t.samples+'</b><span>Sample units</span></div></div>'+
   '<h3>1. Medical representatives</h3>'+tbl(EN_REP_H,r.reps.map(enRepRow),["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""])+
-  '<h3>2. Product activity</h3>'+tbl(EN_PROD_H,r.products.map(enProdRow),["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders])+
+  '<h3>2. Product activity</h3>'+tbl(EN_PROD_H,r.products.map(enProdRow),["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders,t.orderedUnits||0])+((r.competitors||[]).length?'<h3>3. Competitor intelligence</h3>'+tbl(EN_COMP_H,r.competitors.map(enCompRow)):'')+
   '<h3>Notes</h3><ul class="ennotes">'+EN_NOTES.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><div class="enfoot">Prepared with MedRep Pro</div></div>';
  document.body.appendChild(el);document.body.classList.add("enprint");
  const close=()=>{el.remove();document.body.classList.remove("enprint")};
@@ -497,4 +502,24 @@ function mapCoordsFromText(t){
  const n="(-?\\d{1,3}\\.\\d+)",pats=[new RegExp("!3d"+n+"!4d"+n),new RegExp("[?&](?:q|query|ll|destination|center|daddr)=(?:loc:)?"+n+",\\s*"+n),new RegExp("@"+n+","+n),new RegExp("^\\s*"+n+"\\s*[,،\\s]\\s*"+n+"\\s*$")];
  for(const p of pats){const m=p.exec(s);if(!m)continue;const la=+m[1],ln=+m[2];if(Math.abs(la)<=90&&Math.abs(ln)<=180&&!(la===0&&ln===0))return{lat:la,lng:ln}}
  return null}
+
+/* ===== Competitor summary and pharmacy alerts (admin › السجلات). The period is the من/إلى of the admin screen. ===== */
+let mkSeq=0;
+async function compView(hostId){
+ const seq=++mkSeq,host=()=>seq===mkSeq?$("#"+hostId):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ let r;try{r=await srv("compSummary",{from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""})}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}if(!host())return;
+ const max=Math.max(1,...r.products.map(p=>p.count));
+ host().innerHTML='<div class="empty" style="margin-bottom:8px">من '+esc(r.from)+' إلى '+esc(r.to)+' · '+r.total+' ملاحظة من التقارير المرسلة والمعتمدة</div>'+
+  (r.total?'<div class="row" style="display:block"><b>الأنواع</b><div class="plcls">'+Object.keys(r.types).map(t=>'<span>'+esc(t)+' <b>'+r.types[t]+'</b></span>').join("")+'</div></div>'+
+  '<div class="row" style="display:block"><b>أكثر المنتجات المنافسة ذكرًا</b>'+r.products.map(p=>'<div class="cmrow"><span class="cmname">'+esc(p.product)+'</span><span class="cmbar"><i style="width:'+Math.round(p.count/max*100)+'%"></i></span><b>'+p.count+'</b><small>'+esc(Object.keys(p.types).map(t=>t+" "+p.types[t]).join(" · "))+'</small></div>').join("")+'</div>'+
+  '<div class="sec"><h3>التفاصيل</h3></div>'+r.items.map(c=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(c.product)+' · '+esc(c.typeName)+'</b><span style="color:var(--mut);font-size:13px">'+esc(c.date)+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(c.rep)+' · '+esc(c.kind)+': '+esc(c.where)+'</div>'+(c.note?'<div style="margin-top:4px">«'+esc(c.note)+'»</div>':'')+'</div>').join("")
+  :'<div class="empty">لا توجد ملاحظات عن المنافسين في هذه الفترة. يسجّلها المندوبون من نموذج الزيارة في قسم «المنافسون».</div>');
+}
+async function phAlertsView(hostId){
+ const seq=++mkSeq,host=()=>seq===mkSeq?$("#"+hostId):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ let r;try{r=await srv("pharmAlerts",{from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""})}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}if(!host())return;
+ host().innerHTML='<div class="empty" style="margin-bottom:8px">آخر ما سجّله المندوبون لكل منتج في كل صيدلية، من '+esc(r.from)+' إلى '+esc(r.to)+': المنتجات النافدة، أو التي تنتهي صلاحيتها خلال 90 يومًا.</div>'+
+  (r.alerts.length?r.alerts.map(a=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(a.pharmacy)+'</b><span class="st '+(a.st==="out"?"s4":"s1")+'">'+esc(a.reasons.join(" · "))+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(a.product)+' · '+esc(a.stName)+(a.qty!=null?' ('+a.qty+')':'')+(a.exp?' · صلاحية '+esc(a.exp):'')+' · '+esc(a.rep)+' · '+esc(a.date)+(a.loc?' · '+esc(a.loc):'')+'</div></div>').join("")
+  :'<div class="empty">لا توجد تنبيهات: لم يُسجَّل نفاد ولا صلاحية قريبة في هذه الفترة.</div>');
+}
 </script>

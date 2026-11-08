@@ -141,6 +141,8 @@ function routes_() {
   planAct:       { role: 'admin', fn: planAct_ },
   planSaveFreq:  { role: 'admin', fn: planSaveFreq_ },
   planImport:    { role: 'admin', fn: planImport_ },
+  compSummary:   { role: 'admin', fn: compSummary_ },
+  pharmAlerts:   { role: 'admin', fn: pharmAlerts_ },
   reportEnSetup: { role: 'admin', fn: reportEnSetup_ },
   reportEn:      { role: 'admin', fn: reportEn_ },
   resolveMapLink:{ role: 'admin', fn: resolveMapLink_ },

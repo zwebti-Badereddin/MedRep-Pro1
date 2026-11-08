@@ -4,6 +4,7 @@
 // so the table schemas do not change; a missing English name falls back to the Arabic one.
 
 const REPORT_EN_MAX_NAME = 80;
+const REPORT_EN_COMP = { price: 'lower price', promo: 'promotion / bonus', objection: 'objection', shortage: 'our product short', other: 'other' };
 function reportEnNames_() {
   const st = settings_(), parse = k => { try { const o = JSON.parse(st[k] || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } };
   return { company: String(st.companyNameEn || ''), reps: parse('repsEn'), products: parse('productsEn') };
@@ -45,7 +46,8 @@ function reportEn_(s, p) {
   });
   // Products: every product in the list, plus any product name found in the month's visits (renamed or removed later).
   const prodRows = {}, order = [];
-  const row = name => { const k = String(name || '').trim(); if (!k || k === '—') return null; if (!prodRows[k]) { prodRows[k] = { name: k, detailing: 0, reminders: 0, samples: 0, pharmacyVisits: 0, orders: 0 }; order.push(k); } return prodRows[k]; };
+  const row = name => { const k = String(name || '').trim(); if (!k || k === '—') return null; if (!prodRows[k]) { prodRows[k] = { name: k, detailing: 0, reminders: 0, samples: 0, pharmacyVisits: 0, orders: 0, orderedUnits: 0 }; order.push(k); } return prodRows[k]; };
+  const comp = {};
   const enByName = {}; dbAll_('Products').forEach(x => { row(x.name); if (names.products[x.id]) enByName[String(x.name).trim()] = names.products[x.id]; });
   Object.keys(byRep).forEach(k => {
     byRep[k].d.forEach(v => {
@@ -54,7 +56,8 @@ function reportEn_(s, p) {
       const list = Array.isArray(v.samples) ? v.samples : [v.s1, v.s2].filter(Boolean).map(x => ({ product: x, qty: 1 }));
       list.forEach(x => { const r = row(x && x.product); if (r) r.samples += Math.max(1, Math.min(99, Math.round(+x.qty) || 1)); });
     });
-    byRep[k].p.forEach(v => { const r = row(v.product); if (r) { r.pharmacyVisits++; if (String(v.order || '').trim()) r.orders++; } });
+    byRep[k].p.forEach(v => { const r = row(v.product); if (r) { r.pharmacyVisits++; if (String(v.order || '').trim() || (v.orderItems || []).length) r.orders++; } (v.orderItems || []).forEach(x => { const o = row(x.product); if (o) o.orderedUnits += x.qty; }); });
+    byRep[k].d.concat(byRep[k].p).forEach(v => (v.comp || []).forEach(c => { const key = normName_(c.p) || c.p, b = comp[key] || (comp[key] = { product: c.p, mentions: 0, types: {} }); b.mentions++; const t = REPORT_EN_COMP[c.t] || REPORT_EN_COMP.other; b.types[t] = (b.types[t] || 0) + 1; }));
   });
   // Products with no activity stay in the table (zeros): the principal sees its whole range.
   const products = order.map(k => Object.assign(prodRows[k], { name: enByName[k] || k }));
@@ -62,6 +65,7 @@ function reportEn_(s, p) {
   audit_(s, 'report_en', ym);
   return { ym: ym, from: from, to: to, company: names.company || st.companyName || '', generatedAt: new Date().toISOString(),
     reps: repRows, products: products,
+    competitors: Object.keys(comp).map(k => ({ product: comp[k].product, mentions: comp[k].mentions, types: Object.keys(comp[k].types).map(t => t + ' ' + comp[k].types[t]).join(', ') })).sort((a, b) => b.mentions - a.mentions),
     totals: { doctorVisits: sum(repRows, 'doctorVisits'), pharmacyVisits: sum(repRows, 'pharmacyVisits'), reps: repRows.length,
-      detailing: sum(products, 'detailing'), reminders: sum(products, 'reminders'), samples: sum(products, 'samples'), orders: sum(products, 'orders') } };
+      detailing: sum(products, 'detailing'), reminders: sum(products, 'reminders'), samples: sum(products, 'samples'), orders: sum(products, 'orders'), orderedUnits: sum(products, 'orderedUnits') } };
 }

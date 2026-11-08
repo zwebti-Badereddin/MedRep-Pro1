@@ -12,9 +12,9 @@ const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
 const client = (() => {
   const src = ['const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, '') + ';', line(app1, 'const DAYS='), line(app1, 'const MN='),
     line(app4, 'const svgI='), app4.match(/const IC=\{[\s\S]*?\r?\n\};/)[0],
-    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'), fn(app3, 'vtHM'), fn(app3, 'vtFlagsC'), fn(app3, 'vtCell'),
+    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'), fn(app3, 'vtHM'), fn(app3, 'vtFlagsC'), fn(app3, 'vtCell'), line(app3, 'const COMP_T='), line(app3, 'const STK_T='), line(app3, 'const tName='), fn(app3, 'compTextC'), fn(app3, 'stockTextC'), fn(app3, 'orderTextC'),
     fn(app2, 'longDate'), fn(app2, 'visitChips'), fn(app2, 'visitCard')].join('\n');
-  const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={normSamples,mergeSamples,sampleText,render,longDate,visitChips,visitCard,vtFlagsC}', c);
+  const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={normSamples,mergeSamples,sampleText,render,longDate,visitChips,visitCard,vtFlagsC,compTextC,stockTextC,orderTextC}', c);
   return c.api;
 })();
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -88,6 +88,17 @@ test('check-in / check-out: the report shows "in ← out · minutes"; warnings o
   const a = { ci: { t: at(10, 0) }, co: { t: at(10, 20) }, dur: 20 }, b = { ci: { t: at(10, 10) }, co: { t: at(10, 30) }, dur: 20, sk: -9 };
   assert.strictEqual(JSON.stringify(client.vtFlagsC(b, [a, b])), JSON.stringify(['ساعة الهاتف غير دقيقة (9 د)', 'متداخلة مع زيارة أخرى']));
   assert.ok(!client.render(Object.assign({}, base, { docs: [{ name: 'old' }] })).includes('الدخول والخروج'), 'older visits without times show nothing');
+});
+test('market information: competitor notes, pharmacy stock and order lines in the report and on the cards', () => {
+  const base = { company: { name: 'X', color: '#000', short: 'X', title: 'T' }, no: '1', rep: 'r', day: 'd', date: 'd', notes: '' };
+  const ph = { name: 'صيدلية', order: 'تسليم الخميس', orderItems: [{ product: 'Clodil', qty: 20 }], stock: [{ product: 'Clodil', st: 'out' }, { product: 'Aspi', st: 'low', qty: 5, exp: '2027-01' }], comp: [{ p: 'Plavix', t: 'price', n: 'أرخص' }] };
+  const html = client.render(Object.assign({}, base, { docs: [{ name: 'د', comp: [{ p: 'Plavix', t: 'promo' }] }], phs: [ph] }));
+  assert.ok(html.includes('Plavix (عرض أو بونص)') && html.includes('Plavix (سعر أقل): أرخص'));
+  assert.ok(html.includes('Clodil ×20 · تسليم الخميس') || html.includes('Clodil ×20 — تسليم الخميس'));
+  assert.ok(html.includes('Clodil: نفد · Aspi: قليل (5) صلاحية 2027-01'));
+  const chips = client.visitChips(ph, 'p');
+  assert.ok(chips.includes('نفد: Clodil') && chips.includes('منافس: Plavix') && chips.includes('طلبية: Clodil ×20'));
+  assert.ok(!client.render(Object.assign({}, base, { docs: [{ name: 'old', order: 'x' }], phs: [] })).includes('المنافسون'));
 });
 tests.forEach(t => { try { t.fn(); pass++; console.log('PASS  ' + t.name); } catch (e) { fail++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 3).join('\n      ')); } });
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

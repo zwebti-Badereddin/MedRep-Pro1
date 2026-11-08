@@ -91,7 +91,7 @@ function prepareReport_(s, p) {
     const prevD = r ? JSON.parse(r.doctors || '[]') : [], prevP = r ? JSON.parse(r.pharmacies || '[]') : [];
     // Phone clock vs server clock at the moment of this save (minutes), for the check-in / check-out times (VisitTime.js).
     const skewMin = isFinite(+p.clk) && +p.clk > 0 ? Math.round((Date.now() - +p.clk) / 60000) : null;
-    const clean = (list, prev) => (list || []).map((v, i) => {
+    const clean = (list, prev, kind) => (list || []).map((v, i) => {
       const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
       delete o._v; delete o._needLink; delete o.linkPending; // server-only flags; never accepted from the client
       // Free samples [{product, qty}]: at most 20 rows, product text up to 80 chars, quantity 1–99; anything else is dropped.
@@ -103,14 +103,15 @@ function prepareReport_(s, p) {
       if (note) o.drNote = note; else delete o.drNote;
       const rx = cleanRx_(v.rx); // prescription photo: only {id, at} of a well-formed Drive id (read back through getRx)
       if (rx) o.rx = rx; else delete o.rx;
-      vtClean_(o, v, prev, skewMin); // check-in / check-out: well-formed points only, duration computed here
+      vtClean_(o, v, prev, skewMin);
+      cleanVisitExtras_(o, v, kind); // competitor notes; pharmacy stock and order lines (Market.js) // check-in / check-out: well-formed points only, duration computed here
       const pv = prev.find(x => x.gps && x.gps.status && x.name === v.name && x.doctorId === v.doctorId && x.workplaceId === v.workplaceId && x.pharmacyId === v.pharmacyId && normName_(x.place || x.loc || '') === normName_(v.place || v.loc || '') && x.gps.ts === g.ts && x.gps.lat === g.lat && x.gps.lng === g.lng && x.gps.acc === g.acc);
       if (pv) o.gps = pv.gps;
       else if (typeof g.lat === 'number' && typeof g.lng === 'number') { o.gps = { lat: g.lat, lng: g.lng, acc: +g.acc || 0, ts: g.ts }; o._v = true; }
       else o.gps = { status: 'غير متاح' };
       return o;
     });
-    const docs = clean(p.doctors, prevD), phs = clean(p.pharmacies, prevP);
+    const docs = clean(p.doctors, prevD, 'doctor'), phs = clean(p.pharmacies, prevP, 'pharmacy');
     // Validate explicit master IDs even when GPS is unavailable; IDs are not trusted merely because the client sent them.
     const masterDoctors = dbAll_('Doctors'), masterPharmacies = dbAll_('Pharmacies');
     const fx = { facilities: dbAll_('Facilities'), workplaces: dbAll_('DoctorWorkplaces') }, policy = workplacePolicy_();
