@@ -75,13 +75,13 @@ function similarFacilitiesHtml(list){
  return '<div class="ap-sec"><b>توجد منشأة مسجلة مشابهة — تأكد أنها ليست نفسها:</b>'+list.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'</div>'+(x.distance!=null?'<span class="st">'+x.distance+' م</span>':'')+'</div>').join("")+'</div>';
 }
 /* Bulk import: paste columns copied from Excel (tab-separated), preview, then add. Existing names are never duplicated. */
-const IMPORT_COLS={Plans:"المندوب · الطبيب · الفئة (A أو B أو C)",Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة",Facilities:"الاسم · النوع · العنوان · خط العرض · خط الطول"};
-const IMPORT_NAMES={Plans:"خطط الزيارات",Doctors:"أطباء",Pharmacies:"صيدليات",Facilities:"منشآت"};
+const IMPORT_COLS={Products:"اسم المنتج · التصنيف (اختياري)",Plans:"المندوب · الطبيب · الفئة (A أو B أو C)",Doctors:"الاسم · التخصص · القطاع (خاص أو عام)",Pharmacies:"الاسم · العنوان · أقرب منشأة",Facilities:"الاسم · النوع · العنوان · خط العرض · خط الطول"};
+const IMPORT_NAMES={Products:"منتجات",Plans:"خطط الزيارات",Doctors:"أطباء",Pharmacies:"صيدليات",Facilities:"منشآت"};
 const parsePasted=t=>String(t||"").split(/\r?\n/).map(l=>l.split("\t"));
 function importResultHtml(r,committed){
  const li=(a,f)=>a.length?'<ul>'+a.slice(0,50).map(f).join("")+(a.length>50?'<li>… و'+(a.length-50)+' غيرها</li>':"")+'</ul>':"";
  return '<div class="imres"><div class="ims"><span>'+(committed?"أُضيف ":"سيُضاف ")+(committed?r.added:r.add.length)+'</span><span>موجود مسبقًا '+r.dup.length+'</span><span>غير صالح '+r.invalid.length+'</span></div>'+
-  (committed?"":li(r.add,x=>'<li>'+esc(x.name)+(x.specialty||x.location||x.address?' · '+esc(x.specialty||x.location||x.address):"")+(x.lat!==""&&x.lat!=null?' · 📍':"")+'</li>'))+
+  (committed?"":li(r.add,x=>'<li>'+esc(x.name)+(x.specialty||x.location||x.address||x.category?' · '+esc(x.specialty||x.location||x.address||x.category):"")+(x.lat!==""&&x.lat!=null?' · 📍':"")+'</li>'))+
   (r.dup.length?'<b>لن يُضاف لأنه موجود:</b>'+li(r.dup,x=>'<li>سطر '+x.line+': '+esc(x.name)+' ← '+esc(x.existing)+'</li>'):"")+
   (r.invalid.length?'<b>أسطر غير صالحة:</b>'+li(r.invalid,x=>'<li>سطر '+x.line+': '+esc(x.reason)+'</li>'):"")+'</div>'}
 function openImport(ent){
@@ -98,7 +98,7 @@ function openImport(ent){
   b.disabled=true;
   try{const out=ent==="Plans"?await srv("planImport",{rows:rows,commit:ready}):await srv("importMaster",{entity:ent,rows:rows,commit:ready});
    $("#im_r").innerHTML=importResultHtml(out,ready);
-   if(ready){toast("تمت إضافة "+out.added);b.style.display="none";$("#im_t").disabled=true;if(ent==="Plans")planView("plv",false);else await loadM();return}
+   if(ready){toast("تمت إضافة "+out.added);b.style.display="none";$("#im_t").disabled=true;if(ent==="Plans")planView("plv",false);else if(ent==="Products")tabProd();else await loadM();return}
    if(out.add.length){ready=true;b.textContent="إضافة "+out.add.length}else $("#im_e").textContent="لا يوجد جديد لإضافته."}
   catch(e){$("#im_e").textContent=e.message}finally{b.disabled=false}};
 }
@@ -142,12 +142,13 @@ function openWorkplaceMap(w){
  workplaceMapMarker=null;
  workplaceMapPoint=(w.lat!==""&&w.lat!=null&&isFinite(+w.lat)&&w.lng!==""&&w.lng!=null&&isFinite(+w.lng))?{lat:+w.lat,lng:+w.lng}:null;
  $("#modal").innerHTML='<h3>تحديد موقع المنشأة الطبية</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">الطبيب: <b>'+esc(w.doctorName||w.name||"") +'</b><br>المكان: <b>'+esc(w.workplace||w.location||w.nearFacility||"")+'</b></div>'+
- '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc((w.workplace ? w.workplace : (w.location ? w.location : w.name))+" "+(w.doctorName ? w.doctorName : ""))+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
+ '<form id="wpSearch" style="display:flex;gap:7px;margin:8px 0"><input id="wpQuery" placeholder="ابحث عن اسم المنشأة أو العنوان" value="'+esc(w.workplace||w.name||w.location||"")+'" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">بحث</button></form>'+
+ '<form id="wpLinkF" style="display:flex;gap:7px;margin:0 0 8px"><input id="wpLink" dir="auto" autocomplete="off" placeholder="أو الصق رابط Google Maps أو الإحداثيات" style="min-width:0;flex:1"><button class="btn" type="submit" style="white-space:nowrap">تطبيق</button></form>'+
  '<div id="wpSearchStatus" style="font-size:12px;color:var(--mut);min-height:20px"></div><div id="wpMap" class="mapbox" style="min-height:300px"></div>'+
  '<div id="wpCoords" style="font-size:13px;color:var(--mut);margin:8px 0">انقر على الخريطة لتحديد الموقع الدقيق.</div>'+
  '<div class="two" style="margin:4px 0"><input id="wpLat" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط العرض Latitude" aria-label="خط العرض"><input id="wpLng" inputmode="decimal" dir="ltr" autocomplete="off" placeholder="خط الطول Longitude" aria-label="خط الطول"></div><button class="btn" id="wpGo" type="button">تحديد على الخريطة</button><div class="err" id="wpCoordErr"></div>'+
  '<div class="two" style="margin-top:12px"><button class="btn" id="wpCancel" type="button">إلغاء</button><button class="btn pri" id="wpSave" type="button" disabled>حفظ موقع المنشأة</button></div>'+
- '<div style="font-size:11px;color:var(--mut);margin-top:8px">الخريطة والبحث الجغرافي من OpenStreetMap/Nominatim. تحقق بصريًا من موقع المنشأة قبل الحفظ.</div>';
+ '<div style="font-size:11px;color:var(--mut);margin-top:8px">البحث من OpenStreetMap وPhoton، وبياناتهما في ليبيا ناقصة: إن لم تجد المنشأة، افتحها في Google Maps والصق رابطها أو إحداثياتها. تحقق بصريًا من الموقع قبل الحفظ.</div>';
  $("#ov").classList.add("on");
  $("#wpCancel").onclick=()=>{$("#ov").classList.remove("on");if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null};
  $("#wpSave").onclick=()=>{if(!workplaceMapPoint)return;const point={lat:workplaceMapPoint.lat,lng:workplaceMapPoint.lng};if(workplaceMapInstance){workplaceMapInstance.remove();workplaceMapInstance=null}workplaceMapMarker=null;mAct(w.id,"setLoc",point)};
@@ -157,13 +158,15 @@ function openWorkplaceMap(w){
   e.preventDefault();const query=$("#wpQuery").value.trim();if(!query)return;
   $("#wpSearchStatus").textContent="جارٍ البحث عن المكان…";
   try{
-   const url="https:\/\/nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q="+encodeURIComponent(query);
-   const res=await fetch(url,{headers:{Accept:"application/json"}});if(!res.ok)throw new Error("تعذر تنفيذ البحث الآن.");
-   const results=await res.json();if(!results.length){$("#wpSearchStatus").textContent="لم يُعثر على نتيجة. جرّب اسمًا أو عنوانًا أوضح، أو انقر مباشرة على الخريطة.";return}
+   const results=await geoSearch(query,workplaceMapPoint);if(!results.length){$("#wpSearchStatus").textContent="لم يُعثر على المنشأة في الخرائط المفتوحة. افتحها في Google Maps والصق رابطها أو إحداثياتها في الخانة أعلاه، أو انقر مباشرة على الخريطة.";return}
    $("#wpSearchStatus").innerHTML=results.map((r,i)=>'<button type="button" class="mini" data-wpres="'+i+'" style="display:block;width:100%;text-align:right;margin:4px 0;white-space:normal">'+esc(r.display_name)+'</button>').join("");
    $("#wpSearchStatus").querySelectorAll("[data-wpres]").forEach(btn=>btn.onclick=()=>{const r=results[+btn.dataset.wpres];setWorkplaceMapPoint(+r.lat,+r.lon,true);$("#wpSearchStatus").textContent="تم تحديد نتيجة البحث. راجع العلامة على الخريطة قبل الحفظ."});
   }catch(err){$("#wpSearchStatus").textContent=err.message||"تعذر البحث. يمكنك تحديد الموقع بالنقر على الخريطة."}
  };
+ $("#wpLinkF").onsubmit=async e=>{e.preventDefault();const t=$("#wpLink").value.trim();if(!t)return;const st=$("#wpSearchStatus");
+  let p=mapCoordsFromText(t);
+  if(!p){st.textContent="جارٍ قراءة الرابط…";try{p=await srv("resolveMapLink",{text:t})}catch(err){st.textContent=err.message;return}}
+  setWorkplaceMapPoint(p.lat,p.lng,true);st.textContent="تم وضع العلامة من Google Maps ("+(+p.lat).toFixed(6)+", "+(+p.lng).toFixed(6)+"). راجعها على الخريطة ثم احفظ."+(p.lat<19||p.lat>34||p.lng<9||p.lng>26?" تنبيه: الموقع خارج ليبيا.":"")};
  loadWorkplaceMapLib().then(()=>{
   if(!$("#wpMap"))return;
   const initial=workplaceMapPoint||{lat:32.8872,lng:13.1913};
@@ -471,4 +474,27 @@ function enShow(r){
  const close=()=>{el.remove();document.body.classList.remove("enprint")};
  $("#enc").onclick=close;$("#enp").onclick=()=>window.print();
 }
+
+/* Facility map search. Open map data (Nominatim + Photon) misses many Libyan facilities, so: several spellings are tried (as
+   typed; without generic words such as مصحة / صيدلية; with ة/ه and أ/ا unified), results stay in Libya, nearest first, and the
+   admin can paste a Google Maps link or coordinates instead (mapCoordsFromText here; short links through the server). */
+const GEO_GENERIC=/(^|\s)(مصحة|مصحه|عيادة|عياده|عيادات|مستشفى|مستشفي|صيدلية|صيدليه|مركز|مجمع|مختبر|مستوصف|د\.?)(?=\s|$)/g;
+const LY_BOX="9.3,19.4,25.2,33.3";
+function geoVariants(q){const t=String(q||"").replace(/\s+/g," ").trim(),a=[t],g=t.replace(GEO_GENERIC," ").replace(/\s+/g," ").trim(),n=x=>x.replace(/[أإآ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي");
+ [g,n(t),n(g)].forEach(x=>{if(x&&x.length>1&&a.indexOf(x)<0)a.push(x)});return a}
+async function geoSearch(q,near){
+ const c=near||{lat:32.8872,lng:13.1913},out=[],seen={};
+ const add=(lat,lng,name)=>{lat=+lat;lng=+lng;if(!isFinite(lat)||!isFinite(lng))return;const k=lat.toFixed(4)+","+lng.toFixed(4);if(seen[k])return;seen[k]=1;out.push({lat:lat,lon:lng,display_name:name})};
+ for(const v of geoVariants(q)){
+  const tasks=[fetch("https:\/\/nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=ly&accept-language=ar&q="+encodeURIComponent(v),{headers:{Accept:"application/json"}}).then(r=>r.ok?r.json():[]).then(a=>a.forEach(r=>add(r.lat,r.lon,r.display_name))).catch(()=>{}),
+   fetch("https:\/\/photon.komoot.io/api/?limit=6&bbox="+LY_BOX+"&lat="+c.lat+"&lon="+c.lng+"&q="+encodeURIComponent(v)).then(r=>r.ok?r.json():{features:[]}).then(j=>(j.features||[]).forEach(f=>{const p=f.properties||{},g=(f.geometry||{}).coordinates||[];add(g[1],g[0],[p.name,p.street,p.district||p.locality,p.city,p.state].filter(Boolean).join("، "))})).catch(()=>{})];
+  await Promise.all(tasks);if(out.length)break;
+ }
+ const d=r=>Math.pow(r.lat-c.lat,2)+Math.pow((r.lon-c.lng)*Math.cos(c.lat*Math.PI/180),2);
+ return out.filter(r=>r.lat>19&&r.lat<34&&r.lon>9&&r.lon<26).sort((a,b)=>d(a)-d(b)).slice(0,8)}
+function mapCoordsFromText(t){
+ const s=String(t||"").replace(/[٠-٩]/g,x=>"٠١٢٣٤٥٦٧٨٩".indexOf(x)).replace(/[۰-۹]/g,x=>"۰۱۲۳۴۵۶۷۸۹".indexOf(x)).replace(/٫/g,".").replace(/%2C/gi,",");
+ const n="(-?\\d{1,3}\\.\\d+)",pats=[new RegExp("!3d"+n+"!4d"+n),new RegExp("[?&](?:q|query|ll|destination|center|daddr)=(?:loc:)?"+n+",\\s*"+n),new RegExp("@"+n+","+n),new RegExp("^\\s*"+n+"\\s*[,،\\s]\\s*"+n+"\\s*$")];
+ for(const p of pats){const m=p.exec(s);if(!m)continue;const la=+m[1],ln=+m[2];if(Math.abs(la)<=90&&Math.abs(ln)<=180&&!(la===0&&ln===0))return{lat:la,lng:ln}}
+ return null}
 </script>

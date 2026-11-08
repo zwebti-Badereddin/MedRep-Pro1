@@ -1,7 +1,7 @@
 // MedRep Pro — admin bulk import of doctors / pharmacies pasted from Excel. Preview first; adding re-checks everything.
 
 const IMPORT_MAX_ROWS = 1000;
-const IMPORT_COLUMNS = { Doctors: ['name', 'specialty', 'sector'], Pharmacies: ['name', 'location', 'nearFacility'], Facilities: ['name', 'type', 'address', 'lat', 'lng'] };
+const IMPORT_COLUMNS = { Products: ['name', 'category'], Doctors: ['name', 'specialty', 'sector'], Pharmacies: ['name', 'location', 'nearFacility'], Facilities: ['name', 'type', 'address', 'lat', 'lng'] };
 // Facilities that count for duplicates: every doctor facility not merged away (a disabled one is still "existing": re-enable it instead).
 const importFacilitiesExisting_ = rows => (rows || []).filter(f => f.legacyEntity !== 'Pharmacies' && !String(f.mergedInto || '').trim());
 
@@ -28,7 +28,7 @@ function importPlan_(entity, rows, existing) {
     }
     if (entity === 'Doctors') o.sector = /عام|حكوم/.test(o.sector) ? 'عام' : /خاص/.test(o.sector) ? 'خاص' : '';
     const k = normName_(o.name);
-    if (o.name.length < 3 || !k) { invalid.push({ line: line, name: o.name, reason: 'الاسم قصير جدًا أو فارغ' }); return; }
+    if (o.name.length < (entity === 'Products' ? 2 : 3) || !k) { invalid.push({ line: line, name: o.name, reason: 'الاسم قصير جدًا أو فارغ' }); return; }
     if (known[k]) { dup.push({ line: line, name: o.name, existing: known[k] }); return; }
     if (seen[k]) { dup.push({ line: line, name: o.name, existing: 'مكرر في السطر ' + seen[k] }); return; }
     seen[k] = line; add.push(o);
@@ -49,6 +49,7 @@ function importMaster_(s, p) {
     const now = new Date().toISOString();
     const values = plan.add.map(o => {
       const row = entity === 'Facilities' ? importFacilityRow_(s, o, now)
+        : entity === 'Products' ? { id: PREFIX.Products + '-' + ('0000' + (++mx)).slice(-4), name: o.name, category: o.category, status: 'نشط' }
         : Object.assign({ id: PREFIX[entity] + '-' + ('0000' + (++mx)).slice(-4), active: true, addedBy: s.uid, reviewed: 'true' }, o);
       return T[entity].map(c => (row[c] === undefined ? '' : row[c]));
     });
