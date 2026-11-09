@@ -12,7 +12,7 @@ const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
 const client = (() => {
   const src = ['const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, '') + ';', line(app1, 'const DAYS='), line(app1, 'const MN='),
     line(app4, 'const svgI='), app4.match(/const IC=\{[\s\S]*?\r?\n\};/)[0],
-    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'), fn(app3, 'vtHM'), fn(app3, 'vtFlagsC'), fn(app3, 'vtCell'), line(app3, 'const COMP_T='), line(app3, 'const STK_T='), line(app3, 'const tName='), fn(app3, 'compTextC'), fn(app3, 'stockTextC'), fn(app3, 'orderTextC'),
+    fn(app3, 'normSamples'), fn(app3, 'mergeSamples'), fn(app3, 'sampleText'), fn(app3, 'render'), fn(app3, 'vtHM'), fn(app3, 'vtFlagsC'), fn(app3, 'vtCell'), line(app3, 'const COMP_T='), line(app3, 'const STK_T='), line(app3, 'const tName='), fn(app3, 'compTextC'), fn(app3, 'stockTextC'), fn(app3, 'orderTextC'), line(app3, 'const FB_T='), fn(app3, 'fbTextC'),
     fn(app2, 'longDate'), fn(app2, 'visitChips'), fn(app2, 'visitCard')].join('\n');
   const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={normSamples,mergeSamples,sampleText,render,longDate,visitChips,visitCard,vtFlagsC,compTextC,stockTextC,orderTextC}', c);
   return c.api;

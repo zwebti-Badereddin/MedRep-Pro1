@@ -47,8 +47,9 @@ function reportEn_(s, p) {
   // Products: every product in the list, plus any product name found in the month's visits (renamed or removed later).
   const prodRows = {}, order = [];
   const row = name => { const k = String(name || '').trim(); if (!k || k === '—') return null; if (!prodRows[k]) { prodRows[k] = { name: k, detailing: 0, reminders: 0, samples: 0, pharmacyVisits: 0, orders: 0, orderedUnits: 0 }; order.push(k); } return prodRows[k]; };
-  const comp = {};
+  const comp = {}, fbk = {};
   const enByName = {}; dbAll_('Products').forEach(x => { row(x.name); if (names.products[x.id]) enByName[String(x.name).trim()] = names.products[x.id]; });
+  const enByNameFb_ = n => enByName[String(n).trim()] || n;
   Object.keys(byRep).forEach(k => {
     byRep[k].d.forEach(v => {
       const a = row(v.intro); if (a) a.detailing++;
@@ -57,6 +58,7 @@ function reportEn_(s, p) {
       list.forEach(x => { const r = row(x && x.product); if (r) r.samples += Math.max(1, Math.min(99, Math.round(+x.qty) || 1)); });
     });
     byRep[k].p.forEach(v => { const r = row(v.product); if (r) { r.pharmacyVisits++; if (String(v.order || '').trim() || (v.orderItems || []).length) r.orders++; } (v.orderItems || []).forEach(x => { const o = row(x.product); if (o) o.orderedUnits += x.qty; }); });
+    byRep[k].d.forEach(v => { if (!v.fb) return; const b = fbk[v.fb.product] || (fbk[v.fb.product] = { product: enByNameFb_(v.fb.product), positive: 0, neutral: 0, negative: 0 }); b[{ pos: 'positive', neu: 'neutral', neg: 'negative' }[v.fb.r]]++; });
     byRep[k].d.concat(byRep[k].p).forEach(v => (v.comp || []).forEach(c => { const key = normName_(c.p) || c.p, b = comp[key] || (comp[key] = { product: c.p, mentions: 0, types: {} }); b.mentions++; const t = REPORT_EN_COMP[c.t] || REPORT_EN_COMP.other; b.types[t] = (b.types[t] || 0) + 1; }));
   });
   // Products with no activity stay in the table (zeros): the principal sees its whole range.
@@ -65,6 +67,7 @@ function reportEn_(s, p) {
   const sum = (a, k) => a.reduce((n, r) => n + (+r[k] || 0), 0);
   audit_(s, 'report_en', ym);
   return { ym: ym, from: from, to: to, company: names.company || st.companyName || '', generatedAt: new Date().toISOString(),
+    feedback: Object.keys(fbk).map(k => fbk[k]),
     reps: repRows, products: products, hasSales: Object.keys(sold).length > 0,
     competitors: Object.keys(comp).map(k => ({ product: comp[k].product, mentions: comp[k].mentions, types: Object.keys(comp[k].types).map(t => t + ' ' + comp[k].types[t]).join(', ') })).sort((a, b) => b.mentions - a.mentions),
     totals: { doctorVisits: sum(repRows, 'doctorVisits'), pharmacyVisits: sum(repRows, 'pharmacyVisits'), reps: repRows.length,

@@ -12,6 +12,7 @@ function cleanVisitExtras_(o, v, kind) {
   const comp = (Array.isArray(v.comp) ? v.comp : []).slice(0, 5).map(c => ({ p: txt(c && c.p, 60), t: COMP_TYPES[c && c.t] ? c.t : 'other', n: txt(c && c.n, 200) }))
     .filter(c => c.p.length >= 2).map(c => (c.n ? c : { p: c.p, t: c.t }));
   if (comp.length) o.comp = comp; else delete o.comp;
+  if (kind === 'doctor') cleanPlanFields_(o, v); else { delete o.planId; delete o.fb; } // daily plan link and feedback (DayPlan.js)
   if (kind !== 'pharmacy') { delete o.stock; delete o.orderItems; return; }
   const stock = (Array.isArray(v.stock) ? v.stock : []).slice(0, 20).map(s => {
     const r = { product: txt(s && s.product, 80), st: STOCK_STATES[s && s.st] ? s.st : 'ok' };

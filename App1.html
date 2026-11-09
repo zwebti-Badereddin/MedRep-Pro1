@@ -164,11 +164,11 @@ const NAV_ICONS={d:"M3 12h4l3 8 4-16 3 8h4",r:"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 
  fac:"M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M3 21h18M9 7h2M9 11h2M9 15h2",ph:"M6 7h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM9 7V4h6v3M12 11v5M9.5 13.5h5",
  rep:"M5.5 8a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0M2.5 20c0-3.6 3-5.5 6.5-5.5s6.5 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.5 2.3 3.5 5.5",plan:"M9 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3M9 4a3 3 0 0 0 6 0M8 12l2 2 4-4M8 17h8",
  stk:"M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",pha:"M12 3 2 20h20zM12 10v4M12 17v.01",s:"M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
- home:"M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",grid:"M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"};
+ home:"M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",dp:"M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4M8 14l2 2 4-4",fb:"M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z",grid:"M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"};
 function navGroups(){
- if(isSup())return [{l:"المراجعة",i:[["r","التقارير","r","reports"],["v","تغطية الخطة","v"],["k","العينات","stk"]]}];
- return [{l:"اليوم",i:[["d","المتابعة","d"],["r","التقارير","r","reports"]]},
-  {l:"التحليل",i:[["p","الأداء","p"],["c","المقارنة","c"],["v","تغطية الخطة","v"],["m:Sales","المبيعات","sales"],["m:Comp","المنافسون","comp"]]},
+ if(isSup())return [{l:"المراجعة",i:[["r","التقارير","r","reports"],["dp","خطط اليوم","dp"],["fb","انطباعات الأطباء","fb"],["v","تغطية الخطة","v"],["k","العينات","stk"]]}];
+ return [{l:"اليوم",i:[["d","المتابعة","d"],["r","التقارير","r","reports"],["dp","خطط اليوم","dp"]]},
+  {l:"التحليل",i:[["p","الأداء","p"],["c","المقارنة","c"],["v","تغطية الخطة","v"],["fb","انطباعات الأطباء","fb"],["m:Sales","المبيعات","sales"],["m:Comp","المنافسون","comp"]]},
   {l:"البيانات",i:[["m:Doctors","الأطباء","doc","doctors"],["m:Facilities","المنشآت","fac","facilities"],["m:Pharmacies","الصيدليات","ph"],["m:Reps","المندوبون","rep"],["m:Plans","خطط الزيارات","plan","plans"],["m:Stock","مخزون العينات","stk","stock",1],["m:PhAlerts","تنبيهات الصيدليات","pha","pharm",1]]},
   {l:"النظام",i:[["s","الإعدادات","s"]]}]}
 let NAVC={},NAVK="";
@@ -180,12 +180,12 @@ function navWaiting(){
 function navHealth(){const h=NAVC.health;if(!h)return"";const m=h.last?Math.max(0,Math.round((Date.now()-Date.parse(h.last))/60000)):0;
  return '<div class="nsys'+(h.issues?" bad":h.last?"":" off")+'"><span></span><div><b>'+(h.issues?h.issues+" مشكلة في النظام":h.last?"النظام يعمل بشكل سليم":"الفحص التلقائي غير مفعّل")+'</b><small>'+(h.last?"آخر فحص قبل "+(m<60?m+" دقيقة":Math.round(m/60)+" ساعة"):"يُفعّل من الشيت: «ربط بوت المزوّد»")+'</small></div></div>'}
 function navPaint(){
- const inAll=NAVK.indexOf("m:")===0||["d","p","c","v"].indexOf(NAVK)>=0; // on the phone these open from «الأقسام»
+ const inAll=NAVK.indexOf("m:")===0||["d","p","c","v","dp","fb"].indexOf(NAVK)>=0; // on the phone these open from «الأقسام»
  document.querySelectorAll("[data-nk]").forEach(b=>{b.classList.toggle("on",b.dataset.nk===NAVK||(b.classList.contains("cap")&&b.dataset.nk==="all"&&inAll));const x=b.querySelector(".nbadw");if(x){const it=[].concat(...navGroups().map(g=>g.i)).find(y=>y[0]===b.dataset.nk);x.innerHTML=it?navBadge(it):""}});
  const w=$("#nwait");if(w)w.innerHTML=navWaiting();const s=$("#nsys");if(s)s.innerHTML=navHealth();
  document.querySelectorAll("#nwait [data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go));
  ["#ptitle","#ptitle2"].forEach(id=>{const t=$(id);if(t)t.textContent=navTitle(NAVK)});
- const dt=$("#ndates");if(dt)dt.style.display=["home","all","s"].indexOf(NAVK)>=0?"none":""}
+ const dt=$("#ndates");if(dt)dt.style.display=["home","all","s","dp"].indexOf(NAVK)>=0?"none":""}
 function navRefresh(){srv("navCounts").then(c=>{NAVC=c||{};navPaint();if(NAVK==="home")navHub()}).catch(()=>{})}
 function navHub(){const av=$("#av");if(!av)return;
  av.innerHTML='<div class="hubw"><b>بانتظارك</b><div id="hubwait">'+navWaiting()+'</div></div>'+navHealth()+navSectionsHtml();
@@ -194,7 +194,7 @@ function navSectionsHtml(){return navGroups().map(g=>'<div class="sec"><h3>'+g.l
 function navGo(k){
  adminNavSeq++;if(k!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;NAVK=k;navPaint();window.scrollTo(0,0);
  const run={d:tabD,r:tabR,p:tabP,c:tabC,s:tabSet,home:navHub,all:()=>{$("#av").innerHTML=navSectionsHtml();$("#av").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go))},
-  v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)},k:()=>{$("#av").innerHTML='<div id="skv"></div>';stockView("skv",true)}}[k];
+  dp:dayPlanView,fb:feedbackView,v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)},k:()=>{$("#av").innerHTML='<div id="skv"></div>';stockView("skv",true)}}[k];
  if(run)run();else if(k.indexOf("m:")===0){MS.ent=k.slice(2);tabM()}
  navRefresh()}
 function adminHome(){
