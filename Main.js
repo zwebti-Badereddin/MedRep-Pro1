@@ -156,6 +156,7 @@ function routes_() {
   salesDeleteBatch: { role: 'admin', fn: salesDeleteBatch_ },
   compSummary:   { role: 'admin', fn: compSummary_ },
   pharmAlerts:   { role: 'admin', fn: pharmAlerts_ },
+  pharmAlertAck: { role: 'admin', fn: pharmAlertAck_ },
   reportEnSetup: { role: 'admin', fn: reportEnSetup_ },
   reportEn:      { role: 'admin', fn: reportEn_ },
   resolveMapLink:{ role: 'admin', fn: resolveMapLink_ },

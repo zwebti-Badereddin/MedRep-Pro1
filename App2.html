@@ -524,10 +524,19 @@ async function compView(hostId){
 }
 async function phAlertsView(hostId){
  const seq=++mkSeq,host=()=>seq===mkSeq?$("#"+hostId):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
- let r;try{r=await srv("pharmAlerts",{from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""})}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}if(!host())return;
- host().innerHTML='<div class="empty" style="margin-bottom:8px">آخر ما سجّله المندوبون لكل منتج في كل صيدلية، من '+esc(r.from)+' إلى '+esc(r.to)+': المنتجات النافدة، أو التي تنتهي صلاحيتها خلال 90 يومًا.</div>'+
-  (r.alerts.length?r.alerts.map(a=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(a.pharmacy)+'</b><span class="st '+(a.st==="out"?"s4":"s1")+'">'+esc(a.reasons.join(" · "))+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(a.product)+' · '+esc(a.stName)+(a.qty!=null?' ('+a.qty+')':'')+(a.exp?' · صلاحية '+esc(a.exp):'')+' · '+esc(a.rep)+' · '+esc(a.date)+(a.loc?' · '+esc(a.loc):'')+'</div></div>').join("")
-  :'<div class="empty">لا توجد تنبيهات: لم يُسجَّل نفاد ولا صلاحية قريبة في هذه الفترة.</div>');
+ const per=()=>({from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""});
+ let r;try{r=await srv("pharmAlerts",per())}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}if(!host())return;
+ phAlertsDraw(host(),r,per);
+}
+function phAlertsDraw(h,r,per){
+ const dt=x=>{const d=new Date(x);return isNaN(d)?"":d.toLocaleDateString("en-GB")};
+ h.innerHTML='<div class="empty" style="margin-bottom:8px">آخر ما سجّله المندوبون لكل منتج في كل صيدلية، من '+esc(r.from)+' إلى '+esc(r.to)+': المنتجات النافدة، أو التي تنتهي صلاحيتها خلال 90 يومًا.</div>'+
+  (r.alerts.length?r.alerts.map(a=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(a.pharmacy)+'</b><span class="st '+(a.st==="out"?"s4":"s1")+'">'+esc(a.reasons.join(" · "))+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(a.product)+' · '+esc(a.stName)+(a.qty!=null?' ('+a.qty+')':'')+(a.exp?' · صلاحية '+esc(a.exp):'')+' · '+esc(a.rep)+' · '+esc(a.date)+(a.loc?' · '+esc(a.loc):'')+'</div><div class="acts"><button class="mini pri" data-ack="'+esc(a.key)+'" data-d="'+esc(a.date)+'">✓ تم التوفير</button></div></div>').join("")
+  :'<div class="empty">لا توجد تنبيهات: لم يُسجَّل نفاد ولا صلاحية قريبة في هذه الفترة.</div>')+
+  ((r.done||[]).length?'<details class="sldet"><summary><span class="slt">تم توفيرها</span><b>'+r.done.length+'</b></summary><div class="empty" style="margin:6px 0">يعود التنبيه إذا سجّل مندوب ملاحظة أحدث بالنفاد أو بقرب الصلاحية.</div>'+r.done.map(a=>'<div class="row" style="display:block"><b>'+esc(a.pharmacy)+'</b> · '+esc(a.product)+'<div style="color:var(--mut);font-size:13px">'+esc(a.reasons.join(" · "))+' · ملاحظة '+esc(a.date)+' · وفّرها '+esc(a.ackBy||"")+' '+esc(dt(a.ackAt))+'</div><div class="acts"><button class="mini" data-unack="'+esc(a.key)+'">تراجع</button></div></div>').join("")+'</details>':'');
+ const act=async(b,o)=>{b.disabled=true;try{const x=await srv("pharmAlertAck",Object.assign(o,per()));phAlertsDraw(h,x,per);if(typeof navRefresh==="function")navRefresh()}catch(e){b.disabled=false;toast(e.message)}};
+ h.querySelectorAll("[data-ack]").forEach(b=>b.onclick=()=>{const a=r.alerts.find(x=>x.key===b.dataset.ack)||{};act(b,{key:b.dataset.ack,date:b.dataset.d,pharmacy:a.pharmacy,product:a.product})});
+ h.querySelectorAll("[data-unack]").forEach(b=>b.onclick=()=>act(b,{key:b.dataset.unack,undo:true}));
 }
 
 /* ===== Distributor sales against visits (admin › السجلات › المبيعات). Period = the من/إلى of the admin screen. ===== */

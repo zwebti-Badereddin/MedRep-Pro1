@@ -58,16 +58,39 @@ function pharmAlerts_(s, p) {
   const per = planPeriod_(Object.assign({ from: Utilities.formatDate(new Date(Date.now() - 30 * 864e5), 'UTC', 'yyyy-MM-dd') }, p)), latest = {}, now = Date.now();
   marketVisits_(per.from, per.to).forEach(x => x.phs.forEach(v => (v.stock || []).forEach(st => {
     const k = (v.pharmacyId || normName_(v.name)) + '|' + st.product, cur = latest[k];
-    if (!cur || x.r.date >= cur.date) latest[k] = { date: x.r.date, rep: x.rep, pharmacy: v.name, loc: v.loc || '', product: st.product, st: st.st, qty: st.qty, exp: st.exp || '' };
+    if (!cur || x.r.date >= cur.date) latest[k] = { key: k, date: x.r.date, rep: x.rep, pharmacy: v.name, loc: v.loc || '', product: st.product, st: st.st, qty: st.qty, exp: st.exp || '' };
   })));
-  const alerts = [];
+  const alerts = [], acks = pharmAcks_(), done = [];
   Object.keys(latest).forEach(k => {
     const a = latest[k], days = a.exp ? marketExpiryDays_(a.exp, now) : null, reasons = [];
     if (a.st === 'out') reasons.push('نفد');
     if (days != null && days <= MARKET_EXPIRY_DAYS) reasons.push(days < 0 ? 'منتهي الصلاحية' : 'صلاحية خلال ' + days + ' يومًا');
-    if (reasons.length) alerts.push(Object.assign(a, { stName: STOCK_STATES[a.st], reasons: reasons, days: days }));
+    if (!reasons.length) return;
+    Object.assign(a, { stName: STOCK_STATES[a.st], reasons: reasons, days: days });
+    const ack = acks[k]; // «تم التوفير» covers observations up to its date; a newer one brings the alert back
+    if (ack && ack.date && a.date <= String(ack.date)) done.push(Object.assign(a, { ackBy: ack.byName || ack.by, ackAt: ack.at })); else alerts.push(a);
   });
-  return { from: per.from, to: per.to, alerts: alerts.sort((a, b) => (a.st === 'out' ? 0 : 1) - (b.st === 'out' ? 0 : 1) || (a.days == null ? 999 : a.days) - (b.days == null ? 999 : b.days)) };
+  return { from: per.from, to: per.to, done: done.sort((a, b) => (a.ackAt < b.ackAt ? 1 : -1)).slice(0, 30), alerts: alerts.sort((a, b) => (a.st === 'out' ? 0 : 1) - (b.st === 'out' ? 0 : 1) || (a.days == null ? 999 : a.days) - (b.days == null ? 999 : b.days)) };
+}
+function pharmAcks_() {
+  const out = {};
+  try { ensureSheet_('PharmAck'); dbAll_('PharmAck').forEach(r => { out[String(r.key)] = r; }); } catch (e) {}
+  return out;
+}
+// «تم التوفير»: the admin confirms the pharmacy was supplied (undo: p.undo). Returns the refreshed alerts for the same period.
+function pharmAlertAck_(s, p) {
+  const key = String(p.key || '').slice(0, 300), obs = String(p.date || '');
+  if (!key || key.indexOf('|') < 0) throw new Error('تنبيه غير معروف.');
+  if (!p.undo && !/^\d{4}-\d{2}-\d{2}$/.test(obs)) throw new Error('تاريخ الملاحظة غير صحيح.');
+  ensureSheet_('PharmAck');
+  const lock = acquireLock_(20000);
+  try {
+    dbUpsert_('PharmAck', 'key', { key: key, pharmacy: String(p.pharmacy || '').slice(0, 120), product: String(p.product || '').slice(0, 120),
+      date: p.undo ? '' : obs, by: s.uid, byName: s.name || '', at: new Date().toISOString() });
+    audit_(s, p.undo ? 'pharm_ack_undo' : 'pharm_ack', key, obs);
+  } finally { lock.releaseLock(); }
+  try { CacheService.getScriptCache().remove('navc_admin'); } catch (e) {}
+  return pharmAlerts_(s, { from: p.from, to: p.to });
 }
 function pharmAlertText_() {
   try { const a = pharmAlerts_(null, {}).alerts; return a.length ? a.length + ' (' + a.slice(0, 3).map(x => x.pharmacy + ': ' + x.product + ' ' + x.reasons[0]).join('، ') + (a.length > 3 ? '…' : '') + ')' : ''; }

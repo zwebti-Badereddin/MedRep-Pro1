@@ -39,6 +39,8 @@ const T = {
   Sales: ['id', 'batch', 'date', 'region', 'customer', 'product', 'qty', 'price', 'total', 'pharmacyId', 'productId', 'importedAt', 'importedBy'],
   SalesAlias: ['kind', 'raw', 'targetId', 'createdAt', 'createdBy'],
   // DayPlans: daily visit plans set by a supervisor or an admin (DayPlan.js); status '' | 'failed' (done is read from the report).
+  // PharmAck: «تم التوفير» on a pharmacy alert (Market.js): hides it until a newer observation (date) of the same pharmacy × product.
+  PharmAck: ['key', 'pharmacy', 'product', 'date', 'by', 'byName', 'at'],
   DayPlans: ['id', 'repId', 'date', 'doctorId', 'doctorName', 'specialty', 'product', 'purpose', 'note', 'status', 'reason', 'active', 'createdAt', 'createdBy', 'updatedAt'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']

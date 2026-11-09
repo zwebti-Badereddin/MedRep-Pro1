@@ -77,6 +77,26 @@ test('English report: ordered units per product and a competitor section', () =>
   assert.strictEqual(J(r.competitors), J([{ product: 'Plavix', mentions: 2, types: 'lower price 1, promotion / bonus 1' }]));
 });
 
+test('«تم التوفير» hides an alert (who and when kept); a newer observation brings it back; undo; admin only', () => {
+  const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10), base = reports().map(r => Object.assign({}, r, { date: y }));
+  const { env, adm, rep } = setup({ Reports: base });
+  let r = env.call(adm, 'pharmAlerts', { from: y, to: today });
+  const c = r.alerts.find(a => a.product === 'Clodil');
+  r = env.call(adm, 'pharmAlertAck', { key: c.key, date: c.date, pharmacy: c.pharmacy, product: c.product, from: y, to: today });
+  assert.strictEqual(J(r.alerts.map(a => a.product)), J(['Aspi']));
+  assert.strictEqual(r.done[0].product, 'Clodil'); assert.ok(['المدير', 'ADM-1'].indexOf(r.done[0].ackBy) >= 0 && r.done[0].ackAt, 'who and when'); // the real session carries the name
+  assert.ok(!/Clodil/.test(env.ctx.pharmAlertText_()), 'the Telegram line drops it too');
+  env.ctx.dbAppend_('Reports', { id: 'R4', no: 'MR-4', repId: 'REP-0001', date: today, status: 'مرسل', doctors: '[]',
+    pharmacies: J([{ name: 'صيدلية الشفاء', pharmacyId: 'PH-0001', stock: [{ product: 'Clodil', st: 'out' }] }]) });
+  env.ctx.dropTableCache_('Reports');
+  r = env.call(adm, 'pharmAlerts', { from: y, to: today });
+  assert.ok(r.alerts.some(a => a.product === 'Clodil' && a.date === today), 'newer observation: back');
+  env.call(adm, 'pharmAlertAck', { key: c.key, date: today });
+  r = env.call(adm, 'pharmAlertAck', { key: c.key, undo: true, from: y, to: today });
+  assert.ok(r.alerts.some(a => a.product === 'Clodil') && !r.done.length, 'undo');
+  assert.throws(() => env.call(adm, 'pharmAlertAck', { key: c.key, date: 'x' }), /تاريخ/);
+  assert.throws(() => env.call(rep, 'pharmAlertAck', { key: c.key, date: today }), /غير مصرح/);
+});
 let failed = 0;
 tests.forEach(t => { try { t.fn(); console.log('PASS  ' + t.name); } catch (e) { failed++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      ')); } });
 console.log('\n' + (tests.length - failed) + ' passed, ' + failed + ' failed');
