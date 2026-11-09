@@ -7,7 +7,7 @@ const fn = (src, name) => { const m = src.match(new RegExp('function ' + name + 
 const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
 const api = (() => {
   const src = ['const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, '') + ';', app2.match(/const FAC_TYPES=[^\n]*/)[0],
-    fn(app1, 'approveDialogHtml'), fn(app2, 'facilityFormHtml'), fn(app2, 'similarFacilitiesHtml')].join('\n');
+    fn(app1, 'approveDialogHtml'), fn(app2, 'facilityFormHtml'), fn(app2, 'facLocFieldHtml'), fn(app2, 'similarFacilitiesHtml')].join('\n');
   const c = vm.createContext({}); vm.runInContext(src + '\n;this.api={approveDialogHtml,facilityFormHtml,similarFacilitiesHtml}', c); return c.api;
 })();
 const tests = [];
@@ -35,10 +35,10 @@ test('approval sheet with links only: no reason field, plain "اعتماد ال�
 });
 test('facility form: add (empty, "إضافة المنشأة") and edit (escaped name, a custom type kept and selected)', () => {
   const add = api.facilityFormHtml(null);
-  assert.ok(add.includes('إضافة منشأة') && add.includes('إضافة المنشأة') && add.includes('حدّد موقع المنشأة من الخريطة'));
+  assert.ok(add.includes('إضافة منشأة') && add.includes('إضافة المنشأة') && add.includes('يُعتمد مباشرة') && add.includes('id="fc_loc"') && add.includes('رابط Google Maps'));
   const ed = api.facilityFormHtml({ id: 'F1', name: 'مصحة "الشفاء"', type: 'مختبر' });
   assert.ok(ed.includes('value="مصحة &quot;الشفاء&quot;"') && /<option selected>مختبر<\/option>/.test(ed) && ed.includes('حفظ التعديل'));
-  assert.ok(ed.includes('لا يغيّر إحداثيات المنشأة'));
+  assert.ok(ed.includes('لا يغيّر موقع المنشأة') && ed.includes('نسخ الرابط')); assert.ok(api.facilityFormHtml({ id: 'F2', name: 'x', lat: 32.85, lng: 13.22 }).includes('اترك الخانة فارغة'));
 });
 test('similar facilities are listed inside the form with their distance', () => {
   const h = api.similarFacilitiesHtml([{ name: 'مصحة الشفاء', distance: 40 }, { name: 'الشفاء', distance: null }]);

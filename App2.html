@@ -53,10 +53,10 @@ function drawFacilities(){
    '<div class="facsub">'+esc([r.type||"منشأة طبية",r.address].filter(Boolean).join(" · "))+' · '+r.uses+' زيارة</div>'+
    (docs.length?'<div class="facdocs"><span>الأطباء الذين يعملون هنا:</span>'+docs.map(l=>{const d=days(l.doctorId,r.id);return '<div><b>'+esc(l.doctorName)+'</b>'+(d?'<small>'+esc(d)+'</small>':'<small class="nd">أيام غير محددة</small>')+'</div>'}).join("")+'</div>':'<div class="facsub">لا يوجد أطباء مسجلون هنا بعد.</div>')+
    (r.mergedInto?'':'<div class="acts facacts">'+
-    (review&&has(r)?'<button class="mini pri" data-a="approve">اعتماد الموقع</button>':review?'<button class="mini pri" data-a="map">تحديد الموقع على الخريطة</button>':'')+
+    (!has(r)?'<button class="mini pri" data-a="addloc">📍 إضافة الموقع</button>':review?'<button class="mini pri" data-a="approve">اعتماد الموقع</button>':'')+
     (has(r)?'<a class="mini" href="'+map(r)+'" target="_blank" rel="noopener">عرض على الخريطة</a>':'')+
     '<button class="mini" data-a="edit">تعديل</button><button class="mini" data-a="more" aria-expanded="false">⋯ المزيد</button></div>'+
-    '<div class="acts facmore" hidden><button class="mini" data-a="map">'+(has(r)?"تغيير الموقع من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+(has(r)?'<button class="mini" data-a="clearLoc">مسح الموقع</button>':'')+
+    '<div class="acts facmore" hidden>'+(has(r)?'<button class="mini" data-a="addloc">تغيير الموقع (رابط أو إحداثيات)</button>':'')+'<button class="mini" data-a="map">'+(has(r)?"تغيير الموقع من الخريطة":"تحديد الموقع على الخريطة")+'</button>'+(has(r)?'<button class="mini" data-a="clearLoc">مسح الموقع</button>':'')+
     '<button class="mini" data-a="merge">دمج مع منشأة أخرى</button><button class="mini" data-a="toggle">'+(off(r)?"تفعيل":"تعطيل")+'</button></div>')+'</div>';
  }).join(""):'<div class="empty">'+(f==="new"?"لا توجد منشآت تحتاج مراجعة ✓":"لا توجد منشآت مطابقة.")+'</div>');
  $("#facAdd").onclick=()=>facilityForm(null);
@@ -65,6 +65,7 @@ function drawFacilities(){
   if(op==="more"){const m=row.querySelector(".facmore"),open=m.hidden;m.hidden=!open;b.setAttribute("aria-expanded",open);return}
   if((op==="clearLoc"||op==="approve")&&!b.dataset.c){b.dataset.c=1;b.textContent=op==="approve"?"تأكيد اعتماد الموقع؟":"تأكيد المسح؟";return}
   if(op==="approve")return mAct(id,"setLoc",{lat:+r.lat,lng:+r.lng});
+  if(op==="addloc")return facLocDialog(r);
   if(op==="map")openWorkplaceMap({id:r.id,workplace:r.name,doctorName:"",lat:r.lat,lng:r.lng});
   else if(op==="edit")facilityForm(r);
   else if(op==="merge")fMerge(r);
@@ -80,7 +81,8 @@ function facilityFormHtml(r){
   '<label for="fc_type">نوع المنشأة</label><select id="fc_type">'+types.map(x=>'<option'+(x===t?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select>'+
   '<label for="fc_rad">نطاق المطابقة</label><select id="fc_rad">'+[["","افتراضي (150 م)"],["100","100 م — عيادة أو صيدلية صغيرة"],["200","200 م"],["300","300 م — مستشفى كبير"],["500","500 م — مجمع طبي واسع"]].map(o=>'<option value="'+o[0]+'"'+(String((r&&r.radius)||"")===o[0]?" selected":"")+'>'+o[1]+'</option>').join("")+'</select>'+
   '<small class="geo">الزيارة مطابقة إذا كان المندوب ضمن هذه المسافة من موقع المنشأة.</small>'+
-  '<div class="empty" style="text-align:right;margin-top:10px">'+(r?"تغيير الاسم لا يغيّر إحداثيات المنشأة ولا ارتباطات الأطباء بها.":"بعد الإضافة حدّد موقع المنشأة من الخريطة ليُعتمد مرجعًا للتحقق من الزيارات.")+'</div>'+
+  facLocFieldHtml(r)+
+  '<div class="empty" style="text-align:right;margin-top:10px">'+(r?"تغيير الاسم لا يغيّر موقع المنشأة.":"الموقع الذي تضيفه هنا يُعتمد مباشرة مرجعًا للتحقق من الزيارات.")+'</div>'+
   '<div id="fc_similar"></div><div class="err" id="ferr"></div>'+
   '<div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">'+(r?"حفظ التعديل":"إضافة المنشأة")+'</button></div>';
 }
@@ -115,20 +117,48 @@ function openImport(ent){
    if(out.add.length){ready=true;b.textContent="إضافة "+out.add.length}else $("#im_e").textContent="لا يوجد جديد لإضافته."}
   catch(e){$("#im_e").textContent=e.message}finally{b.disabled=false}};
 }
+/* The facility's location from coordinates or a Google Maps link: read at once when the text holds the point, else the server
+   follows the short link (maps.app.goo.gl). The result is shown before saving. */
+function facLocFieldHtml(r){
+ const has=r&&r.lat!==""&&r.lat!=null&&isFinite(+r.lat)&&r.lng!==""&&r.lng!=null&&isFinite(+r.lng);
+ return '<label for="fc_loc">موقع المنشأة</label><input id="fc_loc" dir="ltr" autocomplete="off" placeholder="الصق رابط Google Maps أو الإحداثيات: 32.8872, 13.1913">'+
+  '<div id="fc_locs" class="geo">'+(has?'الموقع الحالي: ⁦'+(+r.lat).toFixed(6)+', '+(+r.lng).toFixed(6)+'⁩ — اترك الخانة فارغة ليبقى كما هو.':'من Google Maps: افتح المكان ← «مشاركة» ← «نسخ الرابط»، ثم الصقه هنا.')+'</div>';
+}
+async function facLocRead(text){const t=String(text||"").trim();if(!t)return null;return mapCoordsFromText(t)||await srv("resolveMapLink",{text:t})}
+function facLocBind(){
+ const i=$("#fc_loc"),o=$("#fc_locs");if(!i)return;let seq=0;
+ const show=async()=>{const t=i.value.trim(),my=++seq;if(!t)return;o.className="geo";o.textContent="جارٍ قراءة الموقع…";
+  try{const ll=await facLocRead(t);if(my!==seq)return;i.dataset.lat=ll.lat;i.dataset.lng=ll.lng;o.className="geo ok";o.textContent="📍 ⁦"+(+ll.lat).toFixed(6)+", "+(+ll.lng).toFixed(6)+"⁩ ✓"}
+  catch(e){if(my!==seq)return;delete i.dataset.lat;delete i.dataset.lng;o.className="geo bad";o.textContent=e.message}};
+ i.onchange=show;i.onpaste=()=>setTimeout(show,0);i.oninput=()=>{delete i.dataset.lat;delete i.dataset.lng};
+}
+async function facLocValue(){const i=$("#fc_loc");if(!i||!i.value.trim())return null;if(i.dataset.lat)return{lat:+i.dataset.lat,lng:+i.dataset.lng};return await facLocRead(i.value)}
+// «إضافة الموقع» for a facility that has none (or «تغيير الموقع»): the same field alone; saved as the approved location.
+function facLocDialog(r){
+ $("#modal").innerHTML='<h3>موقع '+esc(r.name)+'</h3>'+facLocFieldHtml(r)+'<div class="err" id="ferr"></div><div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">حفظ الموقع</button></div>';
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");facLocBind();$("#fc_loc").focus();
+ $("#sv").onclick=async()=>{const b=$("#sv"),err=$("#ferr");err.textContent="";b.disabled=true;
+  try{const ll=await facLocValue();if(!ll){err.textContent="الصق رابط Google Maps أو الإحداثيات.";b.disabled=false;return}
+   await srv("facilityAct",{entity:"Facilities",id:r.id,op:"setLoc",lat:ll.lat,lng:ll.lng});$("#ov").classList.remove("on");toast("حُفظ موقع المنشأة واعتُمد");await loadM()}
+  catch(e){err.textContent=e.message;b.disabled=false}};
+}
 function facilityForm(r){
- $("#modal").innerHTML=facilityFormHtml(r);$("#ov").classList.add("on");
+ $("#modal").innerHTML=facilityFormHtml(r);$("#ov").classList.add("on");facLocBind();
  let confirmNew=false;
  $("#cx").onclick=()=>$("#ov").classList.remove("on");
  $("#fc_name").focus();
  $("#sv").onclick=async()=>{
   const row={name:$("#fc_name").value.trim(),type:$("#fc_type").value,radius:$("#fc_rad")?$("#fc_rad").value:""},err=$("#ferr");err.textContent="";
   if(row.name.length<2){err.textContent="أدخل اسم المنشأة.";$("#fc_name").focus();return}
-  if(r){mAct(r.id,"edit",{row});return}
-  const b=$("#sv");b.disabled=true;
+  const b=$("#sv");b.disabled=true;let ll=null;
+  try{ll=await facLocValue()}catch(e){err.textContent=e.message;b.disabled=false;return}
+  if(r){try{await srv("facilityAct",{entity:"Facilities",id:r.id,op:"edit",row});if(ll)await srv("facilityAct",{entity:"Facilities",id:r.id,op:"setLoc",lat:ll.lat,lng:ll.lng});
+    $("#ov").classList.remove("on");toast(ll?"حُفظ التعديل والموقع":"حُفظ التعديل");await loadM()}catch(e){err.textContent=e.message;b.disabled=false}return}
+  if(ll){row.lat=ll.lat;row.lng=ll.lng}
   try{
    const out=await srv("facilityAct",{op:"create",confirmNew,row});
    if(out.similar){$("#fc_similar").innerHTML=similarFacilitiesHtml(out.similar);confirmNew=true;b.textContent="إضافة منشأة جديدة رغم ذلك";b.disabled=false;return}
-   $("#ov").classList.remove("on");toast("تمت إضافة المنشأة. حدّد موقعها من الخريطة.");await loadM();
+   $("#ov").classList.remove("on");toast(ll?"تمت إضافة المنشأة بموقعها المعتمد":"تمت إضافة المنشأة. أضف موقعها لاحقًا من زر «إضافة الموقع».");await loadM();
   }catch(e){err.textContent=e.message;b.disabled=false}
  };
 }
