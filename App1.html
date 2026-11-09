@@ -20,7 +20,7 @@ function _callGas(a,p){return new Promise((res,rej)=>google.script.run.withSucce
 const devKey=x=>"mr_dev_"+(x?"a":"r");
 function getDev(x){try{return localStorage.getItem(devKey(x))||""}catch(e){return ""}}
 function setDev(x,t){try{if(t)localStorage.setItem(devKey(x),t)}catch(e){}}
-const NOREAUTH=["login","logout","loginAudit","myStock","clientErr","myNotifs","myDayPlan","docSchedules"]; // background polls never ask for the passwordlet REAUTH=null;
+const NOREAUTH=["login","logout","loginAudit","myStock","clientErr","myNotifs","myDayPlan","docSchedules"]; let REAUTH=null; // NOREAUTH: background polls never ask for the password
 function _callRetry(a,p,n){return _call(a,p).catch(e=>{if(n<3&&/النظام مشغول/.test(e.message))return new Promise(r=>setTimeout(r,1200*(n+1)+Math.random()*800)).then(()=>_callRetry(a,p,n+1));throw e})}
 function _srv(a,p){return _callRetry(a,p,0).catch(e=>{if(TOKEN&&NOREAUTH.indexOf(a)<0&&/انتهت الجلسة/.test(e.message))return reauth().then(()=>_callRetry(a,p,0));throw e})}
 function reauth(){
