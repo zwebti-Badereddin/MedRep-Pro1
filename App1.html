@@ -155,14 +155,62 @@ const DOC_FIG='<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><pa
 const LOGOUT_ICON='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 8l-4 4 4 4M5 12h11"/></svg>';
 /* A supervisor uses the same screen with the reports tab only (approve / return / locations); the server enforces the same limits. */
 const isSup=()=>!!(rep&&rep.role==="supervisor");
+/* Admin / supervisor navigation (design «د»): on a computer a dark side bar — «بانتظارك», the sections in four groups with
+   badges, the system status and the account; on a phone a dark header and a floating capsule bar (home, reports, sections,
+   settings). Sections keep their own screens; navGo(key) opens one ("m:<entity>" = a records list). */
+const NI=(d)=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+d+'"/></svg>';
+const NAV_ICONS={d:"M3 12h4l3 8 4-16 3 8h4",r:"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",p:"M4 20V10M10 20V4M16 20v-7M22 20H2",c:"M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7",
+ v:"M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0M7 12a5 5 0 1 0 10 0a5 5 0 1 0-10 0",sales:"M3 17l6-6 4 4 8-8M15 7h6v6",comp:"M4 7h10M4 12h16M4 17h7M18 5l2 2-2 2",doc:"M8 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0M4 21c0-4 4-6 8-6s8 2 8 6",
+ fac:"M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M3 21h18M9 7h2M9 11h2M9 15h2",ph:"M6 7h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM9 7V4h6v3M12 11v5M9.5 13.5h5",
+ rep:"M5.5 8a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0M2.5 20c0-3.6 3-5.5 6.5-5.5s6.5 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.5 2.3 3.5 5.5",plan:"M9 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3M9 4a3 3 0 0 0 6 0M8 12l2 2 4-4M8 17h8",
+ stk:"M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",pha:"M12 3 2 20h20zM12 10v4M12 17v.01",s:"M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+ home:"M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",grid:"M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"};
+function navGroups(){
+ if(isSup())return [{l:"المراجعة",i:[["r","التقارير","r","reports"],["v","تغطية الخطة","v"],["k","العينات","stk"]]}];
+ return [{l:"اليوم",i:[["d","المتابعة","d"],["r","التقارير","r","reports"]]},
+  {l:"التحليل",i:[["p","الأداء","p"],["c","المقارنة","c"],["v","تغطية الخطة","v"],["m:Sales","المبيعات","sales"],["m:Comp","المنافسون","comp"]]},
+  {l:"البيانات",i:[["m:Doctors","الأطباء","doc","doctors"],["m:Facilities","المنشآت","fac","facilities"],["m:Pharmacies","الصيدليات","ph"],["m:Reps","المندوبون","rep"],["m:Plans","خطط الزيارات","plan","plans"],["m:Stock","مخزون العينات","stk","stock",1],["m:PhAlerts","تنبيهات الصيدليات","pha","pharm",1]]},
+  {l:"النظام",i:[["s","الإعدادات","s"]]}]}
+let NAVC={},NAVK="";
+function navTitle(k){let t="";navGroups().forEach(g=>g.i.forEach(x=>{if(x[0]===k)t=x[1]}));return k==="home"?"الرئيسية":k==="all"?"الأقسام":t}
+function navBadge(x){const n=x[3]?+NAVC[x[3]]||0:0;return n?'<span class="nbad'+(x[4]?" warn":"")+'">'+n+'</span>':""}
+function navWaiting(){
+ const a=[["reports","تقارير للاعتماد","r","#f2c94c"],["plans","طلبات خطط الزيارات","m:Plans","#7fb6ff"],["doctors","أطباء جدد للمراجعة","m:Doctors","#c4a7ff"],["facilities","منشآت ومواقع للمراجعة","m:Facilities","#9be3d6"],["stock","تجاوز رصيد العينات","m:Stock","#ff8a80"],["pharm","تنبيهات صيدليات","m:PhAlerts","#ffb27a"]].filter(w=>+NAVC[w[0]]>0);
+ return a.length?a.map(w=>'<button type="button" class="nwi" data-go="'+w[2]+'"><span style="background:'+w[3]+'"></span><em>'+w[1]+'</em><b>'+NAVC[w[0]]+'</b></button>').join(""):'<div class="nwz">لا شيء ينتظرك الآن ✓</div>'}
+function navHealth(){const h=NAVC.health;if(!h)return"";const m=h.last?Math.max(0,Math.round((Date.now()-Date.parse(h.last))/60000)):0;
+ return '<div class="nsys'+(h.issues?" bad":h.last?"":" off")+'"><span></span><div><b>'+(h.issues?h.issues+" مشكلة في النظام":h.last?"النظام يعمل بشكل سليم":"الفحص التلقائي غير مفعّل")+'</b><small>'+(h.last?"آخر فحص قبل "+(m<60?m+" دقيقة":Math.round(m/60)+" ساعة"):"يُفعّل من الشيت: «ربط بوت المزوّد»")+'</small></div></div>'}
+function navPaint(){
+ const inAll=NAVK.indexOf("m:")===0||["d","p","c","v"].indexOf(NAVK)>=0; // on the phone these open from «الأقسام»
+ document.querySelectorAll("[data-nk]").forEach(b=>{b.classList.toggle("on",b.dataset.nk===NAVK||(b.classList.contains("cap")&&b.dataset.nk==="all"&&inAll));const x=b.querySelector(".nbadw");if(x){const it=[].concat(...navGroups().map(g=>g.i)).find(y=>y[0]===b.dataset.nk);x.innerHTML=it?navBadge(it):""}});
+ const w=$("#nwait");if(w)w.innerHTML=navWaiting();const s=$("#nsys");if(s)s.innerHTML=navHealth();
+ document.querySelectorAll("#nwait [data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go));
+ ["#ptitle","#ptitle2"].forEach(id=>{const t=$(id);if(t)t.textContent=navTitle(NAVK)});
+ const dt=$("#ndates");if(dt)dt.style.display=["home","all","s"].indexOf(NAVK)>=0?"none":""}
+function navRefresh(){srv("navCounts").then(c=>{NAVC=c||{};navPaint();if(NAVK==="home")navHub()}).catch(()=>{})}
+function navHub(){const av=$("#av");if(!av)return;
+ av.innerHTML='<div class="hubw"><b>بانتظارك</b><div id="hubwait">'+navWaiting()+'</div></div>'+navHealth()+navSectionsHtml();
+ av.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go))}
+function navSectionsHtml(){return navGroups().map(g=>'<div class="sec"><h3>'+g.l+'</h3></div><div class="ngrid">'+g.i.map(x=>'<button type="button" class="ncard" data-go="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<b>'+x[1]+'</b>'+navBadge(x)+'</button>').join("")+'</div>').join("")}
+function navGo(k){
+ adminNavSeq++;if(k!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;NAVK=k;navPaint();window.scrollTo(0,0);
+ const run={d:tabD,r:tabR,p:tabP,c:tabC,s:tabSet,home:navHub,all:()=>{$("#av").innerHTML=navSectionsHtml();$("#av").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go))},
+  v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)},k:()=>{$("#av").innerHTML='<div id="skv"></div>';stockView("skv",true)}}[k];
+ if(run)run();else if(k.indexOf("m:")===0){MS.ent=k.slice(2);tabM()}
+ navRefresh()}
 function adminHome(){
- const n=new Date(),sup=isSup();
- $("#app").innerHTML=`<div class="top adm">${ADM_ART}<div class="brandrow">${CFG.company.logo?`<span class="alogo"><img src="${esc(CFG.company.logo)}" alt=""></span>`:`<span class="mk alogo">${esc(CFG.company.short)}</span>`}<span class="co"><b>${esc(CFG.company.name)}</b><small><span class="pg">${sup?"لوحة المشرف":"لوحة الإدارة"} · </span>${esc(longDate("",true))}</small></span><span class="docfig"${rep&&rep.name&&rep.id!=="ADMIN"?` title="${esc(rep.name)}"`:""}>${DOC_FIG}</span>${tgBell()}<a href="#" id="lo" class="lo" aria-label="خروج">${LOGOUT_ICON}<span>خروج</span></a></div></div>
- ${sup?'<div class="tabs"><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="v">تغطية الخطة</button><button class="btn" data-t="k">العينات</button></div>':'<div class="tabs"><button class="btn" data-t="d">المتابعة</button><button class="btn" data-t="r">التقارير</button><button class="btn" data-t="p">الأداء</button><button class="btn" data-t="c">المقارنة</button><button class="btn" data-t="m">السجلات</button><button class="btn" data-t="s">الإعدادات</button></div>'}
- <div class="wrap">${licNotice()}<div class="two"><div><label>من</label><input type="date" id="fa" value="${isoD(new Date(n.getFullYear(),n.getMonth(),1))}"></div><div><label>إلى</label><input type="date" id="fb" value="${isoD(n)}"></div></div><div id="av" style="margin-top:6px"></div></div>`;
- $("#lo").onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()};tgBind();
- const show=t=>{adminNavSeq++;if(t!=="s"&&typeof settingsViewSeq==="number")settingsViewSeq++;document.querySelectorAll(".tabs .btn").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);if(b.dataset.t===t){const bar=b.parentNode,r=b.getBoundingClientRect(),q=bar.getBoundingClientRect();if(r.left<q.left||r.right>q.right)bar.scrollLeft+=r.left<q.left?r.left-q.left-8:r.right-q.right+8}});({d:tabD,r:tabR,p:tabP,c:tabC,m:tabM,s:tabSet,v:()=>{$("#av").innerHTML='<div id="plv"></div>';planView("plv",true)},k:()=>{$("#av").innerHTML='<div id="skv"></div>';stockView("skv",true)}})[t]()};
- document.querySelectorAll(".tabs .btn").forEach(b=>b.onclick=()=>show(b.dataset.t));show(sup?"r":"d");
+ const n=new Date(),sup=isSup(),mk=CFG.company.logo?'<span class="nlogo"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="nlogo">'+esc(CFG.company.short)+'</span>';
+ const caps=sup?[["home","الرئيسية","home"],["r","التقارير","r"],["v","التغطية","v"],["k","العينات","stk"]]:[["home","الرئيسية","home"],["r","التقارير","r"],["all","الأقسام","grid"],["s","الإعدادات","s"]];
+ $("#app").innerHTML='<div class="adm2"><aside class="snav" aria-label="الأقسام"><div class="nbrand">'+mk+'<div><b>'+esc(CFG.company.name)+'</b><small>'+(sup?"لوحة المشرف":"لوحة الإدارة")+'</small></div></div>'+
+  '<div class="nwait"><b>بانتظارك</b><div id="nwait"></div></div>'+
+  navGroups().map(g=>'<div class="ngl">'+g.l+'</div>'+g.i.map(x=>'<button type="button" class="nit" data-nk="'+x[0]+'" data-t="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<span>'+x[1]+'</span><span class="nbadw"></span></button>').join("")).join("")+
+  (sup?'':'<div id="nsys"></div>')+
+  '<div class="nme"><span class="docfig">'+DOC_FIG+'</span><div><b>'+esc((rep&&rep.name)||"")+'</b><small>'+(sup?"مشرف":"مدير")+'</small></div>'+tgBell()+'<a href="#" class="lo" data-lo aria-label="خروج">'+LOGOUT_ICON+'</a></div></aside>'+
+  '<div class="amain"><header class="mtop">'+mk+'<div class="mtt"><small>'+esc(CFG.company.name)+'</small><b id="ptitle"></b></div>'+tgBell()+'<a href="#" class="lo" data-lo aria-label="خروج">'+LOGOUT_ICON+'</a></header>'+
+  '<div class="wrap"><h1 class="ptitle" id="ptitle2"></h1>'+licNotice()+'<div class="two" id="ndates"><div><label>من</label><input type="date" id="fa" value="'+isoD(new Date(n.getFullYear(),n.getMonth(),1))+'"></div><div><label>إلى</label><input type="date" id="fb" value="'+isoD(n)+'"></div></div><div id="av" style="margin-top:6px"></div></div></div>'+
+  '<nav class="capsule" aria-label="التنقل">'+caps.map(c=>'<button type="button" class="cap" data-nk="'+c[0]+'" aria-label="'+c[1]+'">'+NI(NAV_ICONS[c[2]])+'<span>'+c[1]+'</span></button>').join("")+'</nav></div>';
+ document.querySelectorAll("[data-lo]").forEach(a=>a.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()});tgBind();
+ document.querySelectorAll("[data-nk]").forEach(b=>b.onclick=()=>navGo(b.dataset.nk));
+ const wide=matchMedia("(min-width: 900px)").matches;navGo(wide?(sup?"r":"d"):"home");
 }
 /* CSV for Excel: UTF-8 with BOM (Arabic opens correctly), cells quoted when needed, formula-like cells neutralised. */
 function csvCell(v){let s=v==null?"":String(v);if(/^[=+\-@]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}

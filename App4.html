@@ -28,7 +28,7 @@ function repTop(t,o){
    Start in Telegram, then «تحقق». The server reads Telegram's messages; nothing is sent from the phone to Telegram. */
 const tgOn=()=>!!(CFG.st&&CFG.st.tgBot);
 function tgBell(){return tgOn()?'<button type="button" class="tgb" id="tgb" aria-label="تنبيهات تيليجرام" title="تنبيهات تيليجرام">🔔</button>':""}
-function tgBind(){const b=$("#tgb");if(b)b.onclick=tgOpen}
+function tgBind(){document.querySelectorAll("#tgb").forEach(b=>{b.onclick=tgOpen})}
 let tgSeq=0;
 async function tgOpen(){
  const seq=++tgSeq,m=$("#modal"),close=()=>$("#ov").classList.remove("on");
@@ -259,8 +259,7 @@ function setupCardHtml(st){
  return '<div class="setupc" id="setupc"><div class="sh"><b>تجهيز النظام</b><span>'+done+' من '+st.items.length+'</span></div>'+
   '<div class="sb">أكمل هذه البنود قبل أن يبدأ المندوبون. اضغط أي بند لفتح شاشته.</div>'+
   st.items.map(i=>'<button type="button" class="si'+(i.done?" ok":"")+'" data-go="'+esc(i.go)+'"><i>'+(i.done?"✓":"")+'</i><span><b>'+esc(i.label)+'</b><small>'+esc(i.detail)+'</small></span></button>').join("")+'</div>'}
-function goSetup(g){const tab=t=>{const b=document.querySelector('.tabs .btn[data-t="'+t+'"]');if(b)b.click()};
- if(["co","prod","kpi"].indexOf(g)>=0){SS=g;tab("s")}else{MS.ent=g;tab("m")}}
+function goSetup(g){if(["co","prod","kpi"].indexOf(g)>=0){SS=g;navGo("s")}else navGo("m:"+g)}
 async function loadSetupCard(nav,seq){
  if(SETUP_OK)return;
  try{const st=await srv("setupStatus");if(nav!==adminNavSeq||seq!==dashSeq||!$("#av")||$("#setupc"))return;

@@ -141,6 +141,7 @@ function routes_() {
   planAct:       { role: 'admin', fn: planAct_ },
   planSaveFreq:  { role: 'admin', fn: planSaveFreq_ },
   planImport:    { role: 'admin', fn: planImport_ },
+  navCounts:     { role: ['admin', 'supervisor'], fn: navCounts_ },
   salesImport:   { role: 'admin', fn: salesImport_ },
   salesAnalysis: { role: 'admin', fn: salesAnalysis_ },
   salesDeleteBatch: { role: 'admin', fn: salesDeleteBatch_ },
