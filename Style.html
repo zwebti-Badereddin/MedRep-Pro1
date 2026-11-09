@@ -403,4 +403,13 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 #fc_locs.ok{color:#067647;font-weight:700}#fc_locs.bad{color:#b42318}
 .ov.center{align-items:center;justify-content:center;padding:16px;box-sizing:border-box}.ov.center .modal{border-radius:22px;max-width:420px;max-height:calc(100dvh - 32px);padding-bottom:16px}.ov.center .modal:before{display:none}
 .facmore[hidden]{display:none!important} /* .acts sets display:flex, which would override the hidden attribute */
+/* Admin side menu «ج المخفّف»: quiet translucent teal pills with room between them; only the open section gets the full look
+   (bright mint gradient, white ring, «). */
+.snav{gap:10px;padding:18px 16px 14px}
+.snav .nit{min-height:42px;border-radius:999px;padding:0 16px;border:1px solid rgba(127,224,212,.16);background:rgba(31,181,165,.13);color:#d4f1ed;font-size:15px;font-weight:700;transition:background .15s,box-shadow .15s,transform .15s}
+.snav .nit:hover{background:rgba(31,181,165,.24);border-color:rgba(127,224,212,.3)}
+.snav .nit:focus-visible{outline:2px solid #7fe0d4;outline-offset:3px}
+.snav .nit.on{border-color:transparent;background:linear-gradient(90deg,#a5efe6,#7fe0d4);color:var(--ink2);box-shadow:0 0 0 3px #fff,0 8px 18px rgba(127,224,212,.35);transform:scale(1.02)}
+.snav .nit.on::after{content:"«";font-size:20px;line-height:1;font-weight:800;margin-inline-start:2px}
+.snav .ngl{margin:12px 6px 0;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}
 </style>
