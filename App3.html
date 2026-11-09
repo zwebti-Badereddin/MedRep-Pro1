@@ -407,7 +407,7 @@ function visitFbInit(k,cur,pre){
 }
 let MYDP=null,MYDP_AT=0;
 const dpKey=()=>"mr_dp_"+((rep&&rep.id)||"");
-function dpLoad(){if(MYDP)return MYDP;try{MYDP=JSON.parse(localStorage.getItem(dpKey())||"null")}catch(e){MYDP=null}return MYDP}
+function dpLoad(){if(MYDP&&rep&&MYDP.some(x=>x&&x.repId&&String(x.repId)!==String(rep.id)))MYDP=null; /* never another rep plan */if(MYDP)return MYDP;try{MYDP=JSON.parse(localStorage.getItem(dpKey())||"null")}catch(e){MYDP=null}return MYDP}
 // Items the rep has already seen: { id: time first seen } (0 = there on the first load, never «جديد»).
 const dpSeenKey=()=>"mr_dps_"+((rep&&rep.id)||"");
 function dpSeen(){try{return JSON.parse(localStorage.getItem(dpSeenKey())||"null")}catch(e){return null}}

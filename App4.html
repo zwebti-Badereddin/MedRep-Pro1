@@ -68,6 +68,8 @@ async function nfPlanDetail(x){
   '<button type="button" class="btn pri full" id="nf_go">فتح الخطة</button><button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
  $("#nf_go").onclick=openPlan;$("#nf_x").onclick=close;
 }
+// Per-user data kept in memory: cleared at every sign-in / sign-out so the next user on this device starts clean.
+function resetUserCaches(){MYDP=null;MYDP_AT=0;DPTAB="";NF=null;NF_AT=0;CI=null;DPRE=null;MYPLAN=null}
 async function nfOpen(){
  const nf=nfLoad(),m=$("#modal"),close=()=>$("#ov").classList.remove("on");
  m.innerHTML='<h3>🔔 الإشعارات</h3>'+(nf.items&&nf.items.length?'<div class="nflist">'+nf.items.map(x=>'<button type="button" class="nfi'+(x.read?"":" new")+'" data-id="'+esc(x.id)+'"><span class="nft '+esc(x.type)+(x.ref&&x.ref.change?" chg":"")+'">'+(x.type==="plan"?DPI.cal:x.type==="report"?DPI.note:DPI.goal)+'</span><span><b>'+esc(String(x.text).split("\n")[0])+'</b>'+(String(x.text).indexOf("\n")>0?'<span class="nfx">'+esc(String(x.text).split("\n").slice(1).join("\n"))+'</span>':'')+'<small>'+esc(nfAgo(x.at))+'</small></span></button>').join("")+'</div>'
