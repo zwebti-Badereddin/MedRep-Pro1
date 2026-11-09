@@ -14,12 +14,13 @@ function tabM(){
  if(MS.ent==="Stock"){$("#mf").parentNode.outerHTML='<div id="skv" style="margin-top:10px"></div>';$("#ml").remove();stockView("skv",false);return}
  if(MS.ent==="Plans"){$("#mf").parentNode.outerHTML='<div id="plv" style="margin-top:10px"></div>';$("#ml").remove();planView("plv",false);return}
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
+ if(MS.ent==="Doctors"||MS.ent==="Pharmacies")$("#mf").insertAdjacentHTML("beforeend",'<option value="dups">قد تكون مكررة</option>');
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة</option><option value="links">ارتباطات أطباء بانتظار الاعتماد</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
  if(IMPORT_COLS[MS.ent]){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+IMPORT_NAMES[MS.ent]+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
 async function loadM(){const nav=adminNavSeq,ent=MS.ent;try{const rows=await srv(ent==="Reps"?"repsList":ent==="Facilities"?"facilitiesList":"masterList",{entity:ent});if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent)return;MS.rows=rows;if(MS.ent==="Reps")REPS=MS.rows.map(r=>({id:r.id,name:r.name}))}catch(e){if(nav===adminNavSeq)toast(e.message);return}drawM()}
-function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent==="Facilities")return drawFacilities();
+function drawM(){if(!$("#mf"))return;if(MS.ent==="Reps")return drawR();if(MS.ent==="Facilities")return drawFacilities();if($("#mf").value==="dups")return drawDups();
  const f=$("#mf").value,q=norm($("#mq").value),dr=MS.ent==="Doctors",isOff=r=>String(r.active)==="false",isNew=r=>!!r.addedBy&&String(r.reviewed)!=="true"&&!isOff(r);
  const a=MS.rows.filter(r=>(f==="new"?isNew(r):f==="off"?isOff(r):true)&&(!q||norm(r.name).indexOf(q)>=0));
  $("#ml").innerHTML=a.length?a.map(r=>{const hasL=r.lat!==""&&r.lat!=null&&isFinite(+r.lat)&&r.lng!==""&&r.lng!=null&&isFinite(+r.lng),pend=hasL&&(r.refBy!=="ADMIN_MAP"||r.refState!=="مؤكد"),ls=dr?"مرجع الزيارة من مكان العمل":!hasL?"لا موقع مسجّل":pend?"الموقع غير معتمد":"الموقع مؤكد ✓",by=isNew(r)?((REPS.find(x=>x.id===r.addedBy)||{}).name||""):"",sub=dr?[r.specialty,r.workplace].filter(Boolean).join(" · "):[r.location,r.nearFacility].filter(Boolean).join(" · ");
@@ -625,5 +626,19 @@ async function feedbackView(){
   (r.products.length?r.products.map(p=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><b>'+esc(p.product)+'</b><span style="color:var(--mut)">'+p.total+' انطباع</span></div><div class="fbbar"><i class="pos" style="width:'+(p.pos/p.total*100)+'%"></i><i class="neu" style="width:'+(p.neu/p.total*100)+'%"></i><i class="neg" style="width:'+(p.neg/p.total*100)+'%"></i></div><div class="plcls"><span>إيجابي <b>'+p.pos+'</b></span><span>محايد <b>'+p.neu+'</b></span><span>سلبي <b>'+p.neg+'</b></span></div></div>').join("")+
    '<div class="sec"><h3>ما قاله الأطباء</h3></div>'+r.items.map(x=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(x.doctor)+' · '+esc(x.product)+'</b><span class="st '+(x.r==="pos"?"s3":x.r==="neg"?"s4":"s1")+'">'+RN[x.r]+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(x.specialty)+' · '+esc(x.rep)+' · '+esc(x.date)+'</div>'+(x.note?'<div style="margin-top:4px">«'+esc(x.note)+'»</div>':'')+'</div>').join("")
   :'<div class="empty">لا توجد انطباعات في هذه الفترة. أضف في «خطط اليوم» أطباء بهدف «أخذ انطباع».</div>');
+}
+
+/* Likely duplicate doctors / pharmacies (same name by key, or a similar name): merge one into the other with the existing merge. */
+async function drawDups(){
+ const nav=adminNavSeq,ent=MS.ent;$("#ml").innerHTML='<div class="empty">جارٍ البحث عن الأسماء المتشابهة…</div>';
+ let a;try{a=await srv("duplicateCandidates",{entity:ent})}catch(e){if(nav===adminNavSeq&&$("#ml"))$("#ml").innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}
+ if(nav!==adminNavSeq||!$("#ml")||ent!==MS.ent||$("#mf").value!=="dups")return;
+ const sub=x=>x.specialty||x.location||"";
+ $("#ml").innerHTML='<div class="empty" style="margin-bottom:8px">أسماء متطابقة أو متشابهة جدًا. «دمج» ينقل الزيارات إلى السجل الآخر ويعطّل هذا. إن كانا شخصين مختلفين فاتركهما.</div>'+
+  (a.length?a.map(p=>'<div class="row" style="display:block" data-a="'+esc(p.a.id)+'" data-b="'+esc(p.b.id)+'">'+(p.same?'<span class="st s4">نفس الاسم</span> ':'<span class="st s1">متشابه</span> ')+
+   '<div class="duprow"><div><b>'+esc(p.a.name)+'</b><small>'+esc(sub(p.a))+'</small></div><div><b>'+esc(p.b.name)+'</b><small>'+esc(sub(p.b))+'</small></div></div>'+
+   '<div class="acts"><button class="mini" data-m="ab">دمج الأول في الثاني</button><button class="mini" data-m="ba">دمج الثاني في الأول</button></div></div>').join(""):'<div class="empty">لا توجد أسماء متشابهة ✓</div>');
+ $("#ml").querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{const r=b.closest("[data-a]"),[from,into]=b.dataset.m==="ab"?[r.dataset.a,r.dataset.b]:[r.dataset.b,r.dataset.a];
+  if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد الدمج؟";return}mAct(from,"merge",{into:into})});
 }
 </script>

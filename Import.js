@@ -9,7 +9,8 @@ const importFacilitiesExisting_ = rows => (rows || []).filter(f => f.legacyEntit
 function importPlan_(entity, rows, existing) {
   const cols = IMPORT_COLUMNS[entity]; if (!cols) throw new Error('كيان غير مسموح');
   const cut = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
-  const known = {}; (existing || []).forEach(r => { const k = normName_(r.name); if (k && !known[k]) known[k] = String(r.name); });
+  const known = {}, keyOf = n => (entity === 'Doctors' || entity === 'Pharmacies' ? nameKey_(n, entity) : normName_(n)); // stronger key against duplicates (Dedupe.js)
+  (existing || []).forEach(r => { const k = keyOf(r.name); if (k && !known[k]) known[k] = String(r.name); });
   const add = [], dup = [], invalid = [], seen = {};
   (rows || []).slice(0, IMPORT_MAX_ROWS + 1).forEach((cells, i) => {
     const line = i + 1, c = Array.isArray(cells) ? cells : [];
@@ -27,7 +28,7 @@ function importPlan_(entity, rows, existing) {
       } else { o.lat = ''; o.lng = ''; }
     }
     if (entity === 'Doctors') o.sector = /عام|حكوم/.test(o.sector) ? 'عام' : /خاص/.test(o.sector) ? 'خاص' : '';
-    const k = normName_(o.name);
+    const k = keyOf(o.name);
     if (o.name.length < (entity === 'Products' ? 2 : 3) || !k) { invalid.push({ line: line, name: o.name, reason: 'الاسم قصير جدًا أو فارغ' }); return; }
     if (known[k]) { dup.push({ line: line, name: o.name, existing: known[k] }); return; }
     if (seen[k]) { dup.push({ line: line, name: o.name, existing: 'مكرر في السطر ' + seen[k] }); return; }

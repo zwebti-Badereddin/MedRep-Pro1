@@ -35,8 +35,9 @@ function addMaster_(s, sheet, p) {
   if (name.length < 3) throw new Error('الاسم قصير جدًا');
   const lock = acquireLock_(10000);
   try {
-    const rows = dbAll_(sheet), n = normName_(name), dup = rows.find(r => normName_(r.name) === n);
+    const rows = dbAll_(sheet), n = normName_(name), k = nameKey_(name, sheet), dup = rows.find(r => normName_(r.name) === n || nameKey_(r.name, sheet) === k);
     if (dup) return dup; // already exists: reuse it, never create a duplicate
+    if (!p.confirmNew) { const similar = similarMasters_(rows, name, sheet); if (similar.length) return { similar: similar }; } // «هل تقصد؟» first (Dedupe.js)
     const cut = v => String(v || '').trim().slice(0, 80);
     const row = sheet === 'Doctors'
       ? { name: name, specialty: cut(p.specialty), workplace: cut(p.workplace), sector: cut(p.sector), active: true, addedBy: s.uid }
@@ -104,7 +105,7 @@ function masterAct_(s, p) {
   } else if (p.op === 'edit') {
     const row = p.row || {}, nm = String(row.name || '').trim().slice(0, 80), cut = v => String(v || '').trim().slice(0, 80);
     if (nm.length < 3) throw new Error('الاسم قصير جدًا');
-    if (rows.some(x => x.id !== r.id && normName_(x.name) === normName_(nm))) throw new Error('الاسم موجود مسبقًا. استخدم «دمج».');
+    if (rows.some(x => x.id !== r.id && (normName_(x.name) === normName_(nm) || nameKey_(x.name, sh) === nameKey_(nm, sh)))) throw new Error('الاسم موجود مسبقًا. استخدم «دمج».');
     if (nm !== r.name) {
       note = 'rename, reports: ' + rewriteNames_(sh, r.name, nm); r.name = nm;
       if (sh === 'Pharmacies') invalidateFacilityLocations_('Pharmacies', r.id);

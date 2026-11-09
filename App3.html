@@ -156,13 +156,18 @@ function form(k,idx){
    setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on");if(CI){CI=null;home()}};
  let confirmNew=false; // set only by the explicit "create a new facility anyway" button
+ let confirmNewRec=false; // set only by «لا، طبيب آخر» after «هل تقصد؟»
  $("#sv").onclick=async()=>{
   const g=id=>{const e=$("#"+id);return e?e.value.trim():""},r=n=>document.querySelector(`input[name=${n}]:checked`)?.value||"";
   const typed=g("f_name");if(!typed){$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
   if(k==="d"&&RXF.busy){$("#ferr").textContent="انتظر حتى يكتمل رفع صورة الوصفة.";return}
    const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
    if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
-    try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:"",sector:r("sector")}:{name:typed,location:g("f_loc"),nearFacility:g("f_near")});
+    try{$("#sv").disabled=true;rec=await srv(k==="d"?"addDoctor":"addPharmacy",k==="d"?{name:typed,specialty:g("f_spec"),workplace:"",sector:r("sector"),confirmNew:confirmNewRec}:{name:typed,location:g("f_loc"),nearFacility:g("f_near"),confirmNew:confirmNewRec});
+     if(rec&&rec.similar){ // a similar name exists: choose it, or confirm that this is someone else
+      $("#ferr").innerHTML='<b>'+(k==="d"?"يوجد طبيب باسم مشابه. هل تقصد:":"توجد صيدلية باسم مشابه. هل تقصد:")+'</b>'+rec.similar.map(x=>'<button type="button" class="mini simuse" data-use="'+esc(x.id)+'">'+esc(x.name)+(x.specialty||x.location?' · '+esc(x.specialty||x.location):'')+'</button>').join("")+'<button type="button" class="mini simnew" id="simnew">لا، '+(k==="d"?"طبيب آخر":"صيدلية أخرى")+' — أضف «'+esc(typed)+'»</button>';
+      $("#ferr").querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{const x=recs.find(y=>String(y.id)===b.dataset.use)||rec.similar.find(y=>String(y.id)===b.dataset.use);PK={rec:x,isNew:false};$("#f_name").value=x.name;if(k==="d"&&typeof fillDoctor==="function")fillDoctor(x);$("#ferr").textContent="";$("#sv").click()});
+      $("#simnew").onclick=()=>{confirmNewRec=true;$("#ferr").textContent="";$("#sv").click()};$("#sv").disabled=false;try{$("#ferr").scrollIntoView({block:"center",behavior:"smooth"})}catch(e){}return}
      if(!recs.some(x=>x.id===rec.id))recs.push(rec)}catch(e){$("#ferr").textContent=e.message;$("#sv").disabled=false;return}}
    let placeId="",placeName="";
    if(k==="d"){

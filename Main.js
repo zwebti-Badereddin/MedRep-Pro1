@@ -142,6 +142,7 @@ function routes_() {
   planSaveFreq:  { role: 'admin', fn: planSaveFreq_ },
   planImport:    { role: 'admin', fn: planImport_ },
   navCounts:     { role: ['admin', 'supervisor'], fn: navCounts_ },
+  duplicateCandidates: { role: 'admin', fn: duplicateCandidates_ },
   dayPlanAdd:    { role: ['admin', 'supervisor'], fn: dayPlanAdd_ },
   dayPlanDelete: { role: ['admin', 'supervisor'], fn: dayPlanDelete_ },
   dayPlanCopy:   { role: ['admin', 'supervisor'], fn: dayPlanCopy_ },
