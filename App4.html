@@ -294,8 +294,7 @@ function drawMyPlan(){
  host.innerHTML=head+'<div class="empty" style="margin:6px 0 10px">الزيارات المطلوبة شهريًا: A = '+f.A+' · B = '+f.B+' · C = '+f.C+'. تشمل زيارات اليوم قبل الإرسال.</div>'+
   '<button type="button" class="btn dash" id="pladd">'+IC.plus+' إضافة طبيب لقائمتي</button>'+
   (docs.length?docs.map(d=>{const st=d.cls?(d.req&&!d.visits?" plnone":d.visits>=d.req?" plfull":""):" plwait";
-   return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>'+esc(d.name)+'</b>'+
-    (d.cls?'<span class="clsb c'+d.cls+'">'+d.cls+'</span>':'')+'</div>'+
+   return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div class="pldoc">'+docAvatar(d.name,d.cls)+'<b>'+esc(d.name)+'</b></div>'+
     (d.cls?'<div class="plprog"><span>'+d.visits+' من '+d.req+'</span>'+planBar(d.req?Math.round(Math.min(d.visits,d.req)/d.req*100):100)+'</div>':'')+
     (d.pendingCls?'<div class="plpend">'+(d.cls?'تغيير مقترح إلى '+d.pendingCls:'مقترح: الفئة '+d.pendingCls)+' — بانتظار الاعتماد</div>':'')+
     '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'</div></div>'}).join(""):'');
@@ -320,5 +319,16 @@ function planAddDoctor(){
   $("#pa_l").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>{const d=pool.find(x=>x.id===b.dataset.id);
    planPickClass(d.name,"",async k=>{MYPLAN=await srv("planPropose",{doctorId:d.id,cls:k});drawMyPlan();toast("أُرسل للاعتماد")})})};
  $("#pa_q").oninput=draw;draw();$("#pa_q").focus();
+}
+
+/* Doctor avatar in «أطبائي»: the first letters of the name (without «د.») in the colour of the doctor's class, with the class
+   letter in the corner; a doctor without an approved class shows the doctor figure. */
+function docInitials(n){
+ const w=String(n||"").replace(/^\s*(د\s*\.?|dr\.?)\s*/i,"").trim().split(/\s+/).filter(Boolean).map(x=>x.replace(/^ال(?=..)/,""));
+ // two separate letters (U+200C stops Arabic letters from joining into a word)
+ return (w.length>1?w[0][0]+"‌"+w[w.length-1][0]:(w[0]||"؟")[0]).toUpperCase()
+}
+function docAvatar(name,cls){
+ return cls?'<span class="dav c'+cls+'" aria-hidden="true">'+esc(docInitials(name))+'<i>'+cls+'</i></span>':'<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span>'
 }
 </script>
