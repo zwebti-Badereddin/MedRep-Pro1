@@ -13,10 +13,14 @@ function dist_(a, b, c, d) {
   return Math.round(2 * 6371000 * Math.asin(Math.sqrt(h)));
 }
 // Conservative geofence verdict: include the reported GPS accuracy as an uncertainty margin.
+// The facility is the fixed reference: a reading with usable accuracy matches when it lies within the facility's range (150 m by
+// default, or the facility's own range), else it is «خارج النطاق» (doubtful: the supervisor decides). A weak reading (accuracy worse
+// than the limit) is judged only when it is clear either way; otherwise «غير حاسم» = «دقة ضعيفة», never an accusation.
 function geoVerdict_(distance, accuracy, radius, maxAccuracy) {
-  if (!isFinite(+accuracy) || +accuracy <= 0 || +accuracy > maxAccuracy) return 'غير حاسم';
-  if (distance + accuracy <= radius) return 'تم التحقق';
-  if (distance - accuracy > radius) return 'خارج النطاق';
+  const acc = +accuracy, ok = isFinite(acc) && acc > 0;
+  if (ok && acc <= maxAccuracy) return distance <= radius ? 'تم التحقق' : 'خارج النطاق';
+  if (ok && distance + acc <= radius) return 'تم التحقق';
+  if (ok && distance - acc > radius) return 'خارج النطاق';
   return 'غير حاسم';
 }
 function geoReferenceSnapshot_(ent, radius, maxAccuracy) {

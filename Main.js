@@ -130,6 +130,7 @@ function routes_() {
   getReport:     { role: 'any',   fn: getReport_ },
   listReports:   { role: 'any',   fn: listReports_ },
   reviewReport:  { role: ['admin', 'supervisor'], fn: reviewReport_ },
+  approveMatched: { role: ['admin', 'supervisor'], fn: approveMatched_ },
   gpsReviewSummary:{ role: ['admin', 'supervisor'], fn: gpsReviewSummary_ },
   uploadRx:      { role: 'rep',   fn: uploadRx_ },
   getRx:         { role: 'any',   fn: getRx_ },

@@ -242,7 +242,10 @@ function submitReport_(s, p) {
 /* ---------- what a representative may see of GPS ----------
  * A rep gets back only his own raw capture fields (needed so the next save is recognised as unchanged).
  * The verdict, distance, reference coordinates and re-check history are management-only. */
-function repGps_(g) { g = g || {}; const o = {}; ['lat', 'lng', 'acc', 'ts'].forEach(k => { if (g[k] !== undefined && g[k] !== null) o[k] = g[k]; }); return o; }
+// The rep never sees the verdict itself; only when a visit is far from its facility does he get the distance, so he can notice a
+// wrong facility choice and correct the visit (warn = metres from the facility).
+function repGps_(g) { g = g || {}; const o = {}; ['lat', 'lng', 'acc', 'ts'].forEach(k => { if (g[k] !== undefined && g[k] !== null) o[k] = g[k]; });
+  if (g.status === 'خارج النطاق' && isFinite(+g.dist)) o.warn = Math.round(+g.dist); return o; }
 function repVisits_(list) { return (list || []).map(v => Object.assign({}, v, { gps: repGps_(v && v.gps) })); }
 function repView_(out) {
   const o = Object.assign({}, out);
@@ -332,6 +335,15 @@ function approveVisitLinks_(s, doctors) {
   });
   if (n) clearCache_();
   return n;
+}
+// «اعتماد كل التقارير المطابقة»: approves each sent report whose every visit matches its facility; a report with a doubtful,
+// weak or missing location (or anything else the normal approval refuses without a reason) is left for the supervisor.
+function approveMatched_(s, p) {
+  const ids = Array.isArray(p.ids) ? p.ids.slice(0, 200).map(String) : [];
+  let approved = 0, review = 0;
+  ids.forEach(id => { try { reviewReport_(s, { id: id, approve: true }); approved++; } catch (e) { if (!/المرسلة فقط/.test(e.message)) review++; } });
+  audit_(s, 'approve_matched', String(ids.length), approved + ' approved, ' + review + ' left for review');
+  return { approved: approved, review: review };
 }
 function reviewReport_(s, p) {
   const hit = findReportRowById_(p.id), r = hit && hit.r;

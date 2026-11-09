@@ -76,6 +76,8 @@ function saveNow(){
   // A delayed response may update UI state only if its original report is still active.
   if(reportContextSeq===context&&S===target&&S.date===targetDate&&(S.id||null)===targetId){
    S.no=r.no;S.status=r.status;
+   const far=[];(r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name&&v.gps&&v.gps.warn&&!(S.docs[i].gps&&S.docs[i].gps.warn))far.push(v.name+" («"+(v.place||"المنشأة")+"»، "+v.gps.warn+" م)")});
+   if(far.length&&typeof toast==="function")toast("⚠ موقعك بعيد عن المنشأة في زيارة "+far.join("، ")+". إن اخترت منشأة خاطئة فعدّل الزيارة.",8000); // once, when the server first finds it far
    (r.docs||[]).forEach((v,i)=>{if(S.docs[i]&&S.docs[i].name===v.name){S.docs[i].gps=v.gps;["workplaceId","facilityId","place"].forEach(k=>{if(v[k])S.docs[i][k]=v[k]})}}); // the server resolves the facility and the doctor's link
    (r.phs||[]).forEach((v,i)=>{if(S.phs[i]&&S.phs[i].name===v.name)S.phs[i].gps=v.gps});
   }
@@ -229,7 +231,10 @@ function tabR(){
   catch(e){toast(e.message)}finally{b.disabled=false}};
  $("#fgo").onclick=async()=>{const nav=adminNavSeq,q=$("#fq").value.trim(),isNo=/^[A-Za-z]+-|^\d{4,}$/.test(q);
   try{const a=await srv("listReports",{from:$("#fa").value,to:$("#fb").value,repId:$("#fr").value,status:$("#fs").value,no:isNo?q:"",q:isNo?"":q});
-   if(nav!==adminNavSeq||!$("#rl"))return;$("#rl").innerHTML=a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span><div class="acts">${r.status==="مرسل"?`<button class="mini" type="button" data-a="gps" data-id="${esc(r.id)}">مطابقة الموقع</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>';
+   if(nav!==adminNavSeq||!$("#rl"))return;const sent=a.filter(r=>r.status==="مرسل");
+   $("#rl").innerHTML=(sent.length?'<button type="button" class="btn pri full" id="fall" style="margin-bottom:10px">✓ اعتماد كل التقارير المطابقة ('+sent.length+' مرسل)</button><div class="empty" style="margin-bottom:10px">يُعتمد التقرير الذي كل زياراته مطابقة لموقع المنشأة. التقارير التي فيها زيارة مشكوك فيها تبقى لمراجعتك.</div>':'')+(a.length?a.map(r=>`<div class="row" data-id="${esc(r.id)}" style="cursor:pointer"><div class="t"><b>${esc(r.no)}</b><small>${esc(r.repName)} · ${esc(r.date)} · ${r.visits} زيارة${r.reopens?" · معدّل بعد الإرسال":""}</small></div><span class="st s${STAT.indexOf(r.status)}">${esc(r.status)}</span><div class="acts">${r.status==="مرسل"?`<button class="mini" type="button" data-a="gps" data-id="${esc(r.id)}">مطابقة الموقع</button>`:""}</div></div>`).join(""):'<div class="empty">لا توجد تقارير مطابقة.</div>');
+   if($("#fall"))$("#fall").onclick=async()=>{const b=$("#fall");if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد: اعتماد التقارير المطابقة؟";return}b.disabled=true;
+    try{const x=await srv("approveMatched",{ids:sent.map(r=>r.id)});toast("اعتُمد "+x.approved+" تقرير مطابق"+(x.review?"، وبقي "+x.review+" فيه زيارات تحتاج مراجعتك":""));$("#fgo").click()}catch(e){b.disabled=false;toast(e.message)}};
    document.querySelectorAll("#rl .row").forEach(e=>e.onclick=()=>openRep(e.dataset.id));
    document.querySelectorAll('#rl button[data-a="gps"]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const id=b.dataset.id;CUR=null;await openRep(id);if(CUR&&CUR.id===id)openGpsComparison()})}catch(e){toast(e.message)}};
  $("#fgo").click();
@@ -387,9 +392,11 @@ async function doReview(ok,note,approveLinks){
  toast(ok?(note?"تم اعتماد التقرير وتسجيل السبب":"تم اعتماد التقرير"):"أُعيد التقرير للمندوب");
  const g=$("#fgo");if(g)g.click();
 }
+// How a visit's location check reads everywhere: matched, doubtful (far from the facility: the supervisor decides), weak reading.
+const GPS_LBL={"تم التحقق":"مطابق","خارج النطاق":"مشكوك — بعيد عن المنشأة","غير حاسم":"دقة ضعيفة — لا يمكن الحكم","مرجع غير مؤكد":"موقع المنشأة غير معتمد","غير متاح":"لا يوجد موقع"};
 function approveDialogHtml(exceptions,links){
  const stCls=s=>s==="خارج النطاق"?"s4":s==="غير حاسم"?"s1":"";
- const exHtml=exceptions.length?'<div class="ap-sec"><b>زيارات لم يثبت تطابق موقعها ('+exceptions.length+')</b>'+exceptions.map(v=>'<div class="ap-row"><div class="ap-t">'+esc(v.kind+" — "+v.name)+(v.place?'<small>'+esc(v.place)+'</small>':'')+'</div><span class="st '+stCls(v.status)+'">'+esc(v.status)+(v.distance!=null?" · "+v.distance+" م":"")+'</span></div>').join("")+
+ const exHtml=exceptions.length?'<div class="ap-sec"><b>زيارات مشكوك في موقعها ('+exceptions.length+')</b>'+exceptions.map(v=>'<div class="ap-row"><div class="ap-t">'+esc(v.kind+" — "+v.name)+(v.place?'<small>'+esc(v.place)+'</small>':'')+'</div><span class="st '+stCls(v.status)+'">'+esc(((typeof GPS_LBL!=="undefined"&&GPS_LBL)||{})[v.status]||v.status)+(v.distance!=null?" · "+v.distance+" م":"")+'</span></div>').join("")+
   '<label for="ap_note">سبب الاعتماد الاستثنائي * <small>(5 أحرف على الأقل، يُسجَّل في سجل الإدارة)</small></label><textarea id="ap_note" rows="3" placeholder="مثال: المنشأة داخل مجمع طبي والإشارة ضعيفة"></textarea></div>':'';
  const lkHtml=links.length?'<div class="ap-sec"><b>ارتباطات أطباء جديدة بمنشآت ('+links.length+')</b>'+links.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'<small>'+esc(x.place)+'</small></div></div>').join("")+
   '<label class="ap-check"><input type="checkbox" id="ap_links"> أعتمد هذه الارتباطات مع التقرير</label></div>':'';

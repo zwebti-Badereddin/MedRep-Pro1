@@ -203,7 +203,7 @@ function proposeFacility_(s, p) {
     const now = new Date().toISOString(), id = 'FAC-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
     const f = { id: id, name: name, type: String(p.type || 'منشأة طبية').trim().slice(0, 40), region: '', address: String(p.address || '').trim().slice(0, 180),
       status: 'نشط', legacyEntity: 'DOCTOR_FACILITY', legacyId: id, createdAt: now, createdBy: s.uid, updatedAt: now, updatedBy: s.uid,
-      lat: has ? lat : '', lng: has ? lng : '', radius: '', geoState: has ? (isAdmin ? 'مؤكد' : 'مراجعة مطلوبة') : '',
+      lat: has ? lat : '', lng: has ? lng : '', radius: isAdmin && +p.radius >= 20 && +p.radius <= 1000 ? Math.round(+p.radius) : '', geoState: has ? (isAdmin ? 'مؤكد' : 'مراجعة مطلوبة') : '',
       geoSource: has ? (isAdmin ? 'ADMIN_MAP' : 'REP_PROPOSAL') : (isAdmin ? '' : src === 'away' ? 'REP_AWAY' : 'REP_NO_FIX'), geoBy: has && isAdmin ? s.uid : '', geoAt: has && isAdmin ? now : '',
       geoVersion: has ? 1 : '', mergedInto: '' };
     dbAppend_('Facilities', f);
@@ -246,7 +246,13 @@ function facilityActLocked_(s, p) {
     f.name = name; // renaming keeps the coordinates: the name is not the location
     if (row.type !== undefined) f.type = String(row.type || '').trim().slice(0, 40);
     if (row.address !== undefined) f.address = String(row.address || '').trim().slice(0, 180);
-    save(f); note = 'name=' + name;
+    let radiusChanged = false;
+    if (row.radius !== undefined) { // the facility's own matching range (20–1000 m); empty = the company default (150 m)
+      const rad = row.radius === '' || row.radius == null ? '' : Math.round(+row.radius);
+      if (rad !== '' && !(rad >= 20 && rad <= 1000)) throw new Error('نطاق المطابقة بين 20 و1000 متر.');
+      radiusChanged = String(f.radius || '') !== String(rad); f.radius = rad;
+    }
+    save(f); note = 'name=' + name + (radiusChanged ? '; radius=' + (f.radius || 'default') + '; reverified visits: ' + reverifyFacility_(f.id) : '');
   } else if (p.op === 'toggle') {
     if (f.mergedInto) throw new Error('هذه المنشأة مدموجة في منشأة أخرى ولا يمكن تفعيلها.');
     f.status = f.status === 'معطل' ? 'نشط' : 'معطل'; save(f); note = 'status=' + f.status; // doctors' links are left untouched

@@ -24,7 +24,7 @@ test('no browser prompt()/confirm() is left in any client file', () => {
 test('approval sheet: lists location exceptions with distance, asks a reason; lists new links with a confirmation box', () => {
   const h = api.approveDialogHtml([{ kind: 'طبيب', name: 'د. <b>أحمد</b>', place: 'مصحة الشفاء', status: 'خارج النطاق', distance: 250 }, { kind: 'صيدلية', name: 'صيدلية', status: 'غير حاسم', distance: null }],
     [{ name: 'د. سالم', place: 'عيادة النور' }]);
-  ['زيارات لم يثبت تطابق موقعها (2)', 'خارج النطاق · 250 م', 'غير حاسم', 'id="ap_note"', 'ارتباطات أطباء جديدة بمنشآت (1)', 'عيادة النور', 'id="ap_links"', 'اعتماد استثنائي']
+  ['زيارات مشكوك في موقعها (2)', 'خارج النطاق · 250 م', 'غير حاسم', 'id="ap_note"', 'ارتباطات أطباء جديدة بمنشآت (1)', 'عيادة النور', 'id="ap_links"', 'اعتماد استثنائي']
     .forEach(t => assert.ok(h.includes(t), 'missing ' + t));
   assert.ok(!h.includes('<b>أحمد</b>') && h.includes('&lt;b&gt;'));
   assert.ok(!/undefined|NaN/.test(h));

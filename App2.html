@@ -78,6 +78,8 @@ function facilityFormHtml(r){
  return '<h3>'+(r?"تعديل منشأة":"إضافة منشأة")+'</h3>'+
   '<label for="fc_name">اسم المنشأة *</label><input id="fc_name" maxlength="120" value="'+esc(r?r.name:"")+'" placeholder="مثال: مصحة الشفاء">'+
   '<label for="fc_type">نوع المنشأة</label><select id="fc_type">'+types.map(x=>'<option'+(x===t?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select>'+
+  '<label for="fc_rad">نطاق المطابقة</label><select id="fc_rad">'+[["","افتراضي (150 م)"],["100","100 م — عيادة أو صيدلية صغيرة"],["200","200 م"],["300","300 م — مستشفى كبير"],["500","500 م — مجمع طبي واسع"]].map(o=>'<option value="'+o[0]+'"'+(String((r&&r.radius)||"")===o[0]?" selected":"")+'>'+o[1]+'</option>').join("")+'</select>'+
+  '<small class="geo">الزيارة مطابقة إذا كان المندوب ضمن هذه المسافة من موقع المنشأة.</small>'+
   '<div class="empty" style="text-align:right;margin-top:10px">'+(r?"تغيير الاسم لا يغيّر إحداثيات المنشأة ولا ارتباطات الأطباء بها.":"بعد الإضافة حدّد موقع المنشأة من الخريطة ليُعتمد مرجعًا للتحقق من الزيارات.")+'</div>'+
   '<div id="fc_similar"></div><div class="err" id="ferr"></div>'+
   '<div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">'+(r?"حفظ التعديل":"إضافة المنشأة")+'</button></div>';
@@ -119,7 +121,7 @@ function facilityForm(r){
  $("#cx").onclick=()=>$("#ov").classList.remove("on");
  $("#fc_name").focus();
  $("#sv").onclick=async()=>{
-  const row={name:$("#fc_name").value.trim(),type:$("#fc_type").value},err=$("#ferr");err.textContent="";
+  const row={name:$("#fc_name").value.trim(),type:$("#fc_type").value,radius:$("#fc_rad")?$("#fc_rad").value:""},err=$("#ferr");err.textContent="";
   if(row.name.length<2){err.textContent="أدخل اسم المنشأة.";$("#fc_name").focus();return}
   if(r){mAct(r.id,"edit",{row});return}
   const b=$("#sv");b.disabled=true;
@@ -282,7 +284,7 @@ function visitChips(v,k){
  }
  if((v.comp||[]).length)c.push(chip("منافس: "+v.comp.map(x=>x.p).join("، ")));
  const g=v.gps||{};
- c.push(typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
+ c.push(g.warn?chip(" على بعد "+g.warn+" م من المنشأة — تأكد من اختيارها","warn",IC.pin):typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
  return '<div class="chips">'+c.join("")+'</div>';
 }
 function visitCard(k,v,i,lk){
