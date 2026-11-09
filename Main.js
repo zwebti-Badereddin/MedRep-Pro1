@@ -122,6 +122,7 @@ function routes_() {
   holidayDelete: { role: 'admin', fn: (s, p) => delRow_(s, 'Holidays', p.id, 'delete_holiday') },
   addDoctor:     { role: 'rep',   fn: (s, p) => addMaster_(s, 'Doctors', p) },
   addPharmacy:   { role: 'rep',   fn: (s, p) => addMaster_(s, 'Pharmacies', p) },
+  adminAdd:      { role: ['admin', 'supervisor'], fn: (s, p) => addMaster_(s, p.entity === 'Pharmacies' ? 'Pharmacies' : 'Doctors', p) },
   addSpecialty:  { role: 'rep',   fn: (s, p) => addSpecialty_(s, p) },
   loginAudit:    { role: 'any',   fn: (s) => { audit_(s, 'login', s.uid); return true; } },
   saveReport:    { role: 'rep',   fn: saveReport_ },

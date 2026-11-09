@@ -16,6 +16,7 @@ function tabM(){
  if(MS.ent==="Reps")$("#mf").innerHTML='<option value="all">الكل</option><option value="act">الفعّالون</option><option value="off">المعطّلون</option>';
  if(MS.ent==="Doctors"||MS.ent==="Pharmacies")$("#mf").insertAdjacentHTML("beforeend",'<option value="dups">قد تكون مكررة</option>');
  if(MS.ent==="Facilities")$("#mf").innerHTML='<option value="new">تحتاج مراجعة (مقترحة من المندوبين)</option><option value="all">الكل</option><option value="off">المعطّلة والمدموجة</option>';
+ if(MS.ent==="Doctors"||MS.ent==="Pharmacies"){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="addBtn" style="margin-top:8px">＋ إضافة '+(MS.ent==="Doctors"?"طبيب":"صيدلية")+'</button>');$("#addBtn").onclick=()=>mAddForm(MS.ent)}
  if(IMPORT_COLS[MS.ent]){$("#ml").insertAdjacentHTML("beforebegin",'<button class="btn dash" id="impBtn" style="margin-top:8px">استيراد '+IMPORT_NAMES[MS.ent]+' من Excel</button>');$("#impBtn").onclick=()=>openImport(MS.ent)}
  $("#mf").onchange=drawM;$("#mq").oninput=drawM;loadM();
 }
@@ -250,6 +251,31 @@ function rForm(r){const fl=(i,l,v,x)=>`<label>${l}</label><input id="${i}" value
  $("#sv").onclick=()=>{const c=$("#r_c").value.trim();if((!r||c)&&!/^\d{5}$/.test(c)){$("#ferr").textContent="رمز الدخول الجديد يجب أن يكون 5 أرقام.";return}
   rSave({id:r?r.id:undefined,name:$("#r_n").value,phone:$("#r_p").value,email:$("#r_e").value,code:c||undefined})};}
 async function rSave(row){try{await srv("repSave",{row:JSON.parse(JSON.stringify(row))});$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
+/* «＋ إضافة طبيب / صيدلية» (admin, supervisor): approved at once; the same duplicate protection as the reps («هل تقصد؟»).
+   After a doctor is added, «أماكن وأيام العمل» opens for him. */
+function mAddForm(ent){
+ const dr=ent==="Doctors",specs=(CFG.specialties||[]).map(x=>typeof x==="string"?x:x.name).filter(Boolean);
+ $("#modal").innerHTML='<h3>إضافة '+(dr?"طبيب":"صيدلية")+'</h3><label for="ad_n">الاسم *</label><input id="ad_n" maxlength="80" placeholder="'+(dr?"مثال: د. محمد بادي":"مثال: صيدلية النور")+'">'+
+  (dr?'<label for="ad_s">التخصص</label><input id="ad_s" list="ad_sl" maxlength="80"><datalist id="ad_sl">'+specs.map(x=>'<option value="'+esc(x)+'"></option>').join("")+'</datalist>'+
+   '<label>القطاع</label><div class="seper"><button type="button" class="sper on" data-c="خاص">خاص</button><button type="button" class="sper" data-c="عام">عام</button></div>'+
+   '<label class="chk"><input type="checkbox" id="ad_pl" checked> بعد الإضافة: حدّد أماكن وأيام عمله</label>'
+   :'<label for="ad_l">العنوان</label><input id="ad_l" maxlength="80"><label for="ad_f">أقرب منشأة</label><input id="ad_f" maxlength="80">')+
+  '<div class="empty" style="text-align:right;margin-top:8px">'+(dr?"الطبيب":"الصيدلية")+' الذي تضيفه الإدارة معتمد مباشرة، ويظهر في الخطط والزيارات والتقارير.</div><div id="ad_sim"></div><div class="err" id="ferr"></div>'+
+  '<div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">إضافة</button></div>';
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");$("#ad_n").focus();
+ let sector="خاص",confirmNew=false;document.querySelectorAll("#modal [data-c]").forEach(b=>b.onclick=()=>{sector=b.dataset.c;document.querySelectorAll("#modal [data-c]").forEach(x=>x.classList.toggle("on",x===b))});
+ const done=row=>{const list=dr?(CFG.docs=CFG.docs||[]):(CFG.phs=CFG.phs||[]);if(!list.some(x=>String(x.id)===String(row.id)))list.push(dr?{id:row.id,name:row.name,specialty:row.specialty||"",sector:row.sector||"",workplaces:[]}:{id:row.id,name:row.name,location:row.location||"",nearFacility:row.nearFacility||""});
+  if(dr&&CFG.doctors&&CFG.doctors.indexOf(row.name)<0)CFG.doctors.push(row.name);
+  const pl=dr&&$("#ad_pl")&&$("#ad_pl").checked;$("#ov").classList.remove("on");loadM();
+  if(pl&&typeof schEdit==="function")setTimeout(()=>schEdit(row.id,row.name),300)};
+ $("#sv").onclick=async()=>{const b=$("#sv"),err=$("#ferr");err.textContent="";const name=$("#ad_n").value.trim();
+  if(name.length<3){err.textContent="الاسم قصير جدًا.";return}b.disabled=true;
+  try{const r=await srv("adminAdd",dr?{entity:ent,name,specialty:$("#ad_s").value.trim(),sector,confirmNew}:{entity:ent,name,location:$("#ad_l").value.trim(),nearFacility:$("#ad_f").value.trim(),confirmNew});
+   if(r&&r.similar){$("#ad_sim").innerHTML='<div class="ap-sec"><b>'+(dr?"يوجد طبيب باسم مشابه:":"توجد صيدلية باسم مشابه:")+'</b>'+r.similar.map(x=>'<div class="ap-row"><div class="ap-t">'+esc(x.name)+'<small>'+esc(x.specialty||x.location||"")+'</small></div></div>').join("")+'</div>';
+    confirmNew=true;b.textContent="لا، "+(dr?"طبيب آخر":"صيدلية أخرى")+" — أضف «"+name+"»";b.disabled=false;return}
+   toast(r.existing?"موجود مسبقًا في السجل: "+r.name:(dr?"أُضيف الطبيب ":"أُضيفت الصيدلية ")+r.name);done(r)}
+  catch(e){err.textContent=e.message;b.disabled=false}};
+}
 async function mAct(id,op,x){try{await srv(MS.ent==="Facilities"?"facilityAct":"masterAct",Object.assign({entity:MS.ent,id,op},x||{}));$("#ov").classList.remove("on");toast("تم");await loadM()}catch(e){const f=$("#ferr");f?f.textContent=e.message:toast(e.message)}}
 function mEdit(r){const d=MS.ent==="Doctors",fl=(i,l,v)=>`<label>${l}</label><input id="${i}" value="${esc(v||"")}">`;
  $("#modal").innerHTML=`<h3>تعديل السجل</h3>${fl("e_n","الاسم *",r.name)}${d?fl("e_s","التخصص",r.specialty)+`<div class="empty">أماكن عمل الطبيب تُدار من قسم «أماكن عمل الأطباء».</div>`+`<label>القطاع</label><select id="e_c"><option ${r.sector==="خاص"?"selected":""}>خاص</option><option ${r.sector==="عام"?"selected":""}>عام</option></select>`:fl("e_l","الموقع",r.location)+fl("e_f","أقرب منشأة",r.nearFacility)}

@@ -36,12 +36,13 @@ function addMaster_(s, sheet, p) {
   const lock = acquireLock_(10000);
   try {
     const rows = dbAll_(sheet), n = normName_(name), k = nameKey_(name, sheet), dup = rows.find(r => normName_(r.name) === n || nameKey_(r.name, sheet) === k);
-    if (dup) return dup; // already exists: reuse it, never create a duplicate
+    if (dup) return Object.assign({}, dup, { existing: true }); // already exists: reuse it, never create a duplicate
     if (!p.confirmNew) { const similar = similarMasters_(rows, name, sheet); if (similar.length) return { similar: similar }; } // «هل تقصد؟» first (Dedupe.js)
     const cut = v => String(v || '').trim().slice(0, 80);
     const row = sheet === 'Doctors'
       ? { name: name, specialty: cut(p.specialty), workplace: cut(p.workplace), sector: cut(p.sector), active: true, addedBy: s.uid }
       : { name: name, location: cut(p.location), nearFacility: cut(p.nearFacility), active: true, addedBy: s.uid };
+    if (s.role !== 'rep') row.reviewed = 'true'; // added by the administration: approved at once, used everywhere like any other
     const mx = rows.reduce((a, r) => Math.max(a, +String(r.id).split('-')[1] || 0), 0);
     row.id = PREFIX[sheet === 'Doctors' ? 'Doctors' : 'Pharmacies'] + '-' + ('0000' + (mx + 1)).slice(-4);
     dbAppend_(sheet, row);

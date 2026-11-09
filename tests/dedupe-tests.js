@@ -45,6 +45,18 @@ test('admin list shows exact and similar pairs; rep cannot call it', () => {
   assert.throws(() => env.call(rep, 'duplicateCandidates', { entity: 'Doctors' }), /غير مصرح/);
 });
 
+test('the administration adds a doctor or a pharmacy: approved at once, same duplicate protection, the same name gives the existing one', () => {
+  const { env, adm } = setup();
+  const d = env.call(adm, 'adminAdd', { entity: 'Doctors', name: 'د. سامي الفيتوري', specialty: 'عظام', sector: 'عام' });
+  const row = env.rows('Doctors').find(x => x.id === d.id);
+  assert.strictEqual(J([row.reviewed, row.specialty, row.sector, !!d.existing]), J(['true', 'عظام', 'عام', false]));
+  assert.strictEqual(env.call(adm, 'adminAdd', { entity: 'Doctors', name: 'الدكتور سامي الفيتوري' }).existing, true);
+  assert.ok(env.call(adm, 'adminAdd', { entity: 'Doctors', name: 'خالد عمر علي' }).similar);
+  const p = env.call(adm, 'adminAdd', { entity: 'Pharmacies', name: 'صيدلية الشفاء الجديدة', location: 'قرقارش' });
+  assert.strictEqual(env.rows('Pharmacies').find(x => x.id === p.id).reviewed, 'true');
+  assert.ok(env.call(adm, 'bootstrap', {}).doctors.some(x => x.id === d.id), 'available everywhere like any doctor');
+  assert.throws(() => env.call(env.session('REP-0001', 'rep'), 'adminAdd', { entity: 'Doctors', name: 'د. س' }), /غير مصرح/);
+});
 let failed = 0;
 tests.forEach(t => { try { t.fn(); console.log('PASS  ' + t.name); } catch (e) { failed++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      ')); } });
 console.log('\n' + (tests.length - failed) + ' passed, ' + failed + ' failed');
