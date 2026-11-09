@@ -93,7 +93,7 @@ function prepareReport_(s, p) {
     const skewMin = isFinite(+p.clk) && +p.clk > 0 ? Math.round((Date.now() - +p.clk) / 60000) : null;
     const clean = (list, prev, kind) => (list || []).map((v, i) => {
       const o = Object.assign({}, v, { seq: i + 1 }), g = v.gps || {};
-      delete o._v; delete o._needLink; delete o.linkPending; // server-only flags; never accepted from the client
+      delete o._v; delete o._needLink; delete o.linkPending; delete o.offPlace; // server-only flags; never accepted from the client
       // Free samples [{product, qty}]: at most 20 rows, product text up to 80 chars, quantity 1–99; anything else is dropped.
       if (Array.isArray(v.samples)) o.samples = v.samples.slice(0, 20).map(x => ({ product: String((x && x.product) || '').trim().slice(0, 80),
         qty: Math.max(1, Math.min(99, Math.round(+(x && x.qty)) || 1)) })).filter(x => x.product && x.product !== '—');
@@ -127,8 +127,9 @@ function prepareReport_(s, p) {
       if (res.error) throw new Error(res.error);
       if (res.facility) { v.facilityId = res.facility.id; v.place = res.facility.name; v.workplaceId = res.link ? res.link.id : ''; }
       else delete v.facilityId;
-      if (res.pending) v.linkPending = true;
-      if (res.needLink) v._needLink = doctor.id; // the link row is written under the lock in persistReport_
+      if (res.outside && !res.needLink) v.offPlace = true; // a visit outside the doctor's places of work (allowed)
+      if (res.needLink) v._needLink = doctor.id; // «أضفه لأماكن عمله»: the place is written under the lock in persistReport_
+      delete v.addPlace;
     });
     phs.forEach(v => {
       if (!v.pharmacyId) return;

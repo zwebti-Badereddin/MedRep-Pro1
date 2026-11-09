@@ -81,16 +81,15 @@ test('review: approve / return write only status + note (visits cell only when l
   assert.deepStrictEqual(cols, [col('status'), col('reviewNote')].sort((a, b) => a - b));
   assert.deepStrictEqual([row().status, row().reviewNote], ['معاد للمندوب', 'راجع الزيارة']);
 });
-test('review with a pending doctor link writes the visits cell once and approves the link', () => {
+test('approving a report with a newly added place writes only the review columns (the place needs no approval)', () => {
   const env = makeEnv(SEED()), rep = env.session('REP-0001', 'rep'), adm = env.session('ADMIN', 'admin'), T = vm.runInContext('T', env.ctx);
-  env.call(rep, 'submitReport', { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0002', facilityId: 'FAC-A' })] });
+  env.call(rep, 'submitReport', { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0002', facilityId: 'FAC-A', addPlace: true })] });
   const r = env.rows('Reports').find(x => x.repId === 'REP-0001' && x.date === env.today);
-  env.resetReads(); env.call(adm, 'reviewReport', { id: r.id, approve: true, approveLinks: true });
-  const cols = env.writes.filter(x => x.sheet === 'Reports').flatMap(x => Array.from({ length: x.cols }, (_, i) => x.col + i));
-  assert.ok(cols.includes(T.Reports.indexOf('doctors') + 1) && !cols.includes(T.Reports.indexOf('snapshot') + 1));
-  const after = env.rows('Reports').find(x => x.id === r.id);
-  assert.ok(!JSON.parse(after.doctors)[0].linkPending && JSON.parse(after.snapshot).doctors[0].linkPending); // snapshot frozen
   assert.strictEqual(env.rows('DoctorWorkplaces').find(w => w.doctorId === 'DOC-0002').linkState, 'معتمد');
+  env.resetReads(); env.call(adm, 'reviewReport', { id: r.id, approve: true });
+  const cols = env.writes.filter(x => x.sheet === 'Reports').flatMap(x => Array.from({ length: x.cols }, (_, i) => x.col + i));
+  assert.ok(!cols.includes(T.Reports.indexOf('snapshot') + 1) && !cols.includes(T.Reports.indexOf('doctors') + 1));
+  assert.strictEqual(env.rows('Reports').find(x => x.id === r.id).status, 'معتمد');
 });
 test('dbWriteCells_ refuses to write when the row no longer holds the expected record', () => {
   const { env, row } = setup();

@@ -1,4 +1,5 @@
-// MedRep Pro — doctor work schedules: where each doctor works on each weekday (facility + day + period).
+// MedRep Pro — a doctor's places of work and work days: the places (DoctorWorkplaces rows, no approval) and, for each, the
+// weekdays and period when known (DocSchedule). A place may have no days yet («أيام غير محددة»).
 // Shared per doctor (not per rep): any rep, supervisor or admin may edit it, with no approval. A doctor may have any number of
 // slots, several facilities on the same day (morning in one, evening in another). Edits keep history: a removed slot is ended
 // (active=false, who and when), never deleted. «غير متواجد اليوم» marks one day only (DocAbsent) and expires by itself.
@@ -13,36 +14,48 @@ function schRows_() { ensureSheet_('DocSchedule'); return dbAll_('DocSchedule');
 function schAbsentRows_() { ensureSheet_('DocAbsent'); return dbAll_('DocAbsent').filter(r => String(r.active) !== 'false'); }
 function schWeekday_(date) { return new Date(Date.parse(date + 'T12:00:00Z')).getUTCDay(); }
 const schOn_ = r => String(r.active) !== 'false';
+function staffOrRepName_(id) { const all = [].concat(dbAll_('Reps'), sheet_('Supervisors') ? dbAll_('Supervisors') : [], sheet_('Admins') ? dbAll_('Admins') : []); return (all.find(x => String(x.id) === String(id)) || {}).name || ''; }
 
 // Every doctor's schedule: { sched: { doctorId: { slots: [{ f, n, d, p }], by, at } }, absent: { doctorId: [dates] }, today }.
 function docSchedules_(s, p) {
   const facs = dbAll_('Facilities'), out = {}, absent = {}, today = today_();
+  const entry = id => out[id] || (out[id] = { slots: [], places: [], by: '', at: '' });
+  (sheet_('DoctorWorkplaces') ? dbAll_('DoctorWorkplaces') : []).forEach(w => {
+    if (!linkApproved_(w) || !w.doctorId) return;
+    const f = facilityById_(w.facilityId, facs); if (!f || f.status === 'معطل') return;
+    const o = entry(w.doctorId); if (!o.places.some(x => x.f === String(f.id))) o.places.push({ f: String(f.id), n: f.name });
+    if (w.linkedAt && String(w.linkedAt) > o.at && w.linkedBy) { o.at = String(w.linkedAt); o.by = staffOrRepName_(w.linkedBy); }
+  });
   schRows_().forEach(r => {
-    const o = out[r.doctorId] || (out[r.doctorId] = { slots: [], by: '', at: '' });
+    const o = entry(r.doctorId);
     if (schOn_(r)) {
       const f = facilityById_(r.facilityId, facs);
       o.slots.push({ f: f ? String(f.id) : String(r.facilityId), n: f ? f.name : r.facilityName, d: +r.day, p: r.period });
+      if (f && !o.places.some(x => x.f === String(f.id))) o.places.push({ f: String(f.id), n: f.name });
     }
     [[r.addedAt, r.addedByName], [r.endedAt, r.endedByName]].forEach(([at, by]) => { if (at && String(at) > o.at) { o.at = String(at); o.by = by || ''; } });
   });
-  Object.keys(out).forEach(k => { if (!out[k].slots.length) delete out[k]; else out[k].slots.sort((a, b) => a.d - b.d || (a.p > b.p ? 1 : -1)); });
+  Object.keys(out).forEach(k => { if (!out[k].slots.length && !out[k].places.length) delete out[k]; else out[k].slots.sort((a, b) => a.d - b.d || (a.p > b.p ? 1 : -1)); });
   schAbsentRows_().forEach(r => { if (String(r.date) >= today) (absent[r.doctorId] = absent[r.doctorId] || []).push(String(r.date)); });
   return { sched: out, absent: absent, today: today };
 }
 
-// Replace a doctor's schedule with p.slots = [{ facilityId, day (0 = Sunday … 6), period: am|pm|all }]. Unchanged slots stay.
+// Replace a doctor's places and schedule with p.slots = [{ facilityId, day (0 = Sunday … 6, or null: a place with no days yet),
+// period: am|pm|all }]. Unchanged slots stay; a place left out is removed from his places (its row is kept, inactive).
 function docScheduleSave_(s, p) {
   const doc = dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false');
   if (!doc) throw new Error('الطبيب غير موجود في السجل.');
   const facs = dbAll_('Facilities'), want = {}, list = Array.isArray(p.slots) ? p.slots : [];
   if (list.length > SCH_MAX_SLOTS) throw new Error('عدد الفترات كبير جدًا.');
+  const places = {};
   list.forEach(x => {
+    if (x.day === null || x.day === undefined || x.day === '') { const f = facilityById_(x.facilityId, facs); if (!f || f.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); places[f.id] = f; return; }
     const day = +x.day, per = String(x.period || '');
     if (!(day >= 0 && day <= 6 && Math.floor(day) === day)) throw new Error('يوم غير صحيح.');
     if (!SCH_PERIOD[per]) throw new Error('اختر الفترة: صباحًا أو مساءً أو يوم كامل.');
     const f = facilityById_(x.facilityId, facs);
     if (!f || f.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.');
-    want[f.id + '|' + day + '|' + per] = { facilityId: String(f.id), facilityName: f.name, day: day, period: per };
+    want[f.id + '|' + day + '|' + per] = { facilityId: String(f.id), facilityName: f.name, day: day, period: per }; places[f.id] = f;
   });
   ensureSheet_('DocSchedule');
   const lock = acquireLock_(20000), now = new Date().toISOString(), who = { uid: s.uid, name: s.name || '' };
@@ -59,8 +72,19 @@ function docScheduleSave_(s, p) {
       dbAppend_('DocSchedule', Object.assign({ id: 'SCH-' + ('00000' + (++n)).slice(-6), doctorId: doc.id, active: true,
         addedAt: now, addedBy: who.uid, addedByName: who.name, endedAt: '', endedBy: '', endedByName: '' }, want[k])); added++;
     });
+    // places of work: every place named is his (added or reactivated at once); a place left out is removed
+    if (sheet_('DoctorWorkplaces')) {
+      const links = dbAll_('DoctorWorkplaces'), mine = links.filter(w => String(w.doctorId) === String(doc.id));
+      Object.keys(places).forEach(fid => {
+        const w = mine.find(x => String((facilityById_(x.facilityId, facs) || {}).id) === String(fid));
+        if (!w) { const n = newLinkRow_(s, links, doc.id, doc.name, places[fid], ''); dbAppend_('DoctorWorkplaces', n); links.push(n); added++; }
+        else if (!linkApproved_(w)) { Object.assign(w, { active: true, linkState: LINK_OK, reviewed: 'true', linkedBy: s.uid, linkedAt: now }); dbUpsert_('DoctorWorkplaces', 'id', w); added++; }
+      });
+      mine.filter(w => linkApproved_(w) && !places[(facilityById_(w.facilityId, facs) || {}).id]).forEach(w => { Object.assign(w, { active: false, linkedBy: s.uid, linkedAt: now }); dbUpsert_('DoctorWorkplaces', 'id', w); ended++; });
+    }
     if (added || ended) audit_(s, 'doc_schedule', doc.id, '+' + added + ' -' + ended);
   } finally { lock.releaseLock(); }
+  if (added || ended) clearCache_(); // the doctors' places reach every phone with the next lookups
   return docSchedules_(s, {});
 }
 
@@ -85,7 +109,7 @@ function docAbsent_(s, p) {
 // For a date: null when the doctor has no schedule; else { off, where: 'المنشأة صباحًا · …' }.
 function schOnDate_(all, doctorId, date) {
   const o = all.sched[doctorId];
-  if (!o) return null;
+  if (!o || !o.slots.length) return null;
   const d = schWeekday_(date), slots = o.slots.filter(x => x.d === d), away = (all.absent[doctorId] || []).indexOf(date) >= 0;
   return { off: away || !slots.length, absent: away, where: slots.map(x => x.n + ' ' + SCH_PERIOD[x.p]).join(' · ') };
 }

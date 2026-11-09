@@ -120,18 +120,29 @@ test('import facilities: type default, coordinates optional (two cells or "lat, 
   assert.deepStrictEqual(r.invalid.map(x => [x.line, x.reason]), [[5, 'إحداثيات غير صحيحة'], [6, 'إحداثيات غير صحيحة']]);
   assert.deepStrictEqual(r.dup.map(x => x.existing), ['مصحة الشفاء']);
 });
-test('import facilities commit: new FAC ids; imported coordinates stay a proposal (not approved) and count as "needs review"', () => {
+test('import facilities with a Google Maps link instead of coordinates: long links read directly, short ones followed; a bad link is listed', () => {
+  const { env, adm } = setup();
+  env.ctx.UrlFetchApp = { fetch: u => String(u).indexOf('goo.gl/ok') >= 0 ? { getResponseCode: () => 302, getHeaders: () => ({ Location: 'https://www.google.com/maps/place/x/@32.8811,13.1902,17z' }), getContentText: () => '' } : { getResponseCode: () => 404, getHeaders: () => ({}), getContentText: () => '' } };
+  const r = env.call(adm, 'importMaster', { entity: 'Facilities', commit: true, rows: [
+    ['مصحة المسرة', 'مصحة', 'أبوسليم', 'https://www.google.com/maps/place/x/@32.8559,13.2298,17z'],
+    ['مصحة الفردوس', 'مصحة', 'قرقارش', 'https://maps.app.goo.gl/ok'],
+    ['مصحة مجهولة', 'مصحة', '', 'https://maps.app.goo.gl/bad']] });
+  assert.strictEqual(r.added, 2); assert.strictEqual(r.invalid[0].reason, 'رابط Google Maps لم يُفهم');
+  const f = n => env.rows('Facilities').find(x => x.name === n);
+  assert.deepStrictEqual([String(f('مصحة المسرة').lat), String(f('مصحة الفردوس').lng), f('مصحة الفردوس').geoState], ['32.8559', '13.1902', 'مؤكد']);
+});
+test('import facilities commit: new FAC ids; imported coordinates are approved at once (vendor/admin set them); a facility with none still needs a location', () => {
   const { env, adm } = setup();
   const r = env.call(adm, 'importMaster', { entity: 'Facilities', commit: true, rows: [['مستشفى الخضراء', 'مستشفى', 'طريق المطار', '32.85', '13.21'], ['عيادة الأمل']] });
   assert.strictEqual(r.added, 2);
   const [a, b] = env.rows('Facilities').slice(-2);
   assert.ok(/^FAC-[0-9A-F]{12}$/.test(a.id) && a.id !== b.id && a.legacyId === a.id && a.legacyEntity === 'DOCTOR_FACILITY');
-  assert.deepStrictEqual([a.status, a.geoState, a.geoSource, a.geoBy, String(a.lat)], ['نشط', 'مراجعة مطلوبة', 'ADMIN_IMPORT', '', '32.85']);
+  assert.deepStrictEqual([a.status, a.geoState, a.geoSource, !!a.geoBy, String(a.lat)], ['نشط', 'مؤكد', 'ADMIN_MAP', true, '32.85']); // approved at once
   assert.deepStrictEqual([b.geoState, b.geoSource, b.lat], ['', '', '']);
-  assert.ok(!env.ctx.facilityApproved_(a));
+  assert.ok(env.ctx.facilityApproved_(a));
   const list = env.call(adm, 'facilitiesList', {}), imp = list.find(f => f.id === a.id);
-  assert.ok(imp && !imp.approved);
-  assert.strictEqual(JSON.parse(JSON.stringify(env.call(adm, 'setupStatus'))).items.find(i => i.key === 'facilities').detail, '3 منشأة بلا موقع معتمد');
+  assert.ok(imp && imp.approved);
+  assert.strictEqual(JSON.parse(JSON.stringify(env.call(adm, 'setupStatus'))).items.find(i => i.key === 'facilities').detail, '2 منشأة بلا موقع معتمد');
 });
 
 /* ---------- client ---------- */

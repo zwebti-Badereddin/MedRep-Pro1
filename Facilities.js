@@ -1,4 +1,7 @@
-// MedRep Pro — facility model V2: a facility (with its coordinates) is the single reference; doctors link to it.
+// MedRep Pro — facility model V2: a facility (name + approved coordinates) is the fixed reference; doctors move between them.
+// A doctor's places of work (DoctorWorkplaces rows) are managed from the doctor's card with his work days (Schedule.js): added or
+// removed by a rep, supervisor or admin directly, with no approval. A visit at a facility outside his places is allowed (offPlace),
+// and adds the place only when the rep chooses «أضفه لأماكن عمله» (addPlace). Old pending rows count as places; rejected ones do not.
 
 /* ---------- Facility model V2: the facility (with its coordinates) is the single reference; a doctor only links to it ---------- */
 const LINK_OK = 'معتمد', LINK_PENDING = 'بانتظار', LINK_REJECTED = 'مرفوض';
@@ -26,7 +29,7 @@ function facilityRef_(f) {
   return { id: f.id, name: f.name, lat: f.lat, lng: f.lng, radius: f.radius, refBy: f.geoSource, refState: f.geoState,
     reviewed: facilityApproved_(f) ? 'true' : 'false', active: f.status !== 'معطل' && !f.mergedInto };
 }
-function linkApproved_(w) { return !!w && String(w.active) !== 'false' && (w.linkState || LINK_OK) === LINK_OK; }
+function linkApproved_(w) { return !!w && String(w.active) !== 'false' && (w.linkState || LINK_OK) !== LINK_REJECTED; }
 function visitDoctor_(v, doctors) {
   if (v.doctorId) return doctors.find(d => String(d.id) === String(v.doctorId)) || null;
   const named = doctors.filter(d => normName_(d.name) === normName_(v.name));
@@ -55,14 +58,12 @@ function resolveVisitLink_(v, doctor, fx, policy) {
   const links = fx.workplaces.filter(w => String(w.doctorId) === String(doctor.id) && (facilityById_(w.facilityId, fx.facilities) || {}).id === f.id);
   const link = links.find(linkApproved_) || links[0] || null;
   if (linkApproved_(link)) return { facility: f, link: link };
-  if (policy === 'strict') return { error: link && link.linkState === LINK_REJECTED ? 'رفضت الإدارة ربط هذا الطبيب بهذه المنشأة.'
-    : 'هذا الطبيب غير مرتبط بهذه المنشأة بعد. أرسل طلب ربط وانتظر اعتماد الإدارة.' };
-  return { facility: f, link: link, pending: true, needLink: !link };
+  return { facility: f, link: null, outside: true, needLink: !!v.addPlace }; // not one of his places: allowed; added only on request
 }
 function newLinkRow_(s, rows, doctorId, doctorName, f, sector) {
   const now = new Date().toISOString();
   return { id: nextWorkplaceId_(rows), doctorId: doctorId, doctorName: doctorName, workplace: f.name, sector: String(sector || '').slice(0, 30),
-    active: true, addedBy: s.uid, reviewed: 'false', facilityId: f.id, linkState: LINK_PENDING, linkedBy: s.uid, linkedAt: now };
+    active: true, addedBy: s.uid, reviewed: 'true', facilityId: f.id, linkState: LINK_OK, linkedBy: s.uid, linkedAt: now };
 }
 // Called by persistReport_ under the script lock: re-reads the links so concurrent saves never create two rows.
 function createPendingLinks_(s, docs) {
@@ -76,7 +77,10 @@ function createPendingLinks_(s, docs) {
       if (!f) return;
       w = newLinkRow_(s, rows, doctorId, d ? d.name : v.name, f, v.sector);
       dbAppend_('DoctorWorkplaces', w); rows.push(w);
-      audit_(s, 'propose_doctor_link', w.id, (d ? d.name : v.name) + ' · ' + f.name + ' · facility=' + f.id);
+      audit_(s, 'add_doctor_place', w.id, (d ? d.name : v.name) + ' · ' + f.name + ' · facility=' + f.id);
+    } else if (!linkApproved_(w)) { // a removed or rejected place, added again by the rep
+      Object.assign(w, { active: true, linkState: LINK_OK, reviewed: 'true', linkedBy: s.uid, linkedAt: new Date().toISOString() }); dbUpsert_('DoctorWorkplaces', 'id', w);
+      audit_(s, 'add_doctor_place', w.id, String(w.doctorName || doctorId) + ' · facility=' + w.facilityId);
     }
     v.workplaceId = w.id;
   });
@@ -91,7 +95,10 @@ function requestDoctorLink_(s, p) {
     const f = facilityById_(p.facilityId, dbAll_('Facilities'));
     if (!doctor || !f || f.status === 'معطل') throw new Error('الطبيب أو المنشأة غير متاح.');
     const rows = dbAll_('DoctorWorkplaces'), existing = rows.find(w => String(w.doctorId) === String(doctor.id) && String(w.facilityId) === String(f.id));
-    if (existing) return { id: existing.id, linkState: existing.linkState || LINK_OK, existing: true };
+    if (existing) {
+      if (!linkApproved_(existing)) { Object.assign(existing, { active: true, linkState: LINK_OK, reviewed: 'true', linkedBy: s.uid, linkedAt: new Date().toISOString() }); dbUpsert_('DoctorWorkplaces', 'id', existing); clearCache_(); }
+      return { id: existing.id, linkState: LINK_OK, existing: true };
+    }
     const w = newLinkRow_(s, rows, doctor.id, doctor.name, f, p.sector);
     dbAppend_('DoctorWorkplaces', w); clearCache_();
     audit_(s, 'request_doctor_link', w.id, doctor.name + ' · ' + f.name + ' · facility=' + f.id);

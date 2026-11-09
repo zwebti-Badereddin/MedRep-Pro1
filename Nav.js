@@ -10,8 +10,7 @@ function navCounts_(s) {
     const safe = fn => { try { return fn(); } catch (e) { return 0; } };
     out.plans = safe(() => planRows_().filter(r => r.pendingCls).length);
     out.doctors = safe(() => dbAll_('Doctors').filter(d => d.addedBy && String(d.reviewed) !== 'true' && String(d.active) !== 'false').length);
-    out.facilities = safe(() => dbAll_('Facilities').filter(f => f.geoState === 'مراجعة مطلوبة' && !String(f.mergedInto || '').trim() && f.status !== 'معطل').length +
-      dbAll_('DoctorWorkplaces').filter(w => w.linkState === 'بانتظار' && String(w.active) !== 'false').length);
+    out.facilities = safe(() => dbAll_('Facilities').filter(f => f.geoState === 'مراجعة مطلوبة' && !String(f.mergedInto || '').trim() && f.status !== 'معطل').length); // places of work need no approval any more
     out.stock = safe(() => stockBalances_('').filter(b => b.balance < 0).length);
     out.pharm = safe(() => pharmAlerts_(null, {}).alerts.length);
     out.health = navHealth_();

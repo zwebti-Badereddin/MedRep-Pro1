@@ -67,6 +67,17 @@ test('daily plans show where the doctor works that day, or warn that he does not
   const b = env.call(sup, 'dayPlanAdd', { product: 'Clodil', repId: 'REP-0001', date: today, doctorId: 'DOC-2', purpose: 'intro' });
   assert.strictEqual(J([b.schedOff, b.schedWhere]), J([false, '']), 'no schedule: no warning');
 });
+test('places of work: a place with no days yet, places follow the schedule, a removed place leaves his list; no opinion on dates without days', () => {
+  const { env, rep } = setup();
+  let r = env.call(rep, 'docScheduleSave', { doctorId: 'DOC-1', slots: [{ facilityId: 'FAC-1', day: wd, period: 'am' }, { facilityId: 'FAC-2', day: null }] });
+  assert.strictEqual(J(r.sched['DOC-1'].places.map(x => x.f).sort()), J(['FAC-1', 'FAC-2']));
+  assert.strictEqual(J(env.rows('DoctorWorkplaces').filter(w => w.doctorId === 'DOC-1').map(w => [w.facilityId, w.linkState])), J([['FAC-1', 'معتمد'], ['FAC-2', 'معتمد']]));
+  assert.strictEqual(J(env.call(rep, 'bootstrap', {}).doctors.find(d => d.id === 'DOC-1').workplaces.map(w => w.id).sort()), J(['FAC-1', 'FAC-2']), 'the phone lists his places');
+  r = env.call(rep, 'docScheduleSave', { doctorId: 'DOC-1', slots: [{ facilityId: 'FAC-2', day: null }] });
+  assert.strictEqual(J(r.sched['DOC-1'].places.map(x => x.f)), J(['FAC-2']));
+  assert.strictEqual(env.ctx.schOnDate_(r, 'DOC-1', today), null, 'a place without days says nothing about a date');
+  assert.strictEqual(String(env.rows('DoctorWorkplaces').find(w => w.facilityId === 'FAC-1').active), 'false', 'kept, inactive');
+});
 test('merging doctors moves the schedule when the kept doctor has none', () => {
   const { env, adm } = setup();
   env.call(adm, 'docScheduleSave', { doctorId: 'DOC-2', slots: [{ facilityId: 'FAC-1', day: wd, period: 'all' }] });

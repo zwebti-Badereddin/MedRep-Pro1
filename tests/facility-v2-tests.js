@@ -104,34 +104,32 @@ test('linked doctor: visit by facilityId -> his link row, facility name, verifie
   const d = docs(env)[0];
   assert.deepStrictEqual([d.facilityId, d.workplaceId, d.place, d.gps.status, !!d.linkPending], ['FAC-A', 'DWP-00001', 'مصحة الشفاء', 'تم التحقق', false]);
 });
-test('soft policy: first visit of a doctor at a facility saves, creates ONE pending link, and still verifies GPS', () => {
+test('a visit at a facility outside the doctor\'s places saves (offPlace) and verifies GPS; «أضفه» adds ONE place, approved at once', () => {
   const env = makeEnv(V2SEED()), r = rep(env);
-  const v = () => visit({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء', gps: gps(A) });
-  env.call(r, 'saveReport', { date: env.today, doctors: [v(), v()] });
+  const v = o => visit(Object.assign({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء', gps: gps(A) }, o));
+  env.call(r, 'saveReport', { date: env.today, doctors: [v()] });
+  assert.deepStrictEqual([links(env, 'DOC-0003', 'FAC-A').length, docs(env)[0].offPlace, docs(env)[0].gps.status, docs(env)[0].workplaceId], [0, true, 'تم التحقق', '']);
+  env.call(r, 'saveReport', { date: env.today, doctors: [v({ addPlace: true }), v({ addPlace: true })] });
   const l = links(env, 'DOC-0003', 'FAC-A');
-  assert.strictEqual(l.length, 1); assert.strictEqual(l[0].linkState, 'بانتظار');
+  assert.strictEqual(l.length, 1); assert.strictEqual(l[0].linkState, 'معتمد');
   const [a, b] = docs(env);
-  assert.deepStrictEqual([a.workplaceId, b.workplaceId, a.linkPending, a.gps.status], [l[0].id, l[0].id, true, 'تم التحقق']);
-  env.call(r, 'saveReport', { date: env.today, doctors: docs(env) });
-  assert.strictEqual(links(env, 'DOC-0003', 'FAC-A').length, 1);
-  assert.strictEqual(env.rows('Audit').filter(x => x.action === 'propose_doctor_link').length, 1);
+  assert.deepStrictEqual([a.workplaceId, b.workplaceId, !!a.offPlace, !!a.linkPending, a.addPlace], [l[0].id, l[0].id, false, false, undefined]);
+  assert.strictEqual(env.rows('Audit').filter(x => x.action === 'add_doctor_place').length, 1);
 });
-test('strict policy: unlinked visit refused; link request is pending; after admin approval the visit saves', () => {
-  const env = makeEnv(V2SEED()); setPolicy(env, 'strict'); const r = rep(env); // setPolicy clears the cache (sessions included)
-  const body = { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء' })] };
-  expectError(() => env.call(r, 'saveReport', body), /غير مرتبط بهذه المنشأة/);
-  const req = env.call(r, 'requestDoctorLink', { doctorId: 'DOC-0003', facilityId: 'FAC-A' });
-  assert.strictEqual(req.linkState, 'بانتظار');
-  expectError(() => env.call(r, 'saveReport', body), /غير مرتبط بهذه المنشأة/);
-  env.call(adm(env), 'linkAct', { id: req.id, op: 'approve' });
-  env.call(r, 'saveReport', body);
-  assert.strictEqual(docs(env)[0].workplaceId, req.id);
+test('the old «strict» setting no longer refuses a visit; adding a place (requestDoctorLink) is approved at once and reactivates a rejected one', () => {
+  const s = V2SEED(); s.DoctorWorkplaces.push(link('DWP-00009', 'DOC-0001', 'FAC-N1', 'مرفوض'));
+  const env = makeEnv(s); setPolicy(env, 'strict'); const r = rep(env);
+  env.call(r, 'saveReport', { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء' })] });
+  assert.strictEqual(docs(env)[0].offPlace, true);
+  assert.strictEqual(env.call(r, 'requestDoctorLink', { doctorId: 'DOC-0003', facilityId: 'FAC-A' }).linkState, 'معتمد');
+  const again = env.call(r, 'requestDoctorLink', { doctorId: 'DOC-0001', facilityId: 'FAC-N1' });
+  assert.deepStrictEqual([again.id, links(env, 'DOC-0001', 'FAC-N1')[0].linkState], ['DWP-00009', 'معتمد']);
 });
-test('legacy visit pointing at a colleague\'s workplace row resolves to THAT facility (and asks to link this doctor)', () => {
+test('legacy visit pointing at a colleague\'s workplace row resolves to THAT facility (outside this doctor\'s places)', () => {
   const env = makeEnv(V2SEED());
   env.call(rep(env), 'saveReport', { date: env.today, doctors: [visit({ name: 'أحمد سالم', doctorId: 'DOC-0001', workplaceId: 'DWP-00003', place: 'عيادة النور', gps: gps(N1) })] });
-  const d = docs(env)[0], l = links(env, 'DOC-0001', 'FAC-N1');
-  assert.deepStrictEqual([d.facilityId, d.gps.status, d.linkPending, l.length, l[0].linkState], ['FAC-N1', 'تم التحقق', true, 1, 'بانتظار']);
+  const d = docs(env);
+  assert.deepStrictEqual([d[0].facilityId, d[0].gps.status, d[0].offPlace, links(env, 'DOC-0001', 'FAC-N1').length], ['FAC-N1', 'تم التحقق', true, 0]);
 });
 test('invalid or disabled facility is refused; a merged facility resolves to the surviving one', () => {
   const s = V2SEED(); s.Facilities.push(fac('FAC-OFF', 'منشأة معطلة', A, true, { status: 'معطل' }), fac('FAC-OLD', 'مصحة الشفاء القديمة', null, false, { status: 'معطل', mergedInto: 'FAC-A' }));
@@ -150,18 +148,16 @@ test('homonym facilities stay separate: the verdict uses the chosen facility onl
 });
 
 /* ---------- runtime: review ---------- */
-test('review: same verdict as at save; pending links listed; approval requires and then approves them; snapshot frozen', () => {
+test('review: same verdict as at save; no place awaits approval, so a report is approved directly; snapshot frozen', () => {
   const env = makeEnv(V2SEED()), a = adm(env);
-  env.call(rep(env), 'submitReport', { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء', gps: gps(A) })] });
+  env.call(rep(env), 'submitReport', { date: env.today, doctors: [visit({ name: 'سالم خالد', doctorId: 'DOC-0003', facilityId: 'FAC-A', place: 'مصحة الشفاء', gps: gps(A), addPlace: true })] });
   const r0 = env.rows('Reports')[0];
   const sum = env.call(a, 'gpsReviewSummary', { id: r0.id });
-  assert.deepStrictEqual([sum.visits[0].status, sum.pendingLinks.length], ['تم التحقق', 1]);
-  expectError(() => env.call(a, 'reviewReport', { id: r0.id, approve: true }), /ارتباطات أطباء بمنشآت بانتظار الاعتماد/);
-  env.call(a, 'reviewReport', { id: r0.id, approve: true, approveLinks: true });
+  assert.deepStrictEqual([sum.visits[0].status, sum.pendingLinks.length], ['تم التحقق', 0]);
+  env.call(a, 'reviewReport', { id: r0.id, approve: true });
   const r1 = env.rows('Reports')[0];
   assert.strictEqual(r1.status, 'معتمد');
   assert.strictEqual(links(env, 'DOC-0003', 'FAC-A')[0].linkState, 'معتمد');
-  assert.ok(!JSON.parse(r1.doctors)[0].linkPending);
   assert.strictEqual(r1.snapshot, r0.snapshot);
 });
 test('gpsReference (admin map): by facilityId, and through a merged facility', () => {
@@ -214,7 +210,7 @@ test('merge facilities: links move by ID, a duplicate link is disabled, old visi
   assert.deepStrictEqual([old.mergedInto, old.status], ['FAC-A', 'معطل']);
   assert.strictEqual(env.call(a, 'gpsReference', { kind: 'doctor', facilityId: 'FAC-A2' }).id, 'FAC-A');
 });
-test('proposeFacility: similar name or < 100 m is offered first (no write); confirmNew creates a pending proposal + link', () => {
+test('proposeFacility: similar name or < 100 m is offered first (no write); confirmNew creates a pending proposal + his place', () => {
   const env = makeEnv(V2SEED()), r = rep(env), snap = env.snapshot();
   const byName = env.call(r, 'proposeFacility', { name: 'مصحه  الشفاء', lat: 33.5, lng: 14.5, doctorId: 'DOC-0003' });
   assert.deepStrictEqual(plain(byName.similar.map(x => x.id)), ['FAC-A']);
@@ -224,7 +220,7 @@ test('proposeFacility: similar name or < 100 m is offered first (no write); conf
   const made = env.call(r, 'proposeFacility', { name: 'مركز جديد', lat: near(N2, 40).lat, lng: N2.lng, doctorId: 'DOC-0003', confirmNew: true });
   const f = env.rows('Facilities').find(x => x.id === made.facility.id);
   assert.deepStrictEqual([f.geoSource, f.geoState, made.facility.reviewed], ['REP_PROPOSAL', 'مراجعة مطلوبة', false]);
-  assert.strictEqual(links(env, 'DOC-0003', f.id)[0].linkState, 'بانتظار');
+  assert.strictEqual(links(env, 'DOC-0003', f.id)[0].linkState, 'معتمد'); // his place at once; only the location awaits the admin
   expectError(() => env.call(r, 'proposeFacility', { name: 'إحداثيات خاطئة', lat: 95, lng: 13.2 }), /خط العرض وخط الطول/);
 });
 test('proposeFacility (rep): no location is accepted and labelled by reason; GPS source and accuracy are recorded, never approved', () => {
@@ -246,12 +242,13 @@ test('proposeFacility (rep): no location is accepted and labelled by reason; GPS
   const forged = get(env.call(r, 'proposeFacility', { name: 'مصدر مزيف', lat: 30.5, lng: 10.5, locSource: 'ADMIN_MAP' }).facility.id);
   assert.deepStrictEqual([forged.geoSource, forged.geoState], ['REP_PROPOSAL', 'مراجعة مطلوبة']);
 });
-test('lookups: facilities come from Facilities only (no pharmacies, disabled or merged); each doctor lists his links', () => {
-  const s = V2SEED(); s.DoctorWorkplaces.push(link('DWP-00009', 'DOC-0003', 'FAC-A', 'بانتظار'));
+test('lookups: facilities come from Facilities only (no pharmacies, disabled or merged); each doctor lists his places (old pending ones too)', () => {
+  const s = V2SEED(); s.DoctorWorkplaces.push(link('DWP-00009', 'DOC-0003', 'FAC-A', 'بانتظار'), link('DWP-00010', 'DOC-0001', 'FAC-N1', 'مرفوض'));
   const env = makeEnv(s), b = env.call(rep(env), 'bootstrap', {});
   assert.deepStrictEqual(plain(b.facilities.map(f => f.id)), ['FAC-A', 'FAC-N1', 'FAC-N2', 'FAC-P']);
   assert.deepStrictEqual(plain(b.doctors.find(d => d.id === 'DOC-0002').workplaces.map(w => [w.id, w.linked])), [['FAC-A', true], ['FAC-N1', true]]);
-  assert.deepStrictEqual(plain(b.doctors.find(d => d.id === 'DOC-0003').workplaces.map(w => [w.id, w.linked])), [['FAC-N2', true], ['FAC-A', false]]);
+  assert.deepStrictEqual(plain(b.doctors.find(d => d.id === 'DOC-0003').workplaces.map(w => [w.id, w.linked])), [['FAC-N2', true], ['FAC-A', true]]);
+  assert.deepStrictEqual(plain(b.doctors.find(d => d.id === 'DOC-0001').workplaces.map(w => w.id)), ['FAC-A'], 'a rejected place is not one of his places');
 });
 test('doctor merge moves links by facility ID; a link the target already has is disabled', () => {
   const env = makeEnv(V2SEED());
@@ -285,7 +282,7 @@ test('client (App3): every option value is a facility ID; linked first, others g
     { id: 'FAC-N2', workplace: 'عيادة النور', active: true, reviewed: true }, { id: 'FAC-P', workplace: 'مستشفى مقترح', active: true, reviewed: false }];
   const ch = workplaceChoices(doctor, facilities), html2 = workplaceOptions(ch);
   assert.deepStrictEqual([...html2.matchAll(/value="([^"]+)"/g)].map(m => m[1]), ['FAC-A', 'FAC-P', 'FAC-N1', 'FAC-N2', '__new__']);
-  assert.ok(html2.includes('(الربط بانتظار الاعتماد)') && html2.indexOf('<optgroup') > html2.indexOf('FAC-P'));
+  assert.ok(!html2.includes('بانتظار الاعتماد)') && html2.includes('ليست من أماكن عمله') && html2.indexOf('<optgroup') > html2.indexOf('FAC-P'));
   assert.strictEqual(pickWorkplace(ch, { facilityId: 'FAC-N2', place: 'عيادة النور' }).value, 'FAC-N2'); // homonym chosen by ID, not by name
   assert.strictEqual(pickWorkplace(ch, { facilityId: 'FAC-N2' }).link, true);
   assert.strictEqual(pickWorkplace(ch, { place: 'مصحة الشفاء' }).value, 'FAC-A');

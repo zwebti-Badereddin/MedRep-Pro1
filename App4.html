@@ -346,7 +346,7 @@ function drawMyPlan(){
    return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div class="pldoc">'+docAvatar(d.name,d.cls)+'<b>'+esc(d.name)+'</b></div>'+schTodayHtml(d.doctorId)+
     (d.cls?'<div class="plprog"><span>'+d.visits+' من '+d.req+'</span>'+planBar(d.req?Math.round(Math.min(d.visits,d.req)/d.req*100):100)+'</div>':'')+
     (d.pendingCls?'<div class="plpend">'+(d.cls?'تغيير مقترح إلى '+d.pendingCls:'مقترح: الفئة '+d.pendingCls)+' — بانتظار الاعتماد</div>':'')+
-    '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'<button type="button" class="mini" data-a="sch">أيام العمل</button>'+(schOn(d.doctorId)?'<button type="button" class="mini" data-a="abs">'+(schOn(d.doctorId).absent?"متواجد اليوم":"غير متواجد اليوم")+'</button>':'')+'</div></div>'}).join(""):'');
+    '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'<button type="button" class="mini" data-a="sch">أماكن وأيام العمل</button>'+(schOn(d.doctorId)?'<button type="button" class="mini" data-a="abs">'+(schOn(d.doctorId).absent?"متواجد اليوم":"غير متواجد اليوم")+'</button>':'')+'</div></div>'}).join(""):'');
  $("#pladd").onclick=planAddDoctor;
  host.querySelectorAll(".plrow .mini").forEach(b=>b.onclick=async()=>{const d=docs.find(x=>x.id===b.closest(".plrow").dataset.id);if(!d)return;
   if(b.dataset.a==="sch")return schEdit(d.doctorId,d.name,drawMyPlan);
@@ -395,7 +395,7 @@ async function schLoad(force){
 function schDate(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 // null = no schedule; else {off, absent, slots:[{f,n,d,p}]} for that date (default today).
 function schOn(docId,date){
- const o=SCHED&&SCHED.sched&&SCHED.sched[docId];if(!o)return null;date=date||schDate();
+ const o=SCHED&&SCHED.sched&&SCHED.sched[docId];if(!o||!o.slots||!o.slots.length)return null;date=date||schDate(); // a place without days: no opinion
  const wd=new Date(date+"T12:00:00").getDay(),slots=o.slots.filter(x=>x.d===wd),absent=((SCHED.absent||{})[docId]||[]).indexOf(date)>=0;
  return {off:absent||!slots.length,absent,slots};
 }
@@ -409,44 +409,54 @@ function schPickNow(docId){
  return (t.slots.find(x=>x.p===(pm?"pm":"am"))||t.slots.find(x=>x.p==="all")||t.slots[0]);
 }
 function schAgo(at){if(!at)return "";const d=Math.floor((Date.now()-Date.parse(at))/864e5);return d<=0?"اليوم":d===1?"أمس":"قبل "+d+" أيام"}
-// Editor: groups of (facility, period) with their days; add / edit / delete; save sends the whole schedule.
+// «أماكن وأيام عمله»: the doctor's places of work, each with its days and period when known («الأيام غير محددة بعد» otherwise).
+// Added, changed or removed directly by a rep, supervisor or admin (no approval); saving sends every place and slot.
 async function schEdit(docId,name,done){
  await schLoad();
  const o=(SCHED.sched||{})[docId],doc=(CFG.docs||[]).find(d=>String(d.id)===String(docId))||{};
- let slots=o?o.slots.map(x=>({f:x.f,n:x.n,d:x.d,p:x.p})):[];
- const own=(doc.workplaces||[]).filter(w=>String(w.active)!=="false"),ownIds=new Set(own.map(w=>String(w.id)));
- const others=(CFG.facilities||[]).filter(w=>String(w.active)!=="false"&&!ownIds.has(String(w.id)));
- const opt=w=>'<option value="'+esc(w.id)+'">'+esc(w.workplace)+'</option>';
- $("#modal").innerHTML='<h3>أيام عمل '+esc(name)+'</h3><p class="tgtx">أين يعمل الطبيب في كل يوم. يمكن إضافة أكثر من مكان في نفس اليوم (صباحًا في مكان ومساءً في آخر)، والتعديل في أي وقت.</p>'+
-  '<div id="se_l"></div><div class="sedit"><b id="se_t">إضافة فترة عمل</b><label>المنشأة</label><select id="se_f"><option value="">— اختر المنشأة —</option>'+
-  (own.length?'<optgroup label="منشآت الطبيب">'+own.map(opt).join("")+'</optgroup>':'')+(others.length?'<optgroup label="منشآت أخرى">'+others.map(opt).join("")+'</optgroup>':'')+'</select>'+
-  '<label>الأيام</label><div class="sedays">'+SCH_ORDER.map(d=>'<button type="button" class="sday" data-d="'+d+'" aria-pressed="false">'+SCH_D[d]+'</button>').join("")+'</div>'+
+ let slots=o?o.slots.map(x=>({f:String(x.f),n:x.n,d:x.d,p:x.p})):[];
+ let places=o&&o.places?o.places.map(x=>({f:String(x.f),n:x.n})):[];
+ (doc.workplaces||[]).forEach(w=>{if(!places.some(p=>p.f===String(w.id)))places.push({f:String(w.id),n:w.workplace})}); // what the phone already knows
+ slots.forEach(x=>{if(!places.some(p=>p.f===x.f))places.push({f:x.f,n:x.n})});
+ const facs=(CFG.facilities||[]).filter(w=>String(w.active)!=="false");
+ $("#modal").innerHTML='<h3>أماكن وأيام عمل '+esc(name)+'</h3><p class="tgtx">أين يعمل الطبيب، وفي أي أيام إن كانت معروفة. يمكن أن يعمل في أكثر من مكان، وفي مكانين في نفس اليوم. التعديل مباشر دون اعتماد.</p>'+
+  '<div id="se_l"></div><div class="sedit"><b id="se_t">إضافة مكان عمل</b><label for="se_f">المنشأة</label><select id="se_f"><option value="">— اختر المنشأة —</option>'+facs.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.workplace)+'</option>').join("")+'</select>'+
+  '<label>الأيام <small class="opt">(اختياري — اتركها إن لم تكن معروفة)</small></label><div class="sedays">'+SCH_ORDER.map(d=>'<button type="button" class="sday" data-d="'+d+'" aria-pressed="false">'+SCH_D[d]+'</button>').join("")+'</div>'+
   '<label>الفترة</label><div class="seper">'+Object.keys(SCH_P).map(p=>'<button type="button" class="sper'+(p==="am"?" on":"")+'" data-p="'+p+'">'+SCH_P[p]+'</button>').join("")+'</div>'+
-  '<button type="button" class="btn dash" id="se_add">'+IC.plus+' إضافة للجدول</button></div><div class="err" id="se_e"></div>'+
+  '<button type="button" class="btn dash" id="se_add">'+IC.plus+' إضافة</button></div><div class="err" id="se_e"></div>'+
   (o&&o.at?'<div class="setime">آخر تحديث: '+esc(o.by||"")+' · '+esc(schAgo(o.at))+'</div>':'')+
-  '<div class="mfoot"><button class="btn" id="se_x">إلغاء</button><button class="btn pri" id="se_s">حفظ الجدول</button></div>';
+  '<div class="mfoot"><button class="btn" id="se_x">إلغاء</button><button class="btn pri" id="se_s">حفظ</button></div>';
  $("#ov").classList.add("on");$("#se_x").onclick=()=>$("#ov").classList.remove("on");
  let per="am";
+ const clearForm=()=>{document.querySelectorAll(".sday").forEach(e=>{e.classList.remove("on");e.setAttribute("aria-pressed",false)});$("#se_f").value="";$("#se_t").textContent="إضافة مكان عمل"};
  document.querySelectorAll(".sday").forEach(b=>b.onclick=()=>{const on=b.classList.toggle("on");b.setAttribute("aria-pressed",on)});
  document.querySelectorAll(".sper").forEach(b=>b.onclick=()=>{per=b.dataset.p;document.querySelectorAll(".sper").forEach(x=>x.classList.toggle("on",x===b))});
  const draw=()=>{
-  const g={};slots.forEach(x=>{const k=x.f+"|"+x.p;(g[k]=g[k]||{f:x.f,n:x.n,p:x.p,days:[]}).days.push(x.d)});
-  const list=Object.keys(g).map(k=>g[k]);
-  $("#se_l").innerHTML=list.length?list.map((x,i)=>'<div class="segrp" data-i="'+i+'"><div><b>'+esc(x.n)+'</b> · '+SCH_P[x.p]+'<div class="sedl">'+SCH_ORDER.filter(d=>x.days.indexOf(d)>=0).map(d=>SCH_D[d]).join("، ")+'</div></div><div class="acts"><button type="button" class="mini" data-a="ed">تعديل</button><button type="button" class="mini" data-a="del">حذف</button></div></div>').join("")
-   :'<div class="empty">لا يوجد جدول بعد. أضف أول فترة عمل بالأسفل.</div>';
-  $("#se_l").querySelectorAll(".segrp .mini").forEach(b=>b.onclick=()=>{const x=list[+b.closest(".segrp").dataset.i];slots=slots.filter(s=>!(s.f===x.f&&s.p===x.p));
-   if(b.dataset.a==="ed"){$("#se_f").value=x.f;per=x.p;document.querySelectorAll(".sper").forEach(e=>e.classList.toggle("on",e.dataset.p===x.p));
-    document.querySelectorAll(".sday").forEach(e=>{const on=x.days.indexOf(+e.dataset.d)>=0;e.classList.toggle("on",on);e.setAttribute("aria-pressed",on)});$("#se_t").textContent="تعديل: "+x.n+" · "+SCH_P[x.p];$("#se_f").scrollIntoView({block:"center"})}
-   draw()});
+  $("#se_l").innerHTML=places.length?places.map((pl,pi)=>{const g={};slots.filter(x=>x.f===pl.f).forEach(x=>{(g[x.p]=g[x.p]||[]).push(x.d)});
+    return '<div class="seplace" data-pi="'+pi+'"><div class="seph"><b>'+esc(pl.n)+'</b><button type="button" class="mini del" data-a="rm">حذف المكان</button></div>'+
+     (Object.keys(g).length?Object.keys(g).map(p=>'<div class="segrp2"><span>'+SCH_ORDER.filter(d=>g[p].indexOf(d)>=0).map(d=>SCH_D[d]).join("، ")+' · <b>'+SCH_P[p]+'</b></span><span class="acts"><button type="button" class="mini" data-a="ed" data-p="'+p+'">تعديل</button><button type="button" class="mini" data-a="x" data-p="'+p+'" aria-label="حذف هذه الأيام">×</button></span></div>').join("")
+      :'<div class="segrp2 none"><span>الأيام غير محددة بعد</span><span class="acts"><button type="button" class="mini" data-a="days">تحديد الأيام</button></span></div>')+'</div>'}).join("")
+   :'<div class="empty">لا توجد أماكن عمل بعد. أضف أول مكان بالأسفل.</div>';
+  $("#se_l").querySelectorAll(".seplace [data-a]").forEach(b=>b.onclick=()=>{const pl=places[+b.closest(".seplace").dataset.pi],a=b.dataset.a;
+   if(a==="rm"){if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد الحذف؟";return}places=places.filter(x=>x!==pl);slots=slots.filter(x=>x.f!==pl.f);return draw()}
+   if(a==="x"){slots=slots.filter(x=>!(x.f===pl.f&&x.p===b.dataset.p));return draw()}
+   const days=a==="ed"?slots.filter(x=>x.f===pl.f&&x.p===b.dataset.p).map(x=>x.d):[];
+   if(a==="ed"){slots=slots.filter(x=>!(x.f===pl.f&&x.p===b.dataset.p));per=b.dataset.p;document.querySelectorAll(".sper").forEach(e=>e.classList.toggle("on",e.dataset.p===per))}
+   $("#se_f").value=pl.f;document.querySelectorAll(".sday").forEach(e=>{const on=days.indexOf(+e.dataset.d)>=0;e.classList.toggle("on",on);e.setAttribute("aria-pressed",on)});
+   $("#se_t").textContent=(a==="ed"?"تعديل: ":"أيام العمل في ")+pl.n;draw();$("#se_f").scrollIntoView({block:"center"})});
  };
  $("#se_add").onclick=()=>{$("#se_e").textContent="";const f=$("#se_f").value,days=[].map.call(document.querySelectorAll(".sday.on"),b=>+b.dataset.d);
-  if(!f)return $("#se_e").textContent="اختر المنشأة.";if(!days.length)return $("#se_e").textContent="اختر يومًا واحدًا على الأقل.";
+  if(!f)return $("#se_e").textContent="اختر المنشأة.";
   const n=($("#se_f").selectedOptions[0]||{}).textContent||"";
+  if(!places.some(p=>p.f===f))places.push({f,n});
   days.forEach(d=>{if(!slots.some(s=>s.f===f&&s.d===d&&s.p===per))slots.push({f,n,d,p:per})});
-  document.querySelectorAll(".sday").forEach(e=>{e.classList.remove("on");e.setAttribute("aria-pressed",false)});$("#se_f").value="";$("#se_t").textContent="إضافة فترة عمل";draw()};
+  clearForm();draw()};
  $("#se_s").onclick=async()=>{const b=$("#se_s");b.disabled=true;$("#se_e").textContent="";
-  if([].some.call(document.querySelectorAll(".sday"),x=>x.classList.contains("on"))&&$("#se_f").value){b.disabled=false;return $("#se_e").textContent="اضغط «إضافة للجدول» أولًا لإضافة الأيام المختارة، أو ألغِ اختيارها."}
-  try{schSet(await srv("docScheduleSave",{doctorId:docId,slots:slots.map(x=>({facilityId:x.f,day:x.d,period:x.p}))}));$("#ov").classList.remove("on");toast("حُفظ جدول الطبيب");if(done)done()}
+  if($("#se_f").value){b.disabled=false;return $("#se_e").textContent="اضغط «إضافة» أولًا لإضافة ما اخترته، أو امسح اختيار المنشأة."}
+  const out=slots.map(x=>({facilityId:x.f,day:x.d,period:x.p})).concat(places.filter(p=>!slots.some(x=>x.f===p.f)).map(p=>({facilityId:p.f,day:null})));
+  try{const r=schSet(await srv("docScheduleSave",{doctorId:docId,slots:out}));
+   const ent=(r.sched||{})[docId],pl=ent?ent.places:[];if(doc&&doc.id&&Array.isArray(pl))doc.workplaces=pl.map(p=>{const w=(CFG.facilities||[]).find(x=>String(x.id)===String(p.f))||{};return {id:p.f,workplace:p.n,reviewed:!!w.reviewed,linked:true}});
+   $("#ov").classList.remove("on");toast("حُفظت أماكن وأيام عمل الطبيب");if(done)done()}
   catch(e){b.disabled=false;$("#se_e").textContent=e.message}};
  draw();
 }

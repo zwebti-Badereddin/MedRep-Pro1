@@ -23,6 +23,7 @@ function importPlan_(entity, rows, existing) {
       o.type = o.type || 'منشأة طبية';
       if (o.lat || o.lng) {
         const lat = Number(o.lat), lng = Number(o.lng);
+        if (o.lat === 'رابط لم يُفهم') { invalid.push({ line: line, name: o.name, reason: 'رابط Google Maps لم يُفهم' }); return; }
         if (!o.lat || !o.lng || !gpsPointValidServer_(lat, lng)) { invalid.push({ line: line, name: o.name, reason: 'إحداثيات غير صحيحة' }); return; }
         o.lat = lat; o.lng = lng;
       } else { o.lat = ''; o.lng = ''; }
@@ -37,9 +38,24 @@ function importPlan_(entity, rows, existing) {
   if (add.length + dup.length + invalid.length > IMPORT_MAX_ROWS) throw new Error('أقصى عدد في المرة الواحدة ' + IMPORT_MAX_ROWS + ' سطر.');
   return { entity: entity, add: add, dup: dup, invalid: invalid };
 }
+// Facilities: a Google Maps link in the coordinates cell (or anywhere after the address) becomes «lat, lng» before the plan.
+// Long links are read directly; short ones (maps.app.goo.gl) are followed, at most IMPORT_MAX_LINKS per import.
+const IMPORT_MAX_LINKS = 300;
+function importResolveLinks_(rows) {
+  let fetched = 0;
+  return (rows || []).map(cells => {
+    if (!Array.isArray(cells)) return cells;
+    const c = cells.slice(), at = c.findIndex((x, j) => j >= 3 && /https?:\/\//i.test(String(x || '')));
+    if (at < 0) return c;
+    const text = String(c[at]); let ll = mapCoordsFromText_(text);
+    if (!ll && fetched < IMPORT_MAX_LINKS) { fetched++; try { ll = resolveMapLink_(null, { text: text }); } catch (e) { ll = null; } }
+    c[3] = ll ? ll.lat + ', ' + ll.lng : 'رابط لم يُفهم'; c[4] = ''; c.length = Math.max(c.length, 5);
+    return c;
+  });
+}
 function importMaster_(s, p) {
   const entity = p.entity, cols = IMPORT_COLUMNS[entity]; if (!cols) throw new Error('كيان غير مسموح');
-  if (entity === 'Facilities') requireFacilityV2_();
+  if (entity === 'Facilities') { requireFacilityV2_(); p = Object.assign({}, p, { rows: importResolveLinks_(p.rows) }); }
   const current = () => (entity === 'Facilities' ? importFacilitiesExisting_(dbAll_(entity)) : dbAll_(entity));
   if (!p.commit) return importPlan_(entity, p.rows, current());
   const lock = acquireLock_(30000);
@@ -56,15 +72,17 @@ function importMaster_(s, p) {
     });
     const sh = sheet_(entity);
     sh.getRange(sh.getLastRow() + 1, 1, values.length, T[entity].length).setValues(values);
+    if (entity === 'Facilities') values.forEach(v => { const f = {}; T.Facilities.forEach((c, j) => { f[c] = v[j]; }); if (f.lat !== '') facilityLocationHistory_(s, f, 'استيراد من Excel'); });
     dropTableCache_(entity); if (_RM) delete _RM[entity]; clearCache_();
     audit_(s, 'import_' + entity.toLowerCase(), values[0][0] + '..' + values[values.length - 1][0], String(values.length));
     return Object.assign(plan, { added: values.length });
   } finally { lock.releaseLock(); }
 }
-// A new facility row. Imported coordinates are a PROPOSAL (like a rep's): the admin approves each on the map before visits are checked against it.
+// A new facility row. The administration (or the vendor before handover) imports known facilities: their coordinates are the
+// approved reference at once, so no approval step is left for them. Only a rep's field proposal still waits for the admin.
 function importFacilityRow_(s, o, now) {
   const id = 'FAC-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase(), has = o.lat !== '';
   return { id: id, name: o.name, type: o.type.slice(0, 40), region: '', address: o.address, status: 'نشط', legacyEntity: 'DOCTOR_FACILITY', legacyId: id,
     createdAt: now, createdBy: s.uid, updatedAt: now, updatedBy: s.uid, lat: o.lat, lng: o.lng, radius: '',
-    geoState: has ? 'مراجعة مطلوبة' : '', geoSource: has ? 'ADMIN_IMPORT' : '', geoBy: '', geoAt: '', geoVersion: has ? 1 : '', mergedInto: '' };
+    geoState: has ? 'مؤكد' : '', geoSource: has ? 'ADMIN_MAP' : '', geoBy: has ? s.uid : '', geoAt: has ? now : '', geoVersion: has ? 1 : '', mergedInto: '' };
 }
