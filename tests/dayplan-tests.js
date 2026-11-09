@@ -24,7 +24,9 @@ test('a supervisor adds items; the rep sees them (today and the next days), anot
   const { env, sup, rep, rep2 } = setup();
   const a = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: today, doctorId: 'DOC-1', product: 'Clodil', purpose: 'feedback', note: 'اسأله عن الجرعة' });
   env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: tomorrow, doctorId: 'DOC-2', purpose: 'intro' });
-  assert.deepStrictEqual([a.doctorName, a.specialty, a.purposeName, a.status], ['د. علي', 'باطنة', 'أخذ انطباع', 'pending']);
+  assert.deepStrictEqual([a.doctorName, a.specialty, a.purposeName, a.status, a.draft], ['د. علي', 'باطنة', 'أخذ انطباع', 'pending', true]);
+  assert.strictEqual(env.call(rep, 'myDayPlan', {}).length, 0, 'a draft is not shown to the rep');
+  env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: tomorrow });
   const mine = env.call(rep, 'myDayPlan', {});
   assert.strictEqual(J(mine.map(i => [i.date, i.doctorId])), J([[today, 'DOC-1'], [tomorrow, 'DOC-2']]));
   assert.strictEqual(env.call(rep2, 'myDayPlan', {}).length, 0);
@@ -62,6 +64,8 @@ test('bad visit fields are dropped: a malformed planId, a feedback without a kno
 test('the rep marks «تعذّرت» with a reason (and can undo); only own items', () => {
   const { env, adm, rep, rep2 } = setup();
   const it = env.call(adm, 'dayPlanAdd', { repId: 'REP-0001', date: today, doctorId: 'DOC-2' });
+  expectError(() => env.call(rep, 'dayPlanFail', { id: it.id, reason: 'x' }), /غير موجود/); // still a draft
+  env.call(adm, 'dayPlanSend', { repId: 'REP-0001', from: today, to: today });
   expectError(() => env.call(rep, 'dayPlanFail', { id: it.id, reason: '' }), /سبب/);
   expectError(() => env.call(rep2, 'dayPlanFail', { id: it.id, reason: 'مسافر' }), /غير موجود/);
   let mine = env.call(rep, 'dayPlanFail', { id: it.id, reason: 'الطبيب مسافر' });
@@ -83,6 +87,42 @@ test('copy to another rep and day; delete; Telegram notice lists the plan; rep c
   assert.strictEqual(env.call(sup, 'dayPlanNotify', { repId: 'REP-0001', date: today }), 1);
   assert.match(sent[0], /خطة زيارات ليوم/); assert.match(sent[0], /د\. علي \(باطنة\) — تعريف: Clodil/); assert.match(sent[0], /عرض جديد/);
   expectError(() => env.call(rep, 'dayPlanAdd', { repId: 'REP-0001', date: today, doctorId: 'DOC-2' }), /غير مصرح/);
+});
+
+test('multi-day plan: one doctor on several days, different doctors per day; send shows drafts, notifies the bell and Telegram', () => {
+  const { env, sup, rep } = setup();
+  const d3 = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
+  const two = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', dates: [today, tomorrow], doctorId: 'DOC-1', product: 'Clodil', purpose: 'intro' });
+  assert.strictEqual(J(two.map(i => i.date)), J([today, tomorrow]));
+  env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', dates: [d3], doctorId: 'DOC-2', purpose: 'intro' });
+  expectError(() => env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', dates: ['2020-01-01'], doctorId: 'DOC-2' }), /يوم مضى/);
+  const sent = []; env.props.set('TG_BOT_TOKEN', '123456789:AAbbCCddEEffGGhhIIjjKKllMMnnOOppQQr');
+  env.ctx.ensureSheet_('TgLinks'); env.ctx.dbAppend_('TgLinks', { userId: 'REP-0001', role: 'rep', name: 'سارة', chatId: '77', linkedAt: 'x' });
+  env.ctx.UrlFetchApp = { fetch: (u, o) => { sent.push(JSON.parse(o.payload).text); return { getContentText: () => '{"ok":true,"result":true}', getResponseCode: () => 200 }; } };
+  let n0 = env.call(rep, 'myNotifs', {});
+  assert.strictEqual(n0.unread, 0);
+  const r = env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: d3 });
+  assert.strictEqual(J([r.sent, r.total, r.tg]), J([3, 3, 1]));
+  assert.strictEqual(env.call(rep, 'myDayPlan', {}).length, 3);
+  assert.match(sent[0], /خطة زيارات جديدة من /); assert.match(sent[0], /د. منى/);
+  const nf = env.call(rep, 'myNotifs', {});
+  assert.strictEqual(nf.unread, 1); assert.match(nf.items[0].text, /خطة زيارات جديدة من .*: 3 أيام، 3 طبيب/);
+  assert.strictEqual(J(nf.items[0].ref), J({ from: today, to: d3 }));
+  expectError(() => env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: d3 }), /مرسلة مسبقًا/);
+  env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', dates: [tomorrow], doctorId: 'DOC-2', purpose: 'intro' });
+  assert.strictEqual(env.call(rep, 'myDayPlan', {}).length, 3, 'the new item waits for the next send');
+  env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: d3 });
+  assert.match(env.call(rep, 'myNotifs', {}).items[0].text, /عُدّلت خطة زياراتك/);
+  assert.strictEqual(env.call(rep, 'notifsRead', {}).unread, 0);
+  assert.strictEqual(env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: d3, again: true }).sent, 0, 'resend = reminder');
+});
+test('a returned report rings the bell', () => {
+  const { env, adm, rep } = setup();
+  env.call(rep, 'saveReport', { date: env.today, doctors: [{ name: 'د. علي', doctorId: 'DOC-1', specialty: 'باطنة', intro: 'Clodil', time: 'صباحًا', sector: 'خاص' }] });
+  const id = env.rows('Reports')[0].id; env.sheets.Reports._data[1][4] = 'مرسل';
+  try { env.call(adm, 'reviewReport', { id: id, approve: false, note: 'أكمل الملاحظات' }); } catch (e) {}
+  const nf = env.call(rep, 'myNotifs', {});
+  assert.ok(nf.unread >= 1 && /أُعيد تقريرك/.test(nf.items[0].text), J(nf));
 });
 
 let failed = 0;

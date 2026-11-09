@@ -22,14 +22,46 @@ const IC={
 };
 function repTop(t,o){
  o=o||{};const logo=CFG.company.logo?'<span class="lg"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="lg">'+esc(CFG.company.short)+'</span>';
- return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+tgBell()+'<button type="button" class="out" id="lo">خروج</button></div>'+
+ return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+nfBell()+'<button type="button" class="out" id="lo">خروج</button></div>'+
   '<div class="r2"><div style="flex:1;min-width:0"><h1>'+t+'</h1>'+(o.sub?'<div class="dt">'+esc(o.sub)+'</div>':'')+'</div>'+(o.chip?'<span class="stchip">'+esc(o.chip)+'</span>':'')+'</div></header>';
 }
 /* Telegram alerts: the bell shows only when the company has a bot (settings.tgBot). Linking: a one-time t.me link,
    Start in Telegram, then «تحقق». The server reads Telegram's messages; nothing is sent from the phone to Telegram. */
 const tgOn=()=>!!(CFG.st&&CFG.st.tgBot);
 function tgBell(){return tgOn()?'<button type="button" class="tgb" id="tgb" aria-label="تنبيهات تيليجرام" title="تنبيهات تيليجرام">🔔</button>':""}
-function tgBind(){document.querySelectorAll("#tgb").forEach(b=>{b.onclick=tgOpen})}
+function tgBind(){document.querySelectorAll("#tgb").forEach(b=>{b.onclick=tgOpen});document.querySelectorAll("#nfb").forEach(b=>{b.onclick=nfOpen});if(document.querySelector("#nfb")){nfPaint();nfPoll()}}
+/* ===== The bell (Notify.js): new plans, a returned report… The app asks every minute while open (a cheap call that answers
+   «nothing new» from a cache) and when the rep comes back to it. Telegram linking stays inside the bell. ===== */
+let NF=null,NF_AT=0;
+const nfKey=()=>"mr_nf_"+((rep&&rep.id)||"");
+function nfLoad(){if(NF)return NF;try{NF=JSON.parse(localStorage.getItem(nfKey())||"null")}catch(e){NF=null}return NF||(NF={ver:0,unread:0,items:[]})}
+function nfBell(){return '<button type="button" class="tgb nfb" id="nfb" aria-label="الإشعارات" title="الإشعارات">🔔<i class="nfn" hidden></i></button>'}
+function nfPaint(){const n=nfLoad().unread||0;document.querySelectorAll("#nfb .nfn").forEach(i=>{i.hidden=!n;i.textContent=n>9?"9+":n});document.querySelectorAll("#nfb").forEach(b=>b.setAttribute("aria-label",n?"الإشعارات: "+n+" جديدة":"الإشعارات"))}
+function nfPoll(force){
+ if(!rep||rep.role!=="rep"||navigator.onLine===false)return;if(!force&&Date.now()-NF_AT<50000)return;NF_AT=Date.now();
+ const before=nfLoad();
+ srv("myNotifs",{since:before.ver||0}).then(r=>{if(!r||r.same)return;
+  const old={};(before.items||[]).forEach(x=>old[x.id]=1);const fresh=(r.items||[]).filter(x=>!x.read&&!old[x.id]);
+  NF={ver:r.ver,unread:r.unread,items:r.items};try{localStorage.setItem(nfKey(),JSON.stringify(NF))}catch(e){}nfPaint();
+  if(!before.ver)return; // first load on this phone: no alert for old notifications
+  if(fresh.some(x=>x.type==="plan")&&typeof dpRefresh==="function")dpRefresh(true);
+  const other=fresh.filter(x=>x.type!=="plan");if(other.length)toast(other[0].text);
+  if(fresh.length){try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}}
+ }).catch(()=>{})}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")nfPoll()});
+setInterval(()=>{if(document.visibilityState==="visible")nfPoll(true)},60000);
+function nfAgo(at){const m=Math.floor((Date.now()-Date.parse(at))/60000);return m<1?"الآن":m<60?"قبل "+m+" دقيقة":m<1440?"قبل "+Math.floor(m/60)+" ساعة":new Date(at).toLocaleDateString("en-GB")}
+async function nfOpen(){
+ const nf=nfLoad(),m=$("#modal"),close=()=>$("#ov").classList.remove("on");
+ m.innerHTML='<h3>🔔 الإشعارات</h3>'+(nf.items&&nf.items.length?'<div class="nflist">'+nf.items.map(x=>'<button type="button" class="nfi'+(x.read?"":" new")+'" data-id="'+esc(x.id)+'"><span class="nft">'+(x.type==="plan"?"🗓️":x.type==="report"?"↩️":"ℹ️")+'</span><span><b>'+esc(x.text)+'</b><small>'+esc(nfAgo(x.at))+'</small></span></button>').join("")+'</div>'
+  :'<div class="empty">لا توجد إشعارات بعد. هنا تصلك خطط الزيارات من المشرف، والتقارير المعادة للتصحيح.</div>')+
+  (tgOn()?'<button type="button" class="sheetbtn" id="nf_tg">تنبيهات تيليجرام (تصل والتطبيق مغلق)</button>':'')+'<button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
+ $("#ov").classList.add("on");$("#nf_x").onclick=close;if($("#nf_tg"))$("#nf_tg").onclick=tgOpen;
+ m.querySelectorAll(".nfi").forEach(b=>b.onclick=()=>{const x=nf.items.find(i=>i.id===b.dataset.id);close();if(!x)return;
+  if(x.type==="plan"){if(x.ref&&x.ref.from)DPTAB=x.ref.from;dpRefresh(true);home()}else if(x.type==="report"&&typeof screenHistory==="function")screenHistory()});
+ if(nf.unread){try{const r=await srv("notifsRead",{});NF={ver:r.ver,unread:r.unread,items:r.items};localStorage.setItem(nfKey(),JSON.stringify(NF))}catch(e){}nfPaint()}
+}
+
 let tgSeq=0;
 async function tgOpen(){
  const seq=++tgSeq,m=$("#modal"),close=()=>$("#ov").classList.remove("on");

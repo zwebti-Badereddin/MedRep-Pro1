@@ -420,16 +420,21 @@ function dpRefresh(force){if(!rep||rep.role!=="rep"||navigator.onLine===false)re
 // New plans while the app is open: when the rep comes back to it (another app, screen on) and every 5 minutes.
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&Date.now()-MYDP_AT>15000)dpRefresh(true)});
 setInterval(()=>{if(document.visibilityState==="visible")dpRefresh(true)},300000);
-function dpItems(){const a=(dpLoad()||[]).filter(x=>S&&x.date===S.date);
+let DPTAB=""; // the day shown in the plan card (today by default)
+function dpDays(){const a=dpLoad()||[];return Array.from(new Set(a.filter(x=>S&&x.date>=S.date).map(x=>x.date))).sort().slice(0,3)}
+function dpItems(day){day=day||(S&&S.date);const a=(dpLoad()||[]).filter(x=>S&&x.date===day);if(day!==(S&&S.date))return a.map(x=>Object.assign({},x,{done:false,future:true}));
  return a.map(x=>Object.assign({},x,{done:x.status==="done"||(S.docs||[]).some(v=>v.planId===x.id||String(v.doctorId)===String(x.doctorId)||(!v.doctorId&&norm(v.name)===norm(x.doctorName)))}))}
 function dayPlanCard(){
- const a=dpItems();if(!a.length)return'<div id="dpcard" hidden></div>';
+ const days=dpDays();if(!days.length)return'<div id="dpcard" hidden></div>';
+ if(days.indexOf(DPTAB)<0)DPTAB=days.indexOf(S.date)>=0?S.date:days[0];
+ const a=dpItems(DPTAB),fut=DPTAB!==S.date,dn=d=>{const x=new Date(d+"T12:00:00"),t=new Date(S.date+"T12:00:00"),k=Math.round((x-t)/864e5);return k===0?"اليوم":k===1?"غدًا":["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"][x.getDay()]+" "+x.getDate()+"/"+(x.getMonth()+1)};
  const done=a.filter(x=>x.done).length,seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS,nNew=a.filter(isNew).length;
- return '<div id="dpcard" class="dpcard"><div class="dph"><b>خطة اليوم من المشرف'+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+done+' من '+a.length+'</span></div>'+a.map(x=>'<div class="dpi'+(x.done?" ok":x.status==="failed"?" no":"")+'" data-dp="'+esc(x.id)+'">'+
+ return '<div id="dpcard" class="dpcard"><div class="dph"><b>'+(fut?"خطة "+dn(DPTAB)+" من المشرف":"خطة اليوم من المشرف")+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+(days.length>1?'<div class="dptabs" role="tablist">'+days.map(d=>{const n=(dpLoad()||[]).filter(x=>x.date===d).length;return '<button type="button" role="tab" class="dptab'+(d===DPTAB?" on":"")+'" data-day="'+esc(d)+'" aria-selected="'+(d===DPTAB)+'">'+esc(dn(d))+' <b>'+n+'</b></button>'}).join("")+'</div>':'')+a.map(x=>'<div class="dpi'+(x.done?" ok":x.status==="failed"?" no":"")+'" data-dp="'+esc(x.id)+'">'+
   '<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span><div class="dpt"><b>'+esc(x.doctorName)+(isNew(x)?' <span class="dpnew">جديد</span>':'')+'</b><small>'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+'</small>'+(x.note?'<small class="dpn">'+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+'</div>'+
-  (x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</div>'
+  (x.future?'<span class="dpfut">في يومها</span>':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</div>'
 }
 function dpBind(){
+ document.querySelectorAll("#dpcard .dptab").forEach(b=>b.onclick=()=>{DPTAB=b.dataset.day;const c=$("#dpcard");if(c){c.outerHTML=dayPlanCard();dpBind()}});
  document.querySelectorAll("#dpcard [data-a]").forEach(b=>b.onclick=()=>{const x=dpItems().find(i=>i.id===b.closest("[data-dp]").dataset.dp);if(!x)return;
   if(b.dataset.a==="go"){DPRE={rec:(CFG.docs||[]).find(d=>String(d.id)===String(x.doctorId))||{id:x.doctorId,name:x.doctorName,specialty:x.specialty,workplaces:[]},product:x.product,purpose:x.purpose,note:x.note,planId:x.id};form("d")}
   else if(b.dataset.a==="undo"){srv("dayPlanFail",{id:x.id,undo:true}).then(a=>{MYDP=a;home()}).catch(e=>toast(e.message))}

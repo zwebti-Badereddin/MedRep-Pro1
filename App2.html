@@ -598,36 +598,57 @@ function salesBatchesDlg(list,hostId){
 }
 
 /* ===== Daily visit plans (admin and supervisor) and the doctors' feedback ===== */
-let DPV={rep:"",date:""},dpSeq=0;
+let DPV={rep:"",date:"",days:1,tab:0},dpSeq=0;
 const dpDate=n=>{const d=new Date();d.setDate(d.getDate()+n);return isoD(d)};
+const dpAdd=(iso,n)=>{const d=new Date(iso+"T12:00:00");d.setDate(d.getDate()+n);return isoD(d)};
+const dpDayName=iso=>{const d=new Date(iso+"T12:00:00");return ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"][d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)};
+/* «خطط اليوم» (supervisor / admin): a plan of 1–3 days for one rep, different doctors per day. New items are drafts that the rep
+   does not see until «إرسال الخطة» (bell + Telegram); after that, new additions wait for the next send. */
 async function dayPlanView(){
  const seq=++dpSeq,host=()=>seq===dpSeq?$("#av"):null;if(!host())return;
- if(!DPV.date)DPV.date=dpDate(1);if(!DPV.rep&&REPS.length)DPV.rep=REPS[0].id;
- host().innerHTML='<div class="two"><div><label>اليوم</label><input type="date" id="dp_d" value="'+esc(DPV.date)+'" min="'+dpDate(0)+'"></div><div><label>المندوب</label><select id="dp_rep">'+REPS.map(r=>'<option value="'+esc(r.id)+'"'+(r.id===DPV.rep?" selected":"")+'>'+esc(r.name)+'</option>').join("")+'</select></div></div><div id="dp_b" class="empty" style="margin-top:10px">جارٍ التحميل…</div>';
- $("#dp_d").onchange=()=>{DPV.date=$("#dp_d").value;dayPlanView()};$("#dp_rep").onchange=()=>{DPV.rep=$("#dp_rep").value;dayPlanView()};
- let all;try{all=await srv("dayPlanList",{from:DPV.date,to:DPV.date})}catch(e){if(host())$("#dp_b").textContent=e.message;return}if(!host())return;
- const mine=all.filter(x=>x.repId===DPV.rep),byRep={};all.forEach(x=>{const b=byRep[x.repName]||(byRep[x.repName]={n:0,done:0,fail:0});b.n++;if(x.status==="done")b.done++;if(x.status==="failed")b.fail++});
- const st=x=>x.status==="done"?'<span class="st s3">تمت</span>':x.status==="failed"?'<span class="st s4">تعذّرت</span>':'<span class="st s1">لم تتم بعد</span>';
+ if(!DPV.date||DPV.date<dpDate(0))DPV.date=dpDate(0);if(!DPV.rep&&REPS.length)DPV.rep=REPS[0].id;
+ const days=Array.from({length:DPV.days},(_,i)=>dpAdd(DPV.date,i));if(DPV.tab>=days.length)DPV.tab=0;const day=days[DPV.tab];
+ host().innerHTML='<div class="dpctl"><div><label>من يوم</label><input type="date" id="dp_d" value="'+esc(DPV.date)+'" min="'+dpDate(0)+'"></div><div><label>المدة</label><select id="dp_n2">'+[1,2,3].map(n=>'<option value="'+n+'"'+(n===DPV.days?" selected":"")+'>'+(n===1?"يوم واحد":n===2?"يومان":"ثلاثة أيام")+'</option>').join("")+'</select></div><div><label>المندوب</label><select id="dp_rep">'+REPS.map(r=>'<option value="'+esc(r.id)+'"'+(r.id===DPV.rep?" selected":"")+'>'+esc(r.name)+'</option>').join("")+'</select></div></div><div id="dp_b" class="empty" style="margin-top:10px">جارٍ التحميل…</div>';
+ $("#dp_d").onchange=()=>{DPV.date=$("#dp_d").value;DPV.tab=0;dayPlanView()};$("#dp_n2").onchange=()=>{DPV.days=+$("#dp_n2").value;dayPlanView()};$("#dp_rep").onchange=()=>{DPV.rep=$("#dp_rep").value;dayPlanView()};
+ let all;try{all=await srv("dayPlanList",{from:days[0],to:days[days.length-1]})}catch(e){if(host())$("#dp_b").textContent=e.message;return}if(!host())return;
+ const repAll=all.filter(x=>x.repId===DPV.rep),mine=repAll.filter(x=>x.date===day),drafts=repAll.filter(x=>x.draft).length,byRep={};
+ all.filter(x=>x.date===day).forEach(x=>{const b=byRep[x.repName]||(byRep[x.repName]={n:0,done:0,fail:0});b.n++;if(x.status==="done")b.done++;if(x.status==="failed")b.fail++});
+ const st=x=>x.draft?'<span class="st s0">مسودة</span>':x.status==="done"?'<span class="st s3">تمت</span>':x.status==="failed"?'<span class="st s4">تعذّرت</span>':'<span class="st s1">لم تتم بعد</span>';
+ const repName=(REPS.find(r=>r.id===DPV.rep)||{}).name||"";
  $("#dp_b").className="";
- $("#dp_b").innerHTML='<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>خطة '+esc((REPS.find(r=>r.id===DPV.rep)||{}).name||"")+' ليوم '+esc(DPV.date.split("-").reverse().join("/"))+'</b><span style="color:var(--mut);font-size:13px">'+mine.length+' طبيب</span></div>'+
-  (mine.length?mine.map(x=>'<div class="dprow" data-id="'+esc(x.id)+'"><div><b>'+esc(x.doctorName)+'</b> '+st(x)+'<div style="color:var(--mut);font-size:13px">'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+(x.note?' · '+esc(x.note):'')+(x.reason?' · السبب: '+esc(x.reason):'')+(x.fb?' · الانطباع: '+esc({pos:"إيجابي",neu:"محايد",neg:"سلبي"}[x.fb.r])+(x.fb.n?' «'+esc(x.fb.n)+'»':''):'')+'</div>'+(x.schedOff?'<div class="schtoday off">⚠ '+(x.schedAbsent?"سُجّل أنه غير متواجد هذا اليوم":"لا يعمل هذا اليوم حسب جدوله")+'</div>':x.schedWhere?'<div class="schtoday">يعمل: '+esc(x.schedWhere)+'</div>':'')+'<button type="button" class="mini" data-sch="'+esc(x.doctorId)+'" data-n="'+esc(x.doctorName)+'">أيام العمل</button></div>'+(x.status==="pending"?'<button class="mini" data-del="1">حذف</button>':'')+'</div>').join(""):'<div class="empty">لا توجد خطة لهذا المندوب في هذا اليوم. أضف أطباء من الأسفل.</div>')+
+ $("#dp_b").innerHTML=(days.length>1?'<div class="dptabs" role="tablist">'+days.map((d,i)=>{const n=repAll.filter(x=>x.date===d).length;return '<button type="button" role="tab" class="dptab'+(i===DPV.tab?" on":"")+'" data-t="'+i+'" aria-selected="'+(i===DPV.tab)+'">'+esc(dpDayName(d))+' <b>'+n+'</b></button>'}).join("")+'</div>':'')+
+  '<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>خطة '+esc(repName)+' · '+esc(dpDayName(day))+'</b><span style="color:var(--mut);font-size:13px">'+mine.length+' طبيب</span></div>'+
+  (mine.length?mine.map(x=>'<div class="dprow" data-id="'+esc(x.id)+'"><div><b>'+esc(x.doctorName)+'</b> '+st(x)+'<div style="color:var(--mut);font-size:13px">'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+(x.note?' · '+esc(x.note):'')+(x.reason?' · السبب: '+esc(x.reason):'')+(x.fb?' · الانطباع: '+esc({pos:"إيجابي",neu:"محايد",neg:"سلبي"}[x.fb.r])+(x.fb.n?' «'+esc(x.fb.n)+'»':''):'')+'</div>'+
+   (x.schedOff?'<div class="schtoday off">⚠ '+(x.schedAbsent?"سُجّل أنه غير متواجد هذا اليوم":"لا يعمل هذا اليوم حسب جدوله")+'</div>':x.schedWhere?'<div class="schtoday">يعمل: '+esc(x.schedWhere)+'</div>':'')+
+   '<button type="button" class="mini" data-sch="'+esc(x.doctorId)+'" data-n="'+esc(x.doctorName)+'">أيام العمل</button></div>'+(x.status==="pending"||x.draft?'<button class="mini" data-del="1">حذف</button>':'')+'</div>').join(""):'<div class="empty">لا يوجد أطباء في هذا اليوم بعد. أضفهم بالأسفل.</div>')+
   '<div class="dpadd"><b>إضافة طبيب للخطة</b><input id="dp_q" placeholder="ابحث باسم الطبيب أو التخصص"><div id="dp_l" class="palist"></div>'+
   '<div class="two"><div><label>المنتج</label><select id="dp_p"><option value="">— بدون —</option>'+(CFG.products||[]).map(p=>'<option>'+esc(p)+'</option>').join("")+'</select></div><div><label>الهدف</label><select id="dp_g"><option value="intro">تعريف</option><option value="remind">تذكير</option><option value="feedback">أخذ انطباع</option></select></div></div>'+
-  '<label>ملاحظة للمندوب (اختياري)</label><input id="dp_n" maxlength="300" placeholder="مثلًا: اسأله عن تجربته مع الجرعة 75mg"><div class="err" id="dp_e"></div></div>'+
-  (mine.length?'<div class="two" style="margin-top:10px"><button class="btn" id="dp_tg">🔔 إرسال الخطة للمندوب</button><button class="btn" id="dp_cp">نسخ الخطة…</button></div>':'')+'</div>'+
-  (Object.keys(byRep).length?'<div class="sec"><h3>كل المندوبين في هذا اليوم</h3></div>'+Object.keys(byRep).map(n=>'<div class="row" style="display:flex;justify-content:space-between"><b>'+esc(n)+'</b><span style="color:var(--mut)">'+byRep[n].done+' من '+byRep[n].n+' تمت'+(byRep[n].fail?' · '+byRep[n].fail+' تعذّرت':'')+'</span></div>').join(""):'');
+  '<label>ملاحظة للمندوب (اختياري)</label><input id="dp_n" maxlength="300" placeholder="مثلًا: اسأله عن تجربته مع الجرعة 75mg">'+
+  (days.length>1?'<label>أضفه إلى</label><div class="sedays">'+days.map((d,i)=>'<button type="button" class="sday'+(i===DPV.tab?" on":"")+'" data-dd="'+esc(d)+'" aria-pressed="'+(i===DPV.tab)+'">'+esc(dpDayName(d))+'</button>').join("")+'</div>':'')+
+  '<div class="err" id="dp_e"></div></div>'+
+  (repAll.length?'<div class="dpsend"><div>'+(drafts?'<b>'+drafts+' غير مرسلة</b> · المسودات لا يراها المندوب حتى ترسل الخطة.':'الخطة مرسلة ويراها المندوب.')+'</div>'+
+   '<div class="two"><button class="btn'+(drafts?" pri":"")+'" id="dp_send">'+(drafts?"📨 إرسال الخطة للمندوب":"🔔 إعادة الإرسال كتذكير")+'</button><button class="btn" id="dp_cp">نسخ هذا اليوم…</button></div></div>':'')+'</div>'+
+  (Object.keys(byRep).length?'<div class="sec"><h3>كل المندوبين · '+esc(dpDayName(day))+'</h3></div>'+Object.keys(byRep).map(n=>'<div class="row" style="display:flex;justify-content:space-between"><b>'+esc(n)+'</b><span style="color:var(--mut)">'+byRep[n].done+' من '+byRep[n].n+' تمت'+(byRep[n].fail?' · '+byRep[n].fail+' تعذّرت':'')+'</span></div>').join(""):'');
+ document.querySelectorAll("#dp_b .dptab").forEach(b=>b.onclick=()=>{DPV.tab=+b.dataset.t;dayPlanView()});
+ document.querySelectorAll("#dp_b .sday").forEach(b=>b.onclick=()=>{const on=b.classList.toggle("on");b.setAttribute("aria-pressed",on)});
  document.querySelectorAll("#dp_b [data-sch]").forEach(b=>b.onclick=()=>schEdit(b.dataset.sch,b.dataset.n,dayPlanView));
  document.querySelectorAll("#dp_b [data-del]").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد؟";return}try{await srv("dayPlanDelete",{id:b.closest(".dprow").dataset.id});dayPlanView()}catch(e){toast(e.message)}});
  const have={};mine.forEach(x=>have[x.doctorId]=1);
  const draw=()=>{const q=norm($("#dp_q").value),list=(CFG.docs||[]).filter(d=>!have[d.id]&&(!q||norm(d.name+" "+(d.specialty||"")).indexOf(q)>=0)).slice(0,30);
   $("#dp_l").innerHTML=q?(list.map(d=>'<button type="button" class="sheetbtn" data-id="'+esc(d.id)+'">'+esc(d.name)+(d.specialty?' <small>· '+esc(d.specialty)+'</small>':'')+'</button>').join("")||'<div class="empty">لا نتائج.</div>'):'';
-  $("#dp_l").querySelectorAll("[data-id]").forEach(x=>x.onclick=async()=>{x.disabled=true;$("#dp_e").textContent="";
-   try{const it=await srv("dayPlanAdd",{repId:DPV.rep,date:DPV.date,doctorId:x.dataset.id,product:$("#dp_p").value,purpose:$("#dp_g").value,note:$("#dp_n").value});toast(it&&it.schedOff?"أُضيف للخطة. تنبيه: الطبيب لا يعمل هذا اليوم حسب جدوله":"أُضيف للخطة");dayPlanView()}catch(e){x.disabled=false;$("#dp_e").textContent=e.message}})};
+  $("#dp_l").querySelectorAll("[data-id]").forEach(x=>x.onclick=async()=>{$("#dp_e").textContent="";
+   const dates=days.length>1?[].map.call(document.querySelectorAll("#dp_b .sday.on"),b=>b.dataset.dd):[day];
+   if(!dates.length)return $("#dp_e").textContent="اختر يومًا واحدًا على الأقل.";x.disabled=true;
+   try{const it=await srv("dayPlanAdd",{repId:DPV.rep,dates:dates,doctorId:x.dataset.id,product:$("#dp_p").value,purpose:$("#dp_g").value,note:$("#dp_n").value});
+    const off=(it||[]).filter(i=>i.schedOff).map(i=>dpDayName(i.date));
+    toast((dates.length>1?"أُضيف إلى "+dates.length+" أيام":"أُضيف للخطة")+(off.length?". تنبيه: الطبيب لا يعمل يوم "+off.join("، ")+" حسب جدوله":"")+" — لا تنسَ «إرسال الخطة»");dayPlanView()}
+   catch(e){x.disabled=false;$("#dp_e").textContent=e.message}})};
  $("#dp_q").oninput=draw;
- if($("#dp_tg"))$("#dp_tg").onclick=async()=>{try{const n=await srv("dayPlanNotify",{repId:DPV.rep,date:DPV.date});toast(n?"أُرسلت الخطة على تيليجرام":"المندوب لم يربط تيليجرام بعد. سيرى الخطة في الصفحة الرئيسية.")}catch(e){toast(e.message)}};
- if($("#dp_cp"))$("#dp_cp").onclick=()=>{$("#modal").innerHTML='<h3>نسخ الخطة</h3><label>إلى المندوب</label><select id="cp_r">'+REPS.map(r=>'<option value="'+esc(r.id)+'"'+(r.id===DPV.rep?" selected":"")+'>'+esc(r.name)+'</option>').join("")+'</select><label>إلى يوم</label><input type="date" id="cp_d" min="'+dpDate(0)+'" value="'+dpDate(1)+'"><div class="err" id="cp_e"></div><div class="mfoot"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">نسخ</button></div>';
+ if($("#dp_send"))$("#dp_send").onclick=async()=>{const b=$("#dp_send");b.disabled=true;try{const r=await srv("dayPlanSend",{repId:DPV.rep,from:days[0],to:days[days.length-1],again:!drafts});
+  toast(drafts?"أُرسلت الخطة: "+r.sent+" طبيب"+(r.tg?" (والمندوب أُشعر على تيليجرام)":""):"أُرسل تذكير للمندوب");dayPlanView()}catch(e){b.disabled=false;toast(e.message)}};
+ if($("#dp_cp"))$("#dp_cp").onclick=()=>{$("#modal").innerHTML='<h3>نسخ خطة '+esc(dpDayName(day))+'</h3><label>إلى المندوب</label><select id="cp_r">'+REPS.map(r=>'<option value="'+esc(r.id)+'"'+(r.id===DPV.rep?" selected":"")+'>'+esc(r.name)+'</option>').join("")+'</select><label>إلى يوم</label><input type="date" id="cp_d" min="'+dpDate(0)+'" value="'+dpAdd(day,1)+'"><p class="tgtx">النسخة تُحفظ كمسودة، ثم أرسلها للمندوب.</p><div class="err" id="cp_e"></div><div class="mfoot"><button class="btn" id="cx">إلغاء</button><button class="btn pri" id="sv">نسخ</button></div>';
   $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
-  $("#sv").onclick=async()=>{try{const n=await srv("dayPlanCopy",{fromRep:DPV.rep,fromDate:DPV.date,toRep:$("#cp_r").value,toDate:$("#cp_d").value});$("#ov").classList.remove("on");toast("نُسخ "+n+" طبيب");DPV.rep=$("#cp_r")?DPV.rep:DPV.rep;dayPlanView()}catch(e){$("#cp_e").textContent=e.message}}};
+  $("#sv").onclick=async()=>{try{const n=await srv("dayPlanCopy",{fromRep:DPV.rep,fromDate:day,toRep:$("#cp_r").value,toDate:$("#cp_d").value});$("#ov").classList.remove("on");toast("نُسخ "+n+" طبيب كمسودة");dayPlanView()}catch(e){$("#cp_e").textContent=e.message}}};
 }
 async function feedbackView(){
  const seq=++dpSeq,host=()=>seq===dpSeq?$("#av"):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';

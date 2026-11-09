@@ -44,7 +44,10 @@ const T = {
   // DocSchedule / DocAbsent: doctor work schedules (Schedule.js). day 0 = Sunday; period am|pm|all; ended rows keep the history.
   DocSchedule: ['id', 'doctorId', 'facilityId', 'facilityName', 'day', 'period', 'active', 'addedAt', 'addedBy', 'addedByName', 'endedAt', 'endedBy', 'endedByName'],
   DocAbsent: ['id', 'doctorId', 'date', 'by', 'byName', 'at', 'active'],
-  DayPlans: ['id', 'repId', 'date', 'doctorId', 'doctorName', 'specialty', 'product', 'purpose', 'note', 'status', 'reason', 'active', 'createdAt', 'createdBy', 'updatedAt'],
+  DayPlans: ['id', 'repId', 'date', 'doctorId', 'doctorName', 'specialty', 'product', 'purpose', 'note', 'status', 'reason', 'active', 'createdAt', 'createdBy', 'updatedAt',
+    'draft', 'sentAt', 'sentBy'], // draft = added after the last «إرسال الخطة»: the rep does not see it yet (old rows: sent)
+  // Notifs: the in-app bell (Notify.js).
+  Notifs: ['id', 'userId', 'type', 'text', 'ref', 'at', 'read'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']
 };

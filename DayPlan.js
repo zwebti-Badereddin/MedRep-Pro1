@@ -8,7 +8,12 @@ const DP_PURPOSE = { intro: 'تعريف', remind: 'تذكير', feedback: 'أخ�
 const FB_RATE = { pos: 'إيجابي', neu: 'محايد', neg: 'سلبي' };
 const DP_AHEAD_DAYS = 2, DP_ID_RE = /^DP-[A-Z0-9]{10}$/;
 
-function dpRows_() { ensureSheet_('DayPlans'); return dbAll_('DayPlans').filter(r => String(r.active) !== 'false'); }
+function dpRows_() { ensureSheet_('DayPlans'); dpHeader_(); return dbAll_('DayPlans').filter(r => String(r.active) !== 'false'); }
+// Sheets made before the draft columns: add their headers once (rows are read by position).
+function dpHeader_() {
+  try { const sh = sheet_('DayPlans'), n = T.DayPlans.length; if (sh.getLastColumn() < n) sh.getRange(1, 1, 1, n).setValues([T.DayPlans]); } catch (e) {}
+}
+const dpDraft_ = r => String(r.draft) === 'true';
 const dpAddDays_ = (d, n) => Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5), 'UTC', 'yyyy-MM-dd');
 
 // Status of each item from the rep's report of that date (any status: the visit happened even if the report is a draft).
@@ -25,7 +30,7 @@ function dpWithStatus_(items) {
     const status = v ? 'done' : i.status === 'failed' ? 'failed' : 'pending';
     return { id: i.id, repId: i.repId, date: i.date, doctorId: i.doctorId, doctorName: i.doctorName, specialty: i.specialty, product: i.product,
       purpose: i.purpose, purposeName: DP_PURPOSE[i.purpose] || '', note: i.note, status: status, reason: status === 'failed' ? i.reason : '',
-      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
+      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', draft: dpDraft_(i), schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
   });
 }
 
@@ -33,8 +38,9 @@ function dpWithStatus_(items) {
 function dayPlanAdd_(s, p) {
   ensureSheet_('DayPlans');
   const rep = dbAll_('Reps').find(r => String(r.id) === String(p.repId) && String(r.active) !== 'false'); if (!rep) throw new Error('المندوب غير موجود.');
-  if (!isDate_(p.date)) throw new Error('اختر تاريخ الخطة.');
-  if (p.date < today_()) throw new Error('لا يمكن إضافة خطة ليوم مضى.');
+  const dates = Array.from(new Set(Array.isArray(p.dates) ? p.dates : [p.date])); // one doctor on several days of the plan at once
+  if (!dates.length || dates.length > 7 || !dates.every(isDate_)) throw new Error('اختر تاريخ الخطة.');
+  if (dates.some(d => d < today_())) throw new Error('لا يمكن إضافة خطة ليوم مضى.');
   const doc = dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false'); if (!doc) throw new Error('الطبيب غير موجود في السجل.');
   const product = String(p.product || '').trim();
   if (product && !dbAll_('Products').some(x => String(x.name).trim() === product)) throw new Error('المنتج غير موجود في قائمة المنتجات.');
@@ -43,12 +49,17 @@ function dayPlanAdd_(s, p) {
   const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 300), now = new Date().toISOString();
   const lock = acquireLock_(20000);
   try {
-    const cur = dpRows_().find(r => String(r.repId) === String(rep.id) && r.date === p.date && String(r.doctorId) === String(doc.id));
-    const o = Object.assign({}, cur || { id: 'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(), repId: rep.id, date: p.date, doctorId: doc.id, createdAt: now, createdBy: s.uid, status: '', reason: '' },
-      { doctorName: doc.name, specialty: doc.specialty || '', product: product, purpose: purpose, note: note, active: true, updatedAt: now });
-    if (cur) dbUpsert_('DayPlans', 'id', o); else dbAppend_('DayPlans', o);
-    audit_(s, 'dayplan_add', rep.id + ' ' + p.date + ' ' + doc.id, purpose);
-    return dpWithStatus_([o])[0];
+    const rows = dpRows_(), out = dates.map(date => {
+      const cur = rows.find(r => String(r.repId) === String(rep.id) && r.date === date && String(r.doctorId) === String(doc.id));
+      // a new item is a draft until «إرسال الخطة»; editing an item keeps whether the rep already sees it
+      const o = Object.assign({}, cur || { id: 'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(), repId: rep.id, date: date, doctorId: doc.id, createdAt: now, createdBy: s.uid, status: '', reason: '', draft: true, sentAt: '', sentBy: '' },
+        { doctorName: doc.name, specialty: doc.specialty || '', product: product, purpose: purpose, note: note, active: true, updatedAt: now });
+      if (cur) dbUpsert_('DayPlans', 'id', o); else dbAppend_('DayPlans', o);
+      audit_(s, 'dayplan_add', rep.id + ' ' + date + ' ' + doc.id, purpose);
+      return o;
+    });
+    const list = dpWithStatus_(out);
+    return Array.isArray(p.dates) ? list : list[0];
   } finally { lock.releaseLock(); }
 }
 function dayPlanDelete_(s, p) {
@@ -71,6 +82,28 @@ function dayPlanList_(s, p) {
   return dpWithStatus_(dpRows_().filter(r => r.date >= from && r.date <= to && (!p.repId || String(r.repId) === String(p.repId))))
     .map(i => Object.assign(i, { repName: names[i.repId] || i.repId })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.repName).localeCompare(String(b.repName), 'ar')));
 }
+// «إرسال الخطة»: the rep's drafts in [from, to] become visible; a bell notification and a Telegram message with the plan.
+function dayPlanSend_(s, p) {
+  const from = isDate_(p.from) ? p.from : today_(), to = isDate_(p.to) ? p.to : from;
+  if (to < from || (Date.parse(to) - Date.parse(from)) / 864e5 > 6) throw new Error('اختر فترة لا تزيد على أسبوع.');
+  const rep = dbAll_('Reps').find(r => String(r.id) === String(p.repId)); if (!rep) throw new Error('المندوب غير موجود.');
+  const now = new Date().toISOString(), lock = acquireLock_(20000);
+  let items, sent = 0;
+  try {
+    items = dpRows_().filter(r => String(r.repId) === String(rep.id) && r.date >= from && r.date <= to);
+    if (!items.length) throw new Error('لا توجد خطة في هذه الأيام.');
+    if (items.some(dpDraft_) || p.again) items.filter(dpDraft_).forEach(r => { dbUpsert_('DayPlans', 'id', { id: r.id, draft: false, sentAt: now, sentBy: s.uid }); sent++; });
+  } finally { lock.releaseLock(); }
+  if (!sent && !p.again) throw new Error('الخطة مرسلة مسبقًا ولا توجد إضافات جديدة. استخدم «إعادة الإرسال» لتذكير المندوب.');
+  const days = Array.from(new Set(items.map(r => r.date))).sort(), dd = d => d.split('-').reverse().join('/');
+  const who = s.name || (dbAll_(s.role === 'admin' ? 'Admins' : 'Supervisors').find(x => String(x.id) === String(s.uid)) || {}).name || 'الإدارة', head = sent && sent < items.length ? 'عُدّلت خطة زياراتك' : sent ? 'خطة زيارات جديدة' : 'تذكير بخطة زياراتك';
+  notifPush_(rep.id, 'plan', head + ' من ' + who + ': ' + (days.length > 1 ? days.length + ' أيام، ' : 'ليوم ' + dd(days[0]) + '، ') + items.length + ' طبيب.', { from: days[0], to: days[days.length - 1] });
+  const text = '🗓️ ' + head + ' من ' + who + ':\n' + days.map(d => '\n' + dd(d) + ':\n' + items.filter(r => r.date === d).map((r, i) => (i + 1) + '. ' + r.doctorName + (r.specialty ? ' (' + r.specialty + ')' : '') +
+    (r.product ? ' — ' + (DP_PURPOSE[r.purpose] || '') + ': ' + r.product : '') + (r.note ? '\n   ' + r.note : '')).join('\n')).join('\n') + '\nتجدها في الصفحة الرئيسية لـ MedRep Pro.';
+  const tg = tgNotifyUser_(rep.id, text);
+  audit_(s, 'dayplan_send', rep.id + ' ' + from + '..' + to, sent + ' tg ' + tg);
+  return { sent: sent, total: items.length, tg: tg };
+}
 // Telegram to the rep: the day's plan as a list.
 function dayPlanNotify_(s, p) {
   const items = dpRows_().filter(r => String(r.repId) === String(p.repId) && r.date === p.date); if (!items.length) throw new Error('لا توجد خطة لهذا اليوم.');
@@ -85,10 +118,10 @@ function dayPlanNotify_(s, p) {
 /* ---------- rep ---------- */
 function myDayPlan_(s) {
   const td = today_(), to = dpAddDays_(td, DP_AHEAD_DAYS), y = yesterday_();
-  return dpWithStatus_(dpRows_().filter(r => String(r.repId) === String(s.uid) && r.date >= y && r.date <= to));
+  return dpWithStatus_(dpRows_().filter(r => String(r.repId) === String(s.uid) && r.date >= y && r.date <= to && !dpDraft_(r)));
 }
 function dayPlanFail_(s, p) {
-  const r = dpRows_().find(x => x.id === p.id && String(x.repId) === String(s.uid)); if (!r) throw new Error('البند غير موجود.');
+  const r = dpRows_().find(x => x.id === p.id && String(x.repId) === String(s.uid) && !dpDraft_(x)); if (!r) throw new Error('البند غير موجود.');
   const reason = String(p.reason || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   if (p.undo) dbUpsert_('DayPlans', 'id', Object.assign({}, r, { status: '', reason: '', updatedAt: new Date().toISOString() }));
   else {
