@@ -41,6 +41,9 @@ const T = {
   // DayPlans: daily visit plans set by a supervisor or an admin (DayPlan.js); status '' | 'failed' (done is read from the report).
   // PharmAck: «تم التوفير» on a pharmacy alert (Market.js): hides it until a newer observation (date) of the same pharmacy × product.
   PharmAck: ['key', 'pharmacy', 'product', 'date', 'by', 'byName', 'at'],
+  // DocSchedule / DocAbsent: doctor work schedules (Schedule.js). day 0 = Sunday; period am|pm|all; ended rows keep the history.
+  DocSchedule: ['id', 'doctorId', 'facilityId', 'facilityName', 'day', 'period', 'active', 'addedAt', 'addedBy', 'addedByName', 'endedAt', 'endedBy', 'endedByName'],
+  DocAbsent: ['id', 'doctorId', 'date', 'by', 'byName', 'at', 'active'],
   DayPlans: ['id', 'repId', 'date', 'doctorId', 'doctorName', 'specialty', 'product', 'purpose', 'note', 'status', 'reason', 'active', 'createdAt', 'createdBy', 'updatedAt'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']

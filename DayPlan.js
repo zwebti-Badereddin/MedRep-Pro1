@@ -17,13 +17,15 @@ function dpWithStatus_(items) {
   const want = {}; items.forEach(i => { want[i.repId + '|' + i.date] = 1; });
   const rows = reportsLight_().filter(r => want[r.repId + '|' + r.date]), cols = reportVisitColumns_(rows), byKey = {};
   rows.forEach(r => { byKey[r.repId + '|' + r.date] = cols[r.id].doctors; });
+  let sch = null; try { sch = docSchedules_(null, {}); } catch (e) {} // the doctor's work schedule (Schedule.js), when he has one
   return items.map(i => {
+    const w = sch ? schOnDate_(sch, i.doctorId, i.date) : null;
     const visits = byKey[i.repId + '|' + i.date] || [], v = visits.find(x => x.planId === i.id) || visits.find(x => String(x.doctorId) === String(i.doctorId)) ||
       visits.find(x => !x.doctorId && normName_(x.name) === normName_(i.doctorName)); // older visits without the doctor's id
     const status = v ? 'done' : i.status === 'failed' ? 'failed' : 'pending';
     return { id: i.id, repId: i.repId, date: i.date, doctorId: i.doctorId, doctorName: i.doctorName, specialty: i.specialty, product: i.product,
       purpose: i.purpose, purposeName: DP_PURPOSE[i.purpose] || '', note: i.note, status: status, reason: status === 'failed' ? i.reason : '',
-      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '' };
+      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
   });
 }
 

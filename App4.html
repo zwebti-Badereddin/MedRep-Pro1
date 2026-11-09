@@ -13,6 +13,7 @@ const IC={
  pin:svgI('<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"></path><circle cx="12" cy="10" r="2"></circle>',13),
  nopin:svgI('<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"></path><path d="M4 4l16 16"></path>',13),
  plus:svgI('<path d="M12 5v14M5 12h14"></path>'),
+ clock:svgI('<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',14),
  more:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>',
  t:svgI('<rect x="3" y="4" width="18" height="17" rx="3"></rect><path d="M3 9h18M8 2v4M16 2v4"></path>',22),
  h:svgI('<path d="M8 6h13M8 12h13M8 18h13"></path><circle cx="4" cy="6" r="1"></circle><circle cx="4" cy="12" r="1"></circle><circle cx="4" cy="18" r="1"></circle>',22),
@@ -281,7 +282,7 @@ function planBar(p){const v=p==null?0:Math.max(0,Math.min(100,p));return '<div c
 async function screenPlan(){
  const seq=++repScreenSeq;
  $("#app").innerHTML=repTop("أطبائي",{sub:"خطة زيارات هذا الشهر"})+'<div class="wrap rwrap"><div id="plb"><div class="empty">جارٍ التحميل…</div></div></div><div class="rdock">'+repNav("d")+'</div>';bindNav();
- try{const r=await srv("myPlan");if(seq!==repScreenSeq||!$("#plb"))return;MYPLAN=r;drawMyPlan()}
+ try{const r=await srv("myPlan");if(seq!==repScreenSeq||!$("#plb"))return;MYPLAN=r;drawMyPlan();schLoad(true).then(()=>{if(seq===repScreenSeq&&$("#plb"))drawMyPlan()})}
  catch(e){if(seq===repScreenSeq&&$("#plb"))$("#plb").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
 }
 function drawMyPlan(){
@@ -293,12 +294,14 @@ function drawMyPlan(){
  host.innerHTML=head+'<div class="empty" style="margin:6px 0 10px">الزيارات المطلوبة شهريًا: A = '+f.A+' · B = '+f.B+' · C = '+f.C+'. تشمل زيارات اليوم قبل الإرسال.</div>'+
   '<button type="button" class="btn dash" id="pladd">'+IC.plus+' إضافة طبيب لقائمتي</button>'+
   (docs.length?docs.map(d=>{const st=d.cls?(d.req&&!d.visits?" plnone":d.visits>=d.req?" plfull":""):" plwait";
-   return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div class="pldoc">'+docAvatar(d.name,d.cls)+'<b>'+esc(d.name)+'</b></div>'+
+   return '<div class="row plrow'+st+'" data-id="'+esc(d.id)+'" style="display:block"><div class="pldoc">'+docAvatar(d.name,d.cls)+'<b>'+esc(d.name)+'</b></div>'+schTodayHtml(d.doctorId)+
     (d.cls?'<div class="plprog"><span>'+d.visits+' من '+d.req+'</span>'+planBar(d.req?Math.round(Math.min(d.visits,d.req)/d.req*100):100)+'</div>':'')+
     (d.pendingCls?'<div class="plpend">'+(d.cls?'تغيير مقترح إلى '+d.pendingCls:'مقترح: الفئة '+d.pendingCls)+' — بانتظار الاعتماد</div>':'')+
-    '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'</div></div>'}).join(""):'');
+    '<div class="acts"><button type="button" class="mini" data-a="cls">'+(d.cls?"اقتراح فئة أخرى":"تغيير الفئة المقترحة")+'</button>'+(d.pendingCls?'<button type="button" class="mini" data-a="wd">سحب الطلب</button>':'')+'<button type="button" class="mini" data-a="sch">أيام العمل</button>'+(schOn(d.doctorId)?'<button type="button" class="mini" data-a="abs">'+(schOn(d.doctorId).absent?"متواجد اليوم":"غير متواجد اليوم")+'</button>':'')+'</div></div>'}).join(""):'');
  $("#pladd").onclick=planAddDoctor;
  host.querySelectorAll(".plrow .mini").forEach(b=>b.onclick=async()=>{const d=docs.find(x=>x.id===b.closest(".plrow").dataset.id);if(!d)return;
+  if(b.dataset.a==="sch")return schEdit(d.doctorId,d.name,drawMyPlan);
+  if(b.dataset.a==="abs")return schAbsentToggle(d.doctorId,!schOn(d.doctorId).absent,drawMyPlan);
   if(b.dataset.a==="cls")return planPickClass(d.name,d.pendingCls||d.cls,async k=>{MYPLAN=await srv("planPropose",{doctorId:d.doctorId,cls:k});drawMyPlan();toast(k===d.cls?"تم سحب طلب التغيير":"أُرسل للاعتماد")});
   b.disabled=true;try{MYPLAN=await srv("planWithdraw",{id:d.id});drawMyPlan();toast("تم سحب الطلب")}catch(e){b.disabled=false;toast(e.message)}});
 }
@@ -329,5 +332,76 @@ function docInitials(n){
 }
 function docAvatar(name,cls){
  return cls?'<span class="dav c'+cls+'" aria-hidden="true">'+esc(docInitials(name))+'<i>'+cls+'</i></span>':'<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span>'
+}
+/* ===== Doctor work schedules (Schedule.js): facility + day + period, several places a day; «غير متواجد اليوم» for one day.
+   Shared by every rep, supervisor and admin; it only helps (visit form, «أطبائي», daily plans) and never blocks. ===== */
+const SCH_P={am:"صباحًا",pm:"مساءً",all:"يوم كامل"},SCH_D=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"],SCH_ORDER=[6,0,1,2,3,4,5];
+let SCHED=null,SCHED_AT=0;
+try{SCHED=JSON.parse(localStorage.getItem("mr_sched")||"null")}catch(e){SCHED=null}
+function schSet(r){SCHED=r||{sched:{},absent:{}};SCHED_AT=Date.now();try{localStorage.setItem("mr_sched",JSON.stringify(SCHED))}catch(e){}return SCHED}
+async function schLoad(force){
+ if(!force&&SCHED&&Date.now()-SCHED_AT<300000)return SCHED;
+ try{return schSet(await srv("docSchedules"))}catch(e){return SCHED||{sched:{},absent:{}}}
+}
+function schDate(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+// null = no schedule; else {off, absent, slots:[{f,n,d,p}]} for that date (default today).
+function schOn(docId,date){
+ const o=SCHED&&SCHED.sched&&SCHED.sched[docId];if(!o)return null;date=date||schDate();
+ const wd=new Date(date+"T12:00:00").getDay(),slots=o.slots.filter(x=>x.d===wd),absent=((SCHED.absent||{})[docId]||[]).indexOf(date)>=0;
+ return {off:absent||!slots.length,absent,slots};
+}
+function schTodayHtml(docId){
+ const t=schOn(docId);if(!t)return "";
+ return '<div class="schtoday'+(t.off?" off":"")+'">'+IC.clock+' '+(t.absent?"غير متواجد اليوم":t.off?"لا يعمل اليوم حسب جدوله":"اليوم: "+t.slots.map(x=>esc(x.n)+" "+SCH_P[x.p]).join(" · "))+'</div>';
+}
+// For the visit form: the facility where the doctor works now (by the time of day), or null.
+function schPickNow(docId){
+ const t=schOn(docId);if(!t||t.off)return null;const pm=new Date().getHours()>=14;
+ return (t.slots.find(x=>x.p===(pm?"pm":"am"))||t.slots.find(x=>x.p==="all")||t.slots[0]);
+}
+function schAgo(at){if(!at)return "";const d=Math.floor((Date.now()-Date.parse(at))/864e5);return d<=0?"اليوم":d===1?"أمس":"قبل "+d+" أيام"}
+// Editor: groups of (facility, period) with their days; add / edit / delete; save sends the whole schedule.
+async function schEdit(docId,name,done){
+ await schLoad();
+ const o=(SCHED.sched||{})[docId],doc=(CFG.docs||[]).find(d=>String(d.id)===String(docId))||{};
+ let slots=o?o.slots.map(x=>({f:x.f,n:x.n,d:x.d,p:x.p})):[];
+ const own=(doc.workplaces||[]).filter(w=>String(w.active)!=="false"),ownIds=new Set(own.map(w=>String(w.id)));
+ const others=(CFG.facilities||[]).filter(w=>String(w.active)!=="false"&&!ownIds.has(String(w.id)));
+ const opt=w=>'<option value="'+esc(w.id)+'">'+esc(w.workplace)+'</option>';
+ $("#modal").innerHTML='<h3>أيام عمل '+esc(name)+'</h3><p class="tgtx">أين يعمل الطبيب في كل يوم. يمكن إضافة أكثر من مكان في نفس اليوم (صباحًا في مكان ومساءً في آخر)، والتعديل في أي وقت.</p>'+
+  '<div id="se_l"></div><div class="sedit"><b id="se_t">إضافة فترة عمل</b><label>المنشأة</label><select id="se_f"><option value="">— اختر المنشأة —</option>'+
+  (own.length?'<optgroup label="منشآت الطبيب">'+own.map(opt).join("")+'</optgroup>':'')+(others.length?'<optgroup label="منشآت أخرى">'+others.map(opt).join("")+'</optgroup>':'')+'</select>'+
+  '<label>الأيام</label><div class="sedays">'+SCH_ORDER.map(d=>'<button type="button" class="sday" data-d="'+d+'" aria-pressed="false">'+SCH_D[d]+'</button>').join("")+'</div>'+
+  '<label>الفترة</label><div class="seper">'+Object.keys(SCH_P).map(p=>'<button type="button" class="sper'+(p==="am"?" on":"")+'" data-p="'+p+'">'+SCH_P[p]+'</button>').join("")+'</div>'+
+  '<button type="button" class="btn dash" id="se_add">'+IC.plus+' إضافة للجدول</button></div><div class="err" id="se_e"></div>'+
+  (o&&o.at?'<div class="setime">آخر تحديث: '+esc(o.by||"")+' · '+esc(schAgo(o.at))+'</div>':'')+
+  '<div class="mfoot"><button class="btn" id="se_x">إلغاء</button><button class="btn pri" id="se_s">حفظ الجدول</button></div>';
+ $("#ov").classList.add("on");$("#se_x").onclick=()=>$("#ov").classList.remove("on");
+ let per="am";
+ document.querySelectorAll(".sday").forEach(b=>b.onclick=()=>{const on=b.classList.toggle("on");b.setAttribute("aria-pressed",on)});
+ document.querySelectorAll(".sper").forEach(b=>b.onclick=()=>{per=b.dataset.p;document.querySelectorAll(".sper").forEach(x=>x.classList.toggle("on",x===b))});
+ const draw=()=>{
+  const g={};slots.forEach(x=>{const k=x.f+"|"+x.p;(g[k]=g[k]||{f:x.f,n:x.n,p:x.p,days:[]}).days.push(x.d)});
+  const list=Object.keys(g).map(k=>g[k]);
+  $("#se_l").innerHTML=list.length?list.map((x,i)=>'<div class="segrp" data-i="'+i+'"><div><b>'+esc(x.n)+'</b> · '+SCH_P[x.p]+'<div class="sedl">'+SCH_ORDER.filter(d=>x.days.indexOf(d)>=0).map(d=>SCH_D[d]).join("، ")+'</div></div><div class="acts"><button type="button" class="mini" data-a="ed">تعديل</button><button type="button" class="mini" data-a="del">حذف</button></div></div>').join("")
+   :'<div class="empty">لا يوجد جدول بعد. أضف أول فترة عمل بالأسفل.</div>';
+  $("#se_l").querySelectorAll(".segrp .mini").forEach(b=>b.onclick=()=>{const x=list[+b.closest(".segrp").dataset.i];slots=slots.filter(s=>!(s.f===x.f&&s.p===x.p));
+   if(b.dataset.a==="ed"){$("#se_f").value=x.f;per=x.p;document.querySelectorAll(".sper").forEach(e=>e.classList.toggle("on",e.dataset.p===x.p));
+    document.querySelectorAll(".sday").forEach(e=>{const on=x.days.indexOf(+e.dataset.d)>=0;e.classList.toggle("on",on);e.setAttribute("aria-pressed",on)});$("#se_t").textContent="تعديل: "+x.n+" · "+SCH_P[x.p];$("#se_f").scrollIntoView({block:"center"})}
+   draw()});
+ };
+ $("#se_add").onclick=()=>{$("#se_e").textContent="";const f=$("#se_f").value,days=[].map.call(document.querySelectorAll(".sday.on"),b=>+b.dataset.d);
+  if(!f)return $("#se_e").textContent="اختر المنشأة.";if(!days.length)return $("#se_e").textContent="اختر يومًا واحدًا على الأقل.";
+  const n=($("#se_f").selectedOptions[0]||{}).textContent||"";
+  days.forEach(d=>{if(!slots.some(s=>s.f===f&&s.d===d&&s.p===per))slots.push({f,n,d,p:per})});
+  document.querySelectorAll(".sday").forEach(e=>{e.classList.remove("on");e.setAttribute("aria-pressed",false)});$("#se_f").value="";$("#se_t").textContent="إضافة فترة عمل";draw()};
+ $("#se_s").onclick=async()=>{const b=$("#se_s");b.disabled=true;$("#se_e").textContent="";
+  if([].some.call(document.querySelectorAll(".sday"),x=>x.classList.contains("on"))&&$("#se_f").value){b.disabled=false;return $("#se_e").textContent="اضغط «إضافة للجدول» أولًا لإضافة الأيام المختارة، أو ألغِ اختيارها."}
+  try{schSet(await srv("docScheduleSave",{doctorId:docId,slots:slots.map(x=>({facilityId:x.f,day:x.d,period:x.p}))}));$("#ov").classList.remove("on");toast("حُفظ جدول الطبيب");if(done)done()}
+  catch(e){b.disabled=false;$("#se_e").textContent=e.message}};
+ draw();
+}
+async function schAbsentToggle(docId,on,done){
+ try{schSet(await srv("docAbsent",{doctorId:docId,undo:!on}));toast(on?"سُجّل: غير متواجد اليوم":"أُلغي «غير متواجد اليوم»");if(done)done()}catch(e){toast(e.message)}
 }
 </script>

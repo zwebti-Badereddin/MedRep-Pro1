@@ -88,6 +88,10 @@ function mergeDoctorWorkplaces_(fromDoctor, toDoctor) {
     else { w.doctorId = toDoctor.id; w.doctorName = toDoctor.name; }
     dbUpsert_('DoctorWorkplaces', 'id', w);
   });
+  try { // the work schedule moves too, unless the kept doctor already has one (Schedule.js)
+    const sch = schRows_().filter(r => String(r.active) !== 'false');
+    if (!sch.some(r => String(r.doctorId) === String(toDoctor.id))) sch.filter(r => String(r.doctorId) === String(fromDoctor.id)).forEach(r => dbUpsert_('DocSchedule', 'id', { id: r.id, doctorId: toDoctor.id }));
+  } catch (e) {}
   return moved;
 }
 function masterAct_(s, p) {

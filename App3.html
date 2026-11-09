@@ -146,6 +146,7 @@ function form(k,idx){
     FCH=workplaceChoices(r,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);
     const selected=pickWorkplace(FCH,cur);
     if(selected){$("#f_workplace").value=selected.value;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.link?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":selected.w.reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
+    else if(!cur.place&&typeof schPickNow==="function"&&schPickNow(r.id)&&[].some.call($("#f_workplace").options,o=>o.value===String(schPickNow(r.id).f))){const sl=schPickNow(r.id);$("#f_workplace").value=String(sl.f);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent="حسب جدول الطبيب: "+sl.n+" "+SCH_P[sl.p]+" اليوم."+(FCH.own.some(w=>String(w.id)===String(sl.f))?"":" سيُطلب ربط الطبيب بهذه المنشأة.")}
     else if(FCH.own.length&&!cur.place){$("#f_workplace").value=String(FCH.own[0].id);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=FCH.own[0].reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
     else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل منشأة؛ سيُرسل كاقتراح منشأة جديدة لتراجعه الإدارة.":"اختر منشأة مسجلة أو اقترح منشأة جديدة."}
     const rd=document.querySelector('input[name=sector][value="'+(r.sector||cur.sector||"خاص")+'"]');if(rd)rd.checked=true;drawFChips()};
@@ -404,7 +405,7 @@ function visitFbInit(k,cur,pre){
 let MYDP=null,MYDP_AT=0;
 const dpKey=()=>"mr_dp_"+((rep&&rep.id)||"");
 function dpLoad(){if(MYDP)return MYDP;try{MYDP=JSON.parse(localStorage.getItem(dpKey())||"null")}catch(e){MYDP=null}return MYDP}
-function dpRefresh(force){if(!rep||rep.role!=="rep"||navigator.onLine===false)return;if(!force&&Date.now()-MYDP_AT<60000)return;MYDP_AT=Date.now();
+function dpRefresh(force){if(!rep||rep.role!=="rep"||navigator.onLine===false)return;if(typeof schLoad==="function")schLoad(force);if(!force&&Date.now()-MYDP_AT<60000)return;MYDP_AT=Date.now();
  srv("myDayPlan").then(a=>{MYDP=a||[];try{localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}const c=$("#dpcard");if(c&&S){c.outerHTML=dayPlanCard();dpBind()}else if(!c&&S&&MYDP.some(x=>x.date===S.date)&&$("#app .rwrap"))home()}).catch(()=>{})}
 function dpItems(){const a=(dpLoad()||[]).filter(x=>S&&x.date===S.date);
  return a.map(x=>Object.assign({},x,{done:x.status==="done"||(S.docs||[]).some(v=>v.planId===x.id||String(v.doctorId)===String(x.doctorId)||(!v.doctorId&&norm(v.name)===norm(x.doctorName)))}))}
