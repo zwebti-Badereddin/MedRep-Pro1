@@ -13,6 +13,7 @@ const SEED = () => ({
   Admins: [{ id: 'ADM-1', username: 'boss', name: 'المدير', active: true }],
   Supervisors: [{ id: 'SUP-0001', username: 'salem', name: 'سالم', active: true }],
   Doctors: [{ id: 'DOC-1', name: 'د. علي', specialty: 'باطنة', active: true }, { id: 'DOC-2', name: 'د. منى', specialty: 'أطفال', active: true }],
+  Products: [{ id: 'PROD-0001', name: 'Clodil', status: 'نشط' }],
   Facilities: [{ id: 'FAC-1', name: 'مستشفى الخضراء', status: 'نشط' }, { id: 'FAC-2', name: 'عيادة النور', status: 'نشط' },
     { id: 'FAC-3', name: 'قديمة', status: 'نشط', mergedInto: 'FAC-2' }, { id: 'FAC-4', name: 'مغلقة', status: 'معطل' }]
 });
@@ -61,9 +62,9 @@ test('«غير متواجد اليوم»: today only for a rep, undo; validation
 test('daily plans show where the doctor works that day, or warn that he does not', () => {
   const { env, sup } = setup();
   env.call(sup, 'docScheduleSave', { doctorId: 'DOC-1', slots: [{ facilityId: 'FAC-2', day: other, period: 'pm' }] });
-  const a = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: today, doctorId: 'DOC-1', purpose: 'intro' });
+  const a = env.call(sup, 'dayPlanAdd', { product: 'Clodil', repId: 'REP-0001', date: today, doctorId: 'DOC-1', purpose: 'intro' });
   assert.strictEqual(J([a.schedOff, a.schedWhere]), J([true, '']));
-  const b = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: today, doctorId: 'DOC-2', purpose: 'intro' });
+  const b = env.call(sup, 'dayPlanAdd', { product: 'Clodil', repId: 'REP-0001', date: today, doctorId: 'DOC-2', purpose: 'intro' });
   assert.strictEqual(J([b.schedOff, b.schedWhere]), J([false, '']), 'no schedule: no warning');
 });
 test('merging doctors moves the schedule when the kept doctor has none', () => {

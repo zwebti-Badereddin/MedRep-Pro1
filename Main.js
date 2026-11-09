@@ -162,6 +162,7 @@ function routes_() {
   docAbsent:     { role: ['rep', 'supervisor', 'admin'], fn: docAbsent_ },
   dayPlanSend:   { role: ['admin', 'supervisor'], fn: dayPlanSend_ },
   dayPlanConfirm: { role: 'rep', fn: dayPlanConfirm_ },
+  dayPlanUpdate: { role: ['admin', 'supervisor'], fn: dayPlanUpdate_ },
   myNotifs:      { role: ['rep', 'supervisor', 'admin'], fn: myNotifs_ },
   notifsRead:    { role: ['rep', 'supervisor', 'admin'], fn: notifsRead_ },
   reportEnSetup: { role: 'admin', fn: reportEnSetup_ },

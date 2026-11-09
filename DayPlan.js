@@ -15,6 +15,23 @@ function dpHeader_() {
 }
 const dpDraft_ = r => String(r.draft) === 'true';
 const dpAddDays_ = (d, n) => Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5), 'UTC', 'yyyy-MM-dd');
+// Dates are always written as the weekday and the date («الثلاثاء · 10 نوفمبر 2026»), never «اليوم» / «غدًا».
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+function dpLong_(d) { const t = new Date(Date.parse(d + 'T12:00:00Z')); return SCH_DAYS[t.getUTCDay()] + ' · ' + t.getUTCDate() + ' ' + AR_MONTHS[t.getUTCMonth()] + ' ' + t.getUTCFullYear(); }
+function dpShort_(d) { const t = new Date(Date.parse(d + 'T12:00:00Z')); return SCH_DAYS[t.getUTCDay()] + ' ' + t.getUTCDate() + '/' + (t.getUTCMonth() + 1); }
+function dpApptText_(r) { return [SCH_PERIOD[r.period] || '', r.facilityName || ''].filter(Boolean).join(' · '); }
+function dpStaffNames_() { const n = {}; ['Admins', 'Supervisors'].forEach(t => { try { dbAll_(t).forEach(x => { n[x.id] = x.name; }); } catch (e) {} }); return n; }
+function dpWho_(s) { return s.name && s.name !== s.uid ? s.name : (dpStaffNames_()[s.uid] || 'الإدارة'); }
+const dpEdited_ = r => String(r.edited) === 'true';
+// Product, purpose and note of an item: a product is required to introduce it or to get the doctor's feedback on it.
+function dpFields_(p) {
+  const product = String(p.product || '').trim();
+  if (product && !dbAll_('Products').some(x => String(x.name).trim() === product)) throw new Error('المنتج غير موجود في قائمة المنتجات.');
+  const purpose = DP_PURPOSE[p.purpose] ? p.purpose : 'intro';
+  if (purpose === 'feedback' && !product) throw new Error('اختر المنتج المطلوب أخذ انطباع الطبيب عنه.');
+  if (purpose === 'intro' && !product) throw new Error('اختر المنتج المراد التعريف به.');
+  return { product: product, purpose: purpose, note: String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 300) };
+}
 
 // Status of each item from the rep's report of that date (any status: the visit happened even if the report is a draft).
 function dpWithStatus_(items) {
@@ -23,6 +40,7 @@ function dpWithStatus_(items) {
   const rows = reportsLight_().filter(r => want[r.repId + '|' + r.date]), cols = reportVisitColumns_(rows), byKey = {};
   rows.forEach(r => { byKey[r.repId + '|' + r.date] = cols[r.id].doctors; });
   let sch = null; try { sch = docSchedules_(null, {}); } catch (e) {} // the doctor's work schedule (Schedule.js), when he has one
+  const staff = dpStaffNames_();
   return items.map(i => {
     const w = sch ? schOnDate_(sch, i.doctorId, i.date) : null;
     const visits = byKey[i.repId + '|' + i.date] || [], v = visits.find(x => x.planId === i.id) || visits.find(x => String(x.doctorId) === String(i.doctorId)) ||
@@ -31,7 +49,7 @@ function dpWithStatus_(items) {
     return { id: i.id, repId: i.repId, date: i.date, doctorId: i.doctorId, doctorName: i.doctorName, specialty: i.specialty, product: i.product,
       purpose: i.purpose, purposeName: DP_PURPOSE[i.purpose] || '', note: i.note, status: status, reason: status === 'failed' ? i.reason : '',
       fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', draft: dpDraft_(i),
-      period: i.period || '', periodName: SCH_PERIOD[i.period] || '', facilityId: i.facilityId || '', facilityName: i.facilityName || '', repState: i.repState || '', repNote: i.repNote || '', schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
+      period: i.period || '', periodName: SCH_PERIOD[i.period] || '', facilityId: i.facilityId || '', facilityName: i.facilityName || '', repState: i.repState || '', repNote: i.repNote || '', prevAppt: i.prevAppt || '', edited: dpEdited_(i), byName: staff[i.createdBy] || '', schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
   });
 }
 
@@ -39,21 +57,20 @@ function dpWithStatus_(items) {
 function dayPlanAdd_(s, p) {
   ensureSheet_('DayPlans');
   const rep = dbAll_('Reps').find(r => String(r.id) === String(p.repId) && String(r.active) !== 'false'); if (!rep) throw new Error('المندوب غير موجود.');
-  const dates = Array.from(new Set(Array.isArray(p.dates) ? p.dates : [p.date])); // one doctor on several days of the plan at once
+  const appts = Array.isArray(p.appts) ? p.appts.filter(a => a && typeof a === 'object') : null; // [{ date, period, facilityId }]: one or more appointments
+  const dates = Array.from(new Set(appts ? appts.map(a => a.date) : Array.isArray(p.dates) ? p.dates : [p.date])); // one doctor on several days of the plan at once
   if (!dates.length || dates.length > 7 || !dates.every(isDate_)) throw new Error('اختر تاريخ الخطة.');
   if (dates.some(d => d < today_())) throw new Error('لا يمكن إضافة خطة ليوم مضى.');
   const doc = dbAll_('Doctors').find(d => String(d.id) === String(p.doctorId) && String(d.active) !== 'false'); if (!doc) throw new Error('الطبيب غير موجود في السجل.');
-  const product = String(p.product || '').trim();
-  if (product && !dbAll_('Products').some(x => String(x.name).trim() === product)) throw new Error('المنتج غير موجود في قائمة المنتجات.');
-  const purpose = DP_PURPOSE[p.purpose] ? p.purpose : 'intro';
-  if (purpose === 'feedback' && !product) throw new Error('اختر المنتج المطلوب أخذ انطباع الطبيب عنه.');
-  const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 300), now = new Date().toISOString();
+  const f = dpFields_(p), product = f.product, purpose = f.purpose, note = f.note, now = new Date().toISOString();
   // The appointment of each day: the period and facility chosen by the supervisor, else taken from the doctor's work schedule for that weekday.
   const facs = dbAll_('Facilities'); let sch = null; try { sch = docSchedules_(null, {}); } catch (e) {}
-  let pickFac = null;
-  if (p.facilityId) { pickFac = facilityById_(p.facilityId, facs); if (!pickFac || pickFac.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); }
+  const facOf = id => { const x = facilityById_(id, facs); if (!x || x.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); return x; };
+  const pickFac = p.facilityId ? facOf(p.facilityId) : null;
+  if (appts) appts.forEach(a => { if (a.facilityId) facOf(a.facilityId); });
   const apptFor = date => {
-    let per = SCH_PERIOD[p.period] ? p.period : '', fac = pickFac;
+    const a = appts ? appts.filter(x => x.date === date).pop() : null, src = a || p;
+    let per = SCH_PERIOD[src.period] ? src.period : '', fac = a ? (a.facilityId ? facOf(a.facilityId) : null) : pickFac;
     if (!per || !fac) {
       const slots = sch && sch.sched[doc.id] ? sch.sched[doc.id].slots.filter(x => x.d === schWeekday_(date)) : [];
       const sl = slots.find(x => (!per || x.p === per || x.p === 'all') && (!fac || String(x.f) === String(fac.id))) || (fac ? null : slots[0]);
@@ -68,13 +85,31 @@ function dayPlanAdd_(s, p) {
       // a new item is a draft until «إرسال الخطة»; editing an item keeps whether the rep already sees it
       const o = Object.assign({}, cur || { id: 'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(), repId: rep.id, date: date, doctorId: doc.id, createdAt: now, createdBy: s.uid, status: '', reason: '', draft: true, sentAt: '', sentBy: '' },
         { doctorName: doc.name, specialty: doc.specialty || '', product: product, purpose: purpose, note: note, active: true, updatedAt: now }, apptFor(date));
-      if (cur && (cur.period !== o.period || String(cur.facilityId) !== String(o.facilityId))) Object.assign(o, { repState: '', repNote: '', repAt: '' }); // a new appointment: the rep's confirmation no longer applies
+      if (cur && (cur.period !== o.period || String(cur.facilityId) !== String(o.facilityId))) Object.assign(o, { repState: '', repNote: '', repAt: '', prevAppt: '' }); // a new appointment: the rep's confirmation no longer applies
+      if (cur && !dpDraft_(cur)) o.edited = true; // the rep already has it: the next «إرسال» tells him it changed
       if (cur) dbUpsert_('DayPlans', 'id', o); else dbAppend_('DayPlans', o);
       audit_(s, 'dayplan_add', rep.id + ' ' + date + ' ' + doc.id, purpose);
       return o;
     });
     const list = dpWithStatus_(out);
-    return Array.isArray(p.dates) ? list : list[0];
+    return Array.isArray(p.dates) || appts ? list : list[0];
+  } finally { lock.releaseLock(); }
+}
+// «تعديل» from the plan screen: one item's appointment (day, period, facility), purpose, product and note.
+function dayPlanUpdate_(s, p) {
+  const f = dpFields_(p), now = new Date().toISOString(), lock = acquireLock_(20000);
+  try {
+    const rows = dpRows_(), r = rows.find(x => x.id === p.id); if (!r) throw new Error('البند غير موجود.');
+    const date = isDate_(p.date) ? p.date : r.date;
+    if (date < today_()) throw new Error('لا يمكن نقل الموعد إلى يوم مضى.');
+    if (date !== r.date && rows.some(x => x.id !== r.id && String(x.repId) === String(r.repId) && x.date === date && String(x.doctorId) === String(r.doctorId))) throw new Error('هذا الطبيب موجود في خطة ذلك اليوم.');
+    let fac = null; if (p.facilityId) { fac = facilityById_(p.facilityId, dbAll_('Facilities')); if (!fac || fac.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); }
+    const o = Object.assign({ id: r.id, date: date, period: SCH_PERIOD[p.period] ? p.period : '', facilityId: fac ? String(fac.id) : '', facilityName: fac ? fac.name : '', updatedAt: now }, f);
+    if (o.date !== r.date || o.period !== (r.period || '') || o.facilityId !== String(r.facilityId || '')) Object.assign(o, { repState: '', repNote: '', repAt: '', prevAppt: '' });
+    if (!dpDraft_(r)) o.edited = true;
+    dbUpsert_('DayPlans', 'id', o);
+    audit_(s, 'dayplan_update', r.id, o.date + ' ' + o.period + ' ' + o.facilityId);
+    return dpWithStatus_([Object.assign({}, r, o)])[0];
   } finally { lock.releaseLock(); }
 }
 function dayPlanDelete_(s, p) {
@@ -107,14 +142,15 @@ function dayPlanSend_(s, p) {
   try {
     items = dpRows_().filter(r => String(r.repId) === String(rep.id) && r.date >= from && r.date <= to);
     if (!items.length) throw new Error('لا توجد خطة في هذه الأيام.');
-    if (items.some(dpDraft_) || p.again) items.filter(dpDraft_).forEach(r => { dbUpsert_('DayPlans', 'id', { id: r.id, draft: false, sentAt: now, sentBy: s.uid }); sent++; });
+    items.filter(r => dpDraft_(r) || dpEdited_(r)).forEach(r => { dbUpsert_('DayPlans', 'id', { id: r.id, draft: false, edited: false, sentAt: now, sentBy: s.uid }); sent++; });
   } finally { lock.releaseLock(); }
   if (!sent && !p.again) throw new Error('الخطة مرسلة مسبقًا ولا توجد إضافات جديدة. استخدم «إعادة الإرسال» لتذكير المندوب.');
-  const days = Array.from(new Set(items.map(r => r.date))).sort(), dd = d => d.split('-').reverse().join('/');
-  const who = s.name || (dbAll_(s.role === 'admin' ? 'Admins' : 'Supervisors').find(x => String(x.id) === String(s.uid)) || {}).name || 'الإدارة', head = sent && sent < items.length ? 'عُدّلت خطة زياراتك' : sent ? 'خطة زيارات جديدة' : 'تذكير بخطة زياراتك';
-  notifPush_(rep.id, 'plan', head + ' من ' + who + ': ' + (days.length > 1 ? days.length + ' أيام، ' : 'ليوم ' + dd(days[0]) + '، ') + items.length + ' طبيب.', { from: days[0], to: days[days.length - 1] });
-  const text = '🗓️ ' + head + ' من ' + who + ':\n' + days.map(d => '\n' + dd(d) + ':\n' + items.filter(r => r.date === d).map((r, i) => (i + 1) + '. ' + r.doctorName + (r.specialty ? ' (' + r.specialty + ')' : '') +
-    (r.product ? ' — ' + (DP_PURPOSE[r.purpose] || '') + ': ' + r.product : '') + (r.note ? '\n   ' + r.note : '')).join('\n')).join('\n') + '\nتجدها في الصفحة الرئيسية لـ MedRep Pro.';
+  const days = Array.from(new Set(items.map(r => r.date))).sort(), who = dpWho_(s), wasSent = items.some(r => r.sentAt && !dpDraft_(r) && !dpEdited_(r));
+  const head = !sent ? 'تذكير بخطة زياراتك' : wasSent || items.some(dpEdited_) ? 'عُدّلت خطة زياراتك' : 'خطة زيارات جديدة';
+  const daysTxt = days.map(dpShort_).join(' و') + '/' + days[days.length - 1].slice(0, 4);
+  notifPush_(rep.id, 'plan', head + ' من ' + who + ' — ' + daysTxt + ' · ' + items.length + ' طبيب', { from: days[0], to: days[days.length - 1], by: who, head: head });
+  const text = '🗓️ ' + head + '\nإلى: ' + rep.name + '   من: ' + who + '\n' + days.map(d => '\n📅 ' + dpLong_(d) + '\n' + items.filter(r => r.date === d).map((r, i) => (i + 1) + '. ' + r.doctorName + (r.specialty ? ' (' + r.specialty + ')' : '') +
+    (dpApptText_(r) ? '\n   🕘 ' + dpApptText_(r) : '') + (r.product || r.purpose ? '\n   🎯 ' + (DP_PURPOSE[r.purpose] || '') + (r.product ? ': ' + r.product : '') : '') + (r.note ? '\n   📝 ' + r.note : '')).join('\n')).join('\n') + '\n\nتجدها في الصفحة الرئيسية لـ MedRep Pro.';
   const tg = tgNotifyUser_(rep.id, text);
   audit_(s, 'dayplan_send', rep.id + ' ' + from + '..' + to, sent + ' tg ' + tg);
   return { sent: sent, total: items.length, tg: tg };
@@ -138,7 +174,7 @@ function myDayPlan_(s) {
 // The rep (optional): «✓ مؤكد», or a corrected appointment (day, period, facility) with a note; the plan's author is notified.
 // p.updateSchedule also moves the slot in the doctor's work schedule (the old weekday/facility/period → the new one).
 function dayPlanConfirm_(s, p) {
-  const now = new Date().toISOString(), dd = d => SCH_DAYS[schWeekday_(d)] + ' ' + d.split('-').reverse().join('/');
+  const now = new Date().toISOString();
   let r, upd = null, lock = acquireLock_(20000);
   try {
     const rows = dpRows_(); r = rows.find(x => x.id === p.id && String(x.repId) === String(s.uid) && !dpDraft_(x)); if (!r) throw new Error('البند غير موجود.');
@@ -150,7 +186,8 @@ function dayPlanConfirm_(s, p) {
       const per = SCH_PERIOD[p.period] ? p.period : (r.period || '');
       let fac = null; if (p.facilityId) { fac = facilityById_(p.facilityId, dbAll_('Facilities')); if (!fac || fac.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); }
       const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-      upd = { id: r.id, date: date, period: per, facilityId: fac ? String(fac.id) : (r.facilityId || ''), facilityName: fac ? fac.name : (r.facilityName || ''), repState: 'changed', repNote: note, repAt: now, updatedAt: now };
+      const prev = r.repState === 'changed' && r.prevAppt ? r.prevAppt : dpLong_(r.date) + (dpApptText_(r) ? ' · ' + dpApptText_(r) : '');
+      upd = { prevAppt: prev, id: r.id, date: date, period: per, facilityId: fac ? String(fac.id) : (r.facilityId || ''), facilityName: fac ? fac.name : (r.facilityName || ''), repState: 'changed', repNote: note, repAt: now, updatedAt: now };
       if (upd.date === r.date && upd.period === (r.period || '') && String(upd.facilityId) === String(r.facilityId || '') && !note) throw new Error('لم يتغير شيء في الموعد.');
       dbUpsert_('DayPlans', 'id', upd);
     }
@@ -163,9 +200,10 @@ function dayPlanConfirm_(s, p) {
       keep.push({ f: upd.facilityId, d: schWeekday_(upd.date), p: upd.period });
       docScheduleSave_(s, { doctorId: r.doctorId, slots: keep.map(x => ({ facilityId: x.f, day: x.d, period: x.p })) });
     }
-    const where = [SCH_PERIOD[upd.period] || '', upd.facilityName].filter(Boolean).join(' · ');
-    notifPush_(r.createdBy, 'plan', (s.name || 'المندوب') + ' عدّل موعد ' + r.doctorName + ': ' + dd(upd.date) + (where ? ' ' + where : '') + (upd.repNote ? ' — ' + upd.repNote : ''),
-      { repId: r.repId, from: upd.date, to: upd.date });
+    const repName = repNames_()[s.uid] || s.name || 'المندوب', to = dpLong_(upd.date) + (dpApptText_(upd) ? ' · ' + dpApptText_(upd) : '');
+    const text = repName + ' عدّل موعد ' + r.doctorName + '\nمن: ' + upd.prevAppt + '\nإلى: ' + to + (upd.repNote ? '\nملاحظة: ' + upd.repNote : '');
+    notifPush_(r.createdBy, 'plan', text, { repId: r.repId, from: upd.date, to: upd.date, change: true });
+    tgNotifyUser_(r.createdBy, '✎ ' + text);
   }
   return myDayPlan_(s);
 }

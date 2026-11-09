@@ -429,20 +429,22 @@ function dpItems(day){day=day||(S&&S.date);const a=(dpLoad()||[]).filter(x=>S&&x
    the appointment (period · facility). Optional, as a precaution: «✓ مؤكد», or «تغيير الموعد» when the rep knows it moved. */
 function dpAppt(x){
  const w=[x.periodName,x.facilityName].filter(Boolean).join(" · ");
- return (w?'<small class="dpap">🕘 '+esc(w)+'</small>':'<small class="dpap none">لم يُحدد الموعد</small>')+
+ return '<small class="dpap'+(w?'':' none')+'">'+DPI.clock+(w?esc(w):'لم يُحدد الموعد')+'</small>'+
+  ((x.purposeName||x.product)?'<small class="dpgo">'+DPI.goal+esc(x.purposeName)+(x.product?': '+esc(x.product):'')+'</small>':'')+
   (x.repState==="ok"?'<small class="dprs ok">✓ أكّدتَ الموعد</small>':x.repState==="changed"?'<small class="dprs ch">✎ عدّلتَ الموعد'+(x.repNote?': '+esc(x.repNote):'')+'</small>':'');
 }
+// One section per day, written as the weekday and the date only (never «اليوم» / «غدًا»); today's band is the dark one.
 function dayPlanCard(){
  const days=dpDays();if(!days.length)return'<div id="dpcard" hidden></div>';
- const seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS;
- const sec=day=>{const a=dpItems(day),fut=day!==S.date,k=Math.round((new Date(day+"T12:00:00")-new Date(S.date+"T12:00:00"))/864e5),done=a.filter(x=>x.done).length,nNew=a.filter(isNew).length;
-  return '<section class="dpsec'+(fut?" fut":"")+'"><div class="dph"><b>'+(k===0?"خطة اليوم":k===1?"خطة الغد":"خطة")+' · '+esc(longDate(day))+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+
+ const seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS,by=((dpLoad()||[]).find(x=>x.byName)||{}).byName;
+ const sec=day=>{const a=dpItems(day),fut=day!==S.date,done=a.filter(x=>x.done).length,nNew=a.filter(isNew).length;
+  return '<section class="dpsec'+(fut?" fut":" now")+'"><div class="dph"><b>'+DPI.cal+esc(longDate(day))+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+
    a.map(x=>'<div class="dpi'+(x.done?" ok":x.status==="failed"?" no":"")+'" data-dp="'+esc(x.id)+'">'+
-    '<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span><div class="dpt"><b>'+esc(x.doctorName)+(isNew(x)?' <span class="dpnew">جديد</span>':'')+'</b><small>'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+'</small>'+dpAppt(x)+
-    (x.note?'<small class="dpn">'+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+
-    (!x.done&&x.status!=="failed"?'<span class="dpcf">'+(x.repState!=="ok"?'<button type="button" class="lnk" data-a="ok">✓ مؤكد</button>':'')+'<button type="button" class="lnk" data-a="chg">تغيير الموعد</button></span>':'')+'</div>'+
-    (fut?'<span class="dpfut">في يومها</span>':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</section>'};
- return '<div id="dpcard" class="dpcard"><div class="dptop">🗓️ خطة الزيارات من المشرف</div>'+days.map(sec).join("")+'</div>'
+    '<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span><div class="dpt"><b>'+esc(x.doctorName)+(x.specialty?' <span class="dpsp">— '+esc(x.specialty)+'</span>':'')+(isNew(x)?' <span class="dpnew">جديد</span>':'')+'</b>'+dpAppt(x)+
+    (x.note?'<small class="dpn">'+DPI.note+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+
+    (!x.done&&x.status!=="failed"?'<span class="dpcf">'+(x.repState!=="ok"?'<button type="button" class="lnk" data-a="ok">✓ مؤكد</button>':'')+'<button type="button" class="lnk" data-a="chg">تغيير الموعد</button>'+(fut?'<span class="dpfut">الزيارة في يومها</span>':'')+'</span>':'')+'</div>'+
+    (fut?'':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</section>'};
+ return '<div id="dpcard" class="dpcard"><div class="dptop">'+DPI.cal+' خطة الزيارات من '+esc(by?by:"المشرف")+'</div>'+days.map(sec).join("")+'</div>'
 }
 function dpFind(id){const x=(dpLoad()||[]).find(i=>i.id===id);if(!x)return null;return x.date===S.date?dpItems(S.date).find(i=>i.id===id):Object.assign({},x,{future:true})}
 // «تغيير الموعد»: day (today … 6 days ahead), period, facility (the doctor's first), a note; optionally the doctor's work schedule too.

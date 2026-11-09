@@ -45,7 +45,7 @@ const T = {
   DocSchedule: ['id', 'doctorId', 'facilityId', 'facilityName', 'day', 'period', 'active', 'addedAt', 'addedBy', 'addedByName', 'endedAt', 'endedBy', 'endedByName'],
   DocAbsent: ['id', 'doctorId', 'date', 'by', 'byName', 'at', 'active'],
   DayPlans: ['id', 'repId', 'date', 'doctorId', 'doctorName', 'specialty', 'product', 'purpose', 'note', 'status', 'reason', 'active', 'createdAt', 'createdBy', 'updatedAt',
-    'draft', 'sentAt', 'sentBy', 'period', 'facilityId', 'facilityName', 'repState', 'repNote', 'repAt'], // appointment (period + facility); repState: '' | ok | changed (optional, by the rep). draft = added after the last «إرسال الخطة»: the rep does not see it yet (old rows: sent)
+    'draft', 'sentAt', 'sentBy', 'period', 'facilityId', 'facilityName', 'repState', 'repNote', 'repAt', 'edited', 'prevAppt'], // appointment (period + facility); repState: '' | ok | changed (optional, by the rep). draft = added after the last «إرسال الخطة»: the rep does not see it yet (old rows: sent)
   // Notifs: the in-app bell (Notify.js).
   Notifs: ['id', 'userId', 'type', 'text', 'ref', 'at', 'read'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],

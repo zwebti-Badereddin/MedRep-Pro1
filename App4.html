@@ -51,15 +51,31 @@ function nfPoll(force){
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")nfPoll()});
 setInterval(()=>{if(document.visibilityState==="visible")nfPoll(true)},60000);
 function nfAgo(at){const m=Math.floor((Date.now()-Date.parse(at))/60000);return m<1?"الآن":m<60?"قبل "+m+" دقيقة":m<1440?"قبل "+Math.floor(m/60)+" ساعة":new Date(at).toLocaleDateString("en-GB")}
+/* A plan notification opened: «إلى / من» and every day with its doctors and appointments (rep), or the rep's change of an
+   appointment «من … إلى …» (supervisor / admin); «فتح الخطة» goes to the plan. */
+async function nfPlanDetail(x){
+ const m=$("#modal"),close=()=>$("#ov").classList.remove("on"),r=x.ref||{};
+ const openPlan=()=>{close();if(rep.role!=="rep"){if(r.repId)DPV.rep=r.repId;if(r.from)DPV.date=r.from<dpDate(0)?dpDate(0):r.from;navGo("dp")}else{dpRefresh(true);home()}};
+ if(rep.role!=="rep"){m.innerHTML='<h3>'+esc(String(x.text).split("\n")[0])+'</h3><div class="nfdet">'+esc(String(x.text).split("\n").slice(1).join("\n"))+'</div><small class="nfago">'+esc(nfAgo(x.at))+'</small><button type="button" class="btn pri full" id="nf_go">فتح الخطة</button><button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
+  $("#ov").classList.add("on");$("#nf_go").onclick=openPlan;$("#nf_x").onclick=close;return}
+ m.innerHTML='<h3>'+esc(r.head||"خطة زيارات")+'</h3><div class="empty">جارٍ التحميل…</div>';$("#ov").classList.add("on");
+ try{MYDP=await srv("myDayPlan");localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}
+ const a=(dpLoad()||[]).filter(i=>(!r.from||i.date>=r.from)&&(!r.to||i.date<=r.to)),days=Array.from(new Set(a.map(i=>i.date))).sort();
+ m.innerHTML='<h3>'+esc(r.head||"خطة زيارات")+'</h3><div class="nfto"><span>إلى: <b>'+esc(rep.name)+'</b></span><span>من: <b>'+esc(r.by||"المشرف")+'</b></span></div>'+
+  (days.length?days.map(d=>'<div class="nfday">'+DPI.cal+esc(longDate(d))+'</div>'+a.filter(i=>i.date===d).map((i,n)=>{const w=[i.periodName,i.facilityName].filter(Boolean).join(" · ");
+   return '<div class="nfdoc"><b>'+(n+1)+'. '+esc(i.doctorName)+(i.specialty?' ('+esc(i.specialty)+')':'')+'</b>'+(w?'<span class="ap">'+esc(w)+'</span>':'')+((i.purposeName||i.product)?'<span>'+esc(i.purposeName)+(i.product?': '+esc(i.product):'')+'</span>':'')+(i.note?'<span class="nt">ملاحظة: '+esc(i.note)+'</span>':'')+'</div>'}).join("")).join("")
+   :'<div class="empty">'+esc(x.text)+'</div>')+
+  '<button type="button" class="btn pri full" id="nf_go">فتح الخطة</button><button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
+ $("#nf_go").onclick=openPlan;$("#nf_x").onclick=close;
+}
 async function nfOpen(){
  const nf=nfLoad(),m=$("#modal"),close=()=>$("#ov").classList.remove("on");
- m.innerHTML='<h3>🔔 الإشعارات</h3>'+(nf.items&&nf.items.length?'<div class="nflist">'+nf.items.map(x=>'<button type="button" class="nfi'+(x.read?"":" new")+'" data-id="'+esc(x.id)+'"><span class="nft">'+(x.type==="plan"?"🗓️":x.type==="report"?"↩️":"ℹ️")+'</span><span><b>'+esc(x.text)+'</b><small>'+esc(nfAgo(x.at))+'</small></span></button>').join("")+'</div>'
+ m.innerHTML='<h3>🔔 الإشعارات</h3>'+(nf.items&&nf.items.length?'<div class="nflist">'+nf.items.map(x=>'<button type="button" class="nfi'+(x.read?"":" new")+'" data-id="'+esc(x.id)+'"><span class="nft '+esc(x.type)+(x.ref&&x.ref.change?" chg":"")+'">'+(x.type==="plan"?DPI.cal:x.type==="report"?DPI.note:DPI.goal)+'</span><span><b>'+esc(String(x.text).split("\n")[0])+'</b>'+(String(x.text).indexOf("\n")>0?'<span class="nfx">'+esc(String(x.text).split("\n").slice(1).join("\n"))+'</span>':'')+'<small>'+esc(nfAgo(x.at))+'</small></span></button>').join("")+'</div>'
   :'<div class="empty">'+(rep.role==="rep"?"لا توجد إشعارات بعد. هنا تصلك خطط الزيارات من المشرف، والتقارير المعادة للتصحيح.":"لا توجد إشعارات بعد. هنا يصلك تعديل المندوبين لمواعيد الخطط.")+'</div>')+
   (tgOn()?'<button type="button" class="sheetbtn" id="nf_tg">تنبيهات تيليجرام (تصل والتطبيق مغلق)</button>':'')+'<button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
  $("#ov").classList.add("on");$("#nf_x").onclick=close;if($("#nf_tg"))$("#nf_tg").onclick=tgOpen;
  m.querySelectorAll(".nfi").forEach(b=>b.onclick=()=>{const x=nf.items.find(i=>i.id===b.dataset.id);close();if(!x)return;
-  if(x.type==="plan"&&rep.role!=="rep"){if(x.ref){if(x.ref.repId)DPV.rep=x.ref.repId;if(x.ref.from){DPV.date=x.ref.from;DPV.tab=0}}navGo("dp");return}
-  if(x.type==="plan"){dpRefresh(true);home()}else if(x.type==="report"&&typeof screenHistory==="function")screenHistory()});
+  if(x.type==="plan")return nfPlanDetail(x);else if(x.type==="report"&&typeof screenHistory==="function")screenHistory()});
  if(nf.unread){try{const r=await srv("notifsRead",{});NF={ver:r.ver,unread:r.unread,items:r.items};localStorage.setItem(nfKey(),JSON.stringify(NF))}catch(e){}nfPaint()}
 }
 
