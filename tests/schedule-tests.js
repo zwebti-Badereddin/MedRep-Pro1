@@ -78,6 +78,12 @@ test('places of work: a place with no days yet, places follow the schedule, a re
   assert.strictEqual(env.ctx.schOnDate_(r, 'DOC-1', today), null, 'a place without days says nothing about a date');
   assert.strictEqual(String(env.rows('DoctorWorkplaces').find(w => w.facilityId === 'FAC-1').active), 'false', 'kept, inactive');
 });
+test('speed: reading every doctor places and days reads each sheet once, however many places there are', () => {
+  const seed = SEED(); seed.DoctorWorkplaces = Array.from({ length: 60 }, (_, i) => ({ id: 'DWP-' + i, doctorId: i % 2 ? 'DOC-1' : 'DOC-2', facilityId: i % 2 ? 'FAC-1' : 'FAC-2', active: true, linkState: 'معتمد', linkedBy: 'REP-0001', linkedAt: '2026-11-0' + (1 + i % 8) + 'T10:00:00Z' }));
+  const env = makeEnv(seed), rep = env.session('REP-0001', 'rep');
+  env.resetReads(); env.call(rep, 'docSchedules', {});
+  ['Reps', 'Supervisors', 'Admins', 'DoctorWorkplaces', 'Facilities'].forEach(n => assert.ok((env.reads[n] || 0) <= 1, n + ' read ' + env.reads[n] + ' times'));
+});
 test('merging doctors moves the schedule when the kept doctor has none', () => {
   const { env, adm } = setup();
   env.call(adm, 'docScheduleSave', { doctorId: 'DOC-2', slots: [{ facilityId: 'FAC-1', day: wd, period: 'all' }] });

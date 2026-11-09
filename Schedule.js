@@ -14,17 +14,19 @@ function schRows_() { ensureSheet_('DocSchedule'); return dbAll_('DocSchedule');
 function schAbsentRows_() { ensureSheet_('DocAbsent'); return dbAll_('DocAbsent').filter(r => String(r.active) !== 'false'); }
 function schWeekday_(date) { return new Date(Date.parse(date + 'T12:00:00Z')).getUTCDay(); }
 const schOn_ = r => String(r.active) !== 'false';
-function staffOrRepName_(id) { const all = [].concat(dbAll_('Reps'), sheet_('Supervisors') ? dbAll_('Supervisors') : [], sheet_('Admins') ? dbAll_('Admins') : []); return (all.find(x => String(x.id) === String(id)) || {}).name || ''; }
+// Names of reps, supervisors and admins by id: read once per call (never once per row: that made docSchedules_ read 900 sheets).
+function peopleNames_() { const n = {}; ['Reps', 'Supervisors', 'Admins'].forEach(t => { if (sheet_(t)) dbAll_(t).forEach(x => { n[x.id] = x.name; }); }); return n; }
 
 // Every doctor's schedule: { sched: { doctorId: { slots: [{ f, n, d, p }], by, at } }, absent: { doctorId: [dates] }, today }.
 function docSchedules_(s, p) {
   const facs = dbAll_('Facilities'), out = {}, absent = {}, today = today_();
   const entry = id => out[id] || (out[id] = { slots: [], places: [], by: '', at: '' });
+  let names = null; const nameOf = id => (names || (names = peopleNames_()))[id] || '';
   (sheet_('DoctorWorkplaces') ? dbAll_('DoctorWorkplaces') : []).forEach(w => {
     if (!linkApproved_(w) || !w.doctorId) return;
     const f = facilityById_(w.facilityId, facs); if (!f || f.status === 'معطل') return;
     const o = entry(w.doctorId); if (!o.places.some(x => x.f === String(f.id))) o.places.push({ f: String(f.id), n: f.name });
-    if (w.linkedAt && String(w.linkedAt) > o.at && w.linkedBy) { o.at = String(w.linkedAt); o.by = staffOrRepName_(w.linkedBy); }
+    if (w.linkedAt && String(w.linkedAt) > o.at && w.linkedBy) { o.at = String(w.linkedAt); o.by = nameOf(w.linkedBy); }
   });
   schRows_().forEach(r => {
     const o = entry(r.doctorId);
