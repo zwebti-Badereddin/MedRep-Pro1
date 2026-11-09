@@ -35,6 +35,9 @@ const T = {
   SampleMoves: ['id', 'repId', 'product', 'qty', 'type', 'note', 'date', 'createdAt', 'createdBy'],
   // ClientErrors: short error reports from the phones (Health.js): no report content, at most the last 5,000 rows.
   ClientErrors: ['ts', 'userId', 'role', 'kind', 'screen', 'msg', 'ver', 'ua'],
+  // Sales / SalesAlias: distributor sales imported from Excel and the remembered name links (Sales.js).
+  Sales: ['id', 'batch', 'date', 'region', 'customer', 'product', 'qty', 'price', 'total', 'pharmacyId', 'productId', 'importedAt', 'importedBy'],
+  SalesAlias: ['kind', 'raw', 'targetId', 'createdAt', 'createdBy'],
   TgLinks: ['userId', 'role', 'name', 'chatId', 'linkedAt'],
   Monthly: ['id', 'ym', 'repId', 'repName', 'score', 'compliance', 'onTime', 'expected', 'visits', 'verified', 'gpsTotal', 'kpis', 'computedAt']
 };

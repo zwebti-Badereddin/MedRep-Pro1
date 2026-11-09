@@ -6,9 +6,10 @@ function drawY(){const y=CM.yr;if(!y||!$("#cyr"))return;const rows=CM.data.reps.
 /* ----- records review: new / all / disabled; review, edit(rename), merge, disable ----- */
 let MS={ent:"Doctors",rows:[]};
 function tabM(){
- $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans">خطط الزيارات</button><button class="btn" data-e="Stock">مخزون العينات</button><button class="btn" data-e="Comp">المنافسون</button><button class="btn" data-e="PhAlerts">تنبيهات الصيدليات</button></div>
+ $("#av").innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="btn" data-e="Doctors">الأطباء</button><button class="btn" data-e="Facilities">المنشآت</button><button class="btn" data-e="Pharmacies">الصيدليات</button><button class="btn" data-e="Reps">المندوبون</button><button class="btn" data-e="Plans">خطط الزيارات</button><button class="btn" data-e="Stock">مخزون العينات</button><button class="btn" data-e="Sales">المبيعات</button><button class="btn" data-e="Comp">المنافسون</button><button class="btn" data-e="PhAlerts">تنبيهات الصيدليات</button></div>
  <div class="two" style="margin-top:8px"><select id="mf"><option value="new">المضافة حديثًا</option><option value="all">الكل</option><option value="off">المعطّلة</option></select><input id="mq" placeholder="بحث بالاسم"></div><div id="ml" style="margin-top:12px"></div>`;
  document.querySelectorAll("[data-e]").forEach(b=>{b.classList.toggle("pri",b.dataset.e===MS.ent);b.onclick=()=>{MS.ent=b.dataset.e;tabM()}});
+ if(MS.ent==="Sales"){$("#mf").parentNode.outerHTML='<div id="slv" style="margin-top:10px"></div>';$("#ml").remove();salesView("slv");return}
  if(MS.ent==="Comp"||MS.ent==="PhAlerts"){$("#mf").parentNode.outerHTML='<div id="mkv" style="margin-top:10px"></div>';$("#ml").remove();(MS.ent==="Comp"?compView:phAlertsView)("mkv");return}
  if(MS.ent==="Stock"){$("#mf").parentNode.outerHTML='<div id="skv" style="margin-top:10px"></div>';$("#ml").remove();stockView("skv",false);return}
  if(MS.ent==="Plans"){$("#mf").parentNode.outerHTML='<div id="plv" style="margin-top:10px"></div>';$("#ml").remove();planView("plv",false);return}
@@ -459,12 +460,15 @@ const EN_PROD_H=["Product","Detailing","Reminders","Samples (units)","Pharmacy v
 const EN_COMP_H=["Competitor product","Mentions","By type"];
 const enRepRow=x=>[x.name,x.workDays,x.onTime+" / "+x.expected,x.compliance,x.doctorVisits,x.pharmacyVisits,x.doctorVisits+x.pharmacyVisits,x.uniqueDoctors,x.coverage==null?"—":x.coverage,x.score==null?"—":x.score];
 const enProdRow=x=>[x.name,x.detailing,x.reminders,x.samples,x.pharmacyVisits,x.orders,x.orderedUnits||0];
+const enSalesH=r=>r.hasSales?EN_PROD_H.concat(["Sales (units)","Sales (LYD)"]):EN_PROD_H;
+const enSalesRow=(r,x)=>r.hasSales?enProdRow(x).concat([x.salesUnits||0,x.salesValue||0]):enProdRow(x);
+const enSalesTot=(r,t)=>{const a=["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders,t.orderedUnits||0];return r.hasSales?a.concat([t.salesUnits||0,t.salesValue||0]):a};
 const enCompRow=x=>[x.product,x.mentions,x.types];
 const EN_NOTES=["Visits are counted from submitted and approved daily reports only.","Working days exclude official holidays and approved leave.","Reports on time: daily reports submitted before the company's closing hour, out of the working days required.","Doctors reached: number of different doctors visited (names are not shared).","Plan coverage: required visits per doctor class (A/B/C) achieved, capped per doctor; — means no approved visit plan.","Detailing / reminders: doctor visits where the product was presented or reminded. Samples: free sample units handed to doctors."];
 function enCsv(r){const t=r.totals;
  return [[r.company],["Monthly Medical Promotion Report — "+enMonth(r.ym)],["Period",r.from+" to "+r.to],["Generated",r.generatedAt.slice(0,10)],[],
   ["1. Medical representatives"],EN_REP_H].concat(r.reps.map(enRepRow),[["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""],[],
-  ["2. Product activity"],EN_PROD_H],r.products.map(enProdRow),[["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders,t.orderedUnits||0],[]],(r.competitors||[]).length?[["3. Competitor intelligence"],EN_COMP_H].concat(r.competitors.map(enCompRow),[[]]):[],[["Notes"]],EN_NOTES.map(x=>[x]))}
+  ["2. Product activity"],enSalesH(r)],r.products.map(x=>enSalesRow(r,x)),[enSalesTot(r,t),[]],(r.competitors||[]).length?[["3. Competitor intelligence"],EN_COMP_H].concat(r.competitors.map(enCompRow),[[]]):[],[["Notes"]],EN_NOTES.map(x=>[x]))}
 function enShow(r){
  const t=r.totals,tbl=(h,rows,tot)=>'<table><thead><tr>'+h.map(x=>'<th>'+esc(x)+'</th>').join("")+'</tr></thead><tbody>'+rows.map(c=>'<tr>'+c.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>').join("")+'</tbody>'+(tot?'<tfoot><tr>'+tot.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr></tfoot>':'')+'</table>';
  const old=$("#enrep");if(old)old.remove();
@@ -473,7 +477,7 @@ function enShow(r){
   '<div class="enhead"><div><h1>'+esc(r.company)+'</h1><h2>Monthly Medical Promotion Report</h2></div><div class="enmeta"><b>'+esc(enMonth(r.ym))+'</b><span>'+esc(r.from)+' to '+esc(r.to)+'</span><span>Generated '+esc(r.generatedAt.slice(0,10))+'</span></div></div>'+
   '<div class="enkpi"><div><b>'+t.reps+'</b><span>Representatives</span></div><div><b>'+t.doctorVisits+'</b><span>Doctor visits</span></div><div><b>'+t.pharmacyVisits+'</b><span>Pharmacy visits</span></div><div><b>'+t.samples+'</b><span>Sample units</span></div></div>'+
   '<h3>1. Medical representatives</h3>'+tbl(EN_REP_H,r.reps.map(enRepRow),["Total","","","",t.doctorVisits,t.pharmacyVisits,t.doctorVisits+t.pharmacyVisits,"","",""])+
-  '<h3>2. Product activity</h3>'+tbl(EN_PROD_H,r.products.map(enProdRow),["Total",t.detailing,t.reminders,t.samples,t.pharmacyVisits,t.orders,t.orderedUnits||0])+((r.competitors||[]).length?'<h3>3. Competitor intelligence</h3>'+tbl(EN_COMP_H,r.competitors.map(enCompRow)):'')+
+  '<h3>2. Product activity</h3>'+tbl(enSalesH(r),r.products.map(x=>enSalesRow(r,x)),enSalesTot(r,t))+((r.competitors||[]).length?'<h3>3. Competitor intelligence</h3>'+tbl(EN_COMP_H,r.competitors.map(enCompRow)):'')+
   '<h3>Notes</h3><ul class="ennotes">'+EN_NOTES.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><div class="enfoot">Prepared with MedRep Pro</div></div>';
  document.body.appendChild(el);document.body.classList.add("enprint");
  const close=()=>{el.remove();document.body.classList.remove("enprint")};
@@ -521,5 +525,62 @@ async function phAlertsView(hostId){
  host().innerHTML='<div class="empty" style="margin-bottom:8px">آخر ما سجّله المندوبون لكل منتج في كل صيدلية، من '+esc(r.from)+' إلى '+esc(r.to)+': المنتجات النافدة، أو التي تنتهي صلاحيتها خلال 90 يومًا.</div>'+
   (r.alerts.length?r.alerts.map(a=>'<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(a.pharmacy)+'</b><span class="st '+(a.st==="out"?"s4":"s1")+'">'+esc(a.reasons.join(" · "))+'</span></div><div style="color:var(--mut);font-size:13px">'+esc(a.product)+' · '+esc(a.stName)+(a.qty!=null?' ('+a.qty+')':'')+(a.exp?' · صلاحية '+esc(a.exp):'')+' · '+esc(a.rep)+' · '+esc(a.date)+(a.loc?' · '+esc(a.loc):'')+'</div></div>').join("")
   :'<div class="empty">لا توجد تنبيهات: لم يُسجَّل نفاد ولا صلاحية قريبة في هذه الفترة.</div>');
+}
+
+/* ===== Distributor sales against visits (admin › السجلات › المبيعات). Period = the من/إلى of the admin screen. ===== */
+let slSeq=0;
+const nf=n=>(+n||0).toLocaleString("en-US",{maximumFractionDigits:2});
+async function salesView(hostId){
+ const seq=++slSeq,host=()=>seq===slSeq?$("#"+hostId):null;if(!host())return;host().innerHTML='<div class="empty">جارٍ التحميل…</div>';
+ let r;try{r=await srv("salesAnalysis",{from:$("#fa")?$("#fa").value:"",to:$("#fb")?$("#fb").value:""})}catch(e){if(host())host().innerHTML='<div class="empty">'+esc(e.message)+'</div>';return}if(!host())return;
+ const t=r.totals,tb=(h,rows)=>'<div style="overflow-x:auto"><table class="kt sktab"><tr>'+h.map(x=>'<th>'+x+'</th>').join("")+'</tr>'+rows.join("")+'</table></div>';
+ const lst=(title,cls,a,fmt,empty)=>'<details class="sldet"'+(a.length?" open":"")+'><summary><span class="slt '+cls+'">'+title+'</span><b>'+a.length+'</b></summary>'+(a.length?a.slice(0,60).map(fmt).join(""):'<div class="empty">'+empty+'</div>')+(a.length>60?'<div class="empty">… و'+(a.length-60)+' غيرها</div>':'')+'</details>';
+ host().innerHTML='<div class="two"><button class="btn pri" id="sl_imp">استيراد مبيعات من Excel</button><button class="btn" id="sl_bat">الدفعات المستوردة ('+r.batches.length+')</button></div>'+
+  '<div class="empty" style="margin:8px 0">من '+esc(r.from)+' إلى '+esc(r.to)+' · المبيعات من ملفات الموزّع، والزيارات من التقارير المرسلة والمعتمدة.</div>'+
+  (t.rows?'<div class="slkpi"><div><b>'+nf(t.qty)+'</b><span>علبة مباعة</span></div><div><b>'+nf(t.value)+'</b><span>د.ل</span></div><div><b>'+r.pharmacies.both.length+'</b><span>صيدلية زُرت وتشتري</span></div><div><b>'+r.pharmacies.buyNoVisit.length+'</b><span>تشتري ولم تُزر</span></div></div>'+
+   (t.unlinked?'<div class="skover" style="border-color:#f2d27a;background:#fff8e6"><b style="color:#8a5a00">'+t.unlinked+' سطر مبيعات لعملاء غير مربوطين بصيدلياتنا</b><div>اربطهم عند الاستيراد القادم، أو أضف الصيدليات إلى السجل.</div></div>':'')+
+   '<div class="sec"><h3>حسب المنتج</h3></div>'+tb(["المنتج","الكمية","القيمة (د.ل)","ترويج عند الأطباء","زيارات صيدليات"],r.products.map(p=>'<tr><td>'+esc(p.product)+'</td><td>'+nf(p.qty)+'</td><td>'+nf(p.value)+'</td><td>'+p.doctorPromo+'</td><td>'+p.pharmacyVisits+'</td></tr>'))+
+   '<div class="sec"><h3>حسب المنطقة</h3></div>'+tb(["المنطقة","الكمية","القيمة (د.ل)","صيدليات تشتري","منها زُرت","الزيارات"],r.regions.map(g=>'<tr><td>'+esc(g.region)+'</td><td>'+nf(g.qty)+'</td><td>'+nf(g.value)+'</td><td>'+g.pharmacies+'</td><td>'+g.visitedPharmacies+'</td><td>'+g.visits+'</td></tr>'))+
+   '<div class="sec"><h3>الصيدليات</h3></div>'+
+   lst("تشتري ولم تُزر — فرصة","s1",r.pharmacies.buyNoVisit,x=>'<div class="slrow"><b>'+esc(x.name)+'</b>'+(x.linked?'':' <span class="st s4">غير مربوطة</span>')+'<span>'+esc(x.region||"")+' · '+nf(x.qty)+' علبة · '+nf(x.value)+' د.ل</span></div>',"لا يوجد.")+
+   lst("زُرت ولم تشترِ — تحتاج متابعة","s4",r.pharmacies.visitNoBuy,x=>'<div class="slrow"><b>'+esc(x.name)+'</b><span>'+x.visits+' زيارة · '+esc(x.reps)+'</span></div>',"لا يوجد.")+
+   lst("زُرت وتشتري","s3",r.pharmacies.both,x=>'<div class="slrow"><b>'+esc(x.name)+'</b><span>'+nf(x.qty)+' علبة · '+nf(x.value)+' د.ل · '+x.visits+' زيارة · '+esc(x.reps)+'</span></div>',"لا يوجد.")+
+   '<div class="sec"><h3>حسب المندوب</h3></div>'+tb(["المندوب","صيدليات زارها","منها تشتري","مبيعاتها (علبة)","القيمة (د.ل)"],r.reps.map(x=>'<tr><td>'+esc(x.rep)+'</td><td>'+x.visitedPharmacies+'</td><td>'+x.buying+'</td><td>'+nf(x.qty)+'</td><td>'+nf(x.value)+'</td></tr>'))+
+   '<div class="empty" style="margin-top:8px">«مبيعات المندوب» = مبيعات الصيدليات التي زارها في الفترة، لا تعني أنه وحده سببها.</div>'
+  :'<div class="empty">لا توجد مبيعات مستوردة في هذه الفترة. اضغط «استيراد مبيعات من Excel» والصق ملف الموزّع.</div>');
+ $("#sl_imp").onclick=()=>salesImportDlg(hostId);
+ $("#sl_bat").onclick=()=>salesBatchesDlg(r.batches,hostId);
+}
+function salesImportDlg(hostId){
+ $("#modal").innerHTML='<h3>استيراد مبيعات الموزّع</h3><div class="empty" style="text-align:right">انسخ من Excel الأعمدة بهذا الترتيب والصقها هنا: <b>التاريخ · المنطقة · العميل / الصيدلية · الصنف · المادة الفعالة (اختياري) · الكمية · سعر الوحدة · الإجمالي</b>. سطر العناوين وسطر المجموع يُتجاهلان.</div>'+
+  '<textarea id="sl_t" rows="8" dir="auto"></textarea><div id="sl_r"></div><div class="err" id="sl_e"></div><div class="mfoot"><button type="button" class="btn" id="cx">إغلاق</button><button type="button" class="btn pri" id="sv">معاينة</button></div>';
+ $("#ov").classList.add("on");$("#sl_t").focus();
+ let pre=null;
+ $("#cx").onclick=()=>$("#ov").classList.remove("on");
+ $("#sl_t").oninput=()=>{pre=null;$("#sv").textContent="معاينة";$("#sl_r").innerHTML=""};
+ $("#sv").onclick=async()=>{const b=$("#sv"),rows=parsePasted($("#sl_t").value);$("#sl_e").textContent="";if(!rows.some(r=>r.join("").trim())){$("#sl_e").textContent="الصق أسطر الملف أولًا.";return}
+  b.disabled=true;
+  try{
+   if(!pre){pre=await srv("salesImport",{rows:rows});
+    const opt=(list,lbl)=>'<option value="">— '+lbl+' —</option>'+list.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+(x.loc?' · '+esc(x.loc):'')+'</option>').join("");
+    $("#sl_r").innerHTML='<div class="imres"><div class="ims"><span>سيُضاف '+pre.add+'</span><span>مكرر '+pre.dup+'</span><span>غير صالح '+pre.invalid.length+'</span></div>'+
+     '<div>'+nf(pre.qty)+' علبة · '+nf(pre.value)+' د.ل · من '+esc(pre.from)+' إلى '+esc(pre.to)+'</div><div>طابق صيدلياتنا: '+pre.matchedPh+' من '+pre.add+' · طابق منتجاتنا: '+pre.matchedProd+' من '+pre.add+'</div>'+
+     (pre.unmatched.ph.length?'<b style="display:block;margin-top:10px">عملاء لم يطابقوا صيدلية عندنا — اربطهم مرة واحدة ويُحفظ الربط:</b>'+pre.unmatched.ph.map((u,i)=>'<label class="slmap">'+esc(u.raw)+' <small>'+esc(u.region||"")+' · '+u.rows+' سطر</small><select data-ph="'+i+'">'+opt(pre.pharmacies,"بدون ربط")+'</select></label>').join(""):'')+
+     (pre.unmatched.prod.length?'<b style="display:block;margin-top:10px">أصناف لم تطابق منتجاتنا:</b>'+pre.unmatched.prod.map((u,i)=>'<label class="slmap">'+esc(u.raw)+' <small>'+u.rows+' سطر</small><select data-pr="'+i+'">'+opt(pre.products,"بدون ربط")+'</select></label>').join(""):'')+
+     (pre.invalid.length?'<b style="display:block;margin-top:10px">أسطر غير صالحة:</b><ul>'+pre.invalid.slice(0,30).map(x=>'<li>سطر '+x.line+': '+esc(x.reason)+'</li>').join("")+'</ul>':'')+'</div>';
+    if(pre.add){b.textContent="استيراد "+pre.add+" سطر"}else $("#sl_e").textContent="لا يوجد جديد لاستيراده.";
+    return}
+   const map={ph:{},prod:{}};
+   document.querySelectorAll("[data-ph]").forEach(s=>{if(s.value)map.ph[pre.unmatched.ph[+s.dataset.ph].raw]=s.value});
+   document.querySelectorAll("[data-pr]").forEach(s=>{if(s.value)map.prod[pre.unmatched.prod[+s.dataset.pr].raw]=s.value});
+   const out=await srv("salesImport",{rows:rows,commit:true,map:map});
+   $("#ov").classList.remove("on");toast("تم استيراد "+out.added+" سطر");salesView(hostId)}
+  catch(e){$("#sl_e").textContent=e.message}finally{b.disabled=false}};
+}
+function salesBatchesDlg(list,hostId){
+ $("#modal").innerHTML='<h3>الدفعات المستوردة</h3>'+(list.length?list.map(b=>'<div class="row" style="display:block" data-b="'+esc(b.batch)+'"><b>'+esc(b.from)+' ← '+esc(b.to)+'</b><div style="color:var(--mut);font-size:13px">'+b.rows+' سطر · '+nf(b.qty)+' علبة · '+nf(b.value)+' د.ل · استُوردت '+esc(String(b.importedAt).slice(0,10))+'</div><div class="acts"><button class="mini" data-del="1">حذف الدفعة كاملة</button></div></div>').join(""):'<div class="empty">لا توجد دفعات.</div>')+'<button class="sheetbtn" id="sb_x">إغلاق</button>';
+ $("#ov").classList.add("on");$("#sb_x").onclick=()=>$("#ov").classList.remove("on");
+ document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(!b.dataset.c){b.dataset.c=1;b.textContent="تأكيد الحذف؟";return}b.disabled=true;
+  try{const n=await srv("salesDeleteBatch",{batch:b.closest(".row").dataset.b});$("#ov").classList.remove("on");toast("حُذف "+n+" سطر");salesView(hostId)}catch(e){b.disabled=false;toast(e.message)}});
 }
 </script>

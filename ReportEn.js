@@ -60,12 +60,13 @@ function reportEn_(s, p) {
     byRep[k].d.concat(byRep[k].p).forEach(v => (v.comp || []).forEach(c => { const key = normName_(c.p) || c.p, b = comp[key] || (comp[key] = { product: c.p, mentions: 0, types: {} }); b.mentions++; const t = REPORT_EN_COMP[c.t] || REPORT_EN_COMP.other; b.types[t] = (b.types[t] || 0) + 1; }));
   });
   // Products with no activity stay in the table (zeros): the principal sees its whole range.
-  const products = order.map(k => Object.assign(prodRows[k], { name: enByName[k] || k }));
+  const sold = salesByProduct_(from, to); Object.keys(sold).forEach(n => row(n));
+  const products = order.map(k => Object.assign(prodRows[k], { name: enByName[k] || k, salesUnits: sold[k] ? Math.round(sold[k].qty * 100) / 100 : 0, salesValue: sold[k] ? Math.round(sold[k].value * 100) / 100 : 0 }));
   const sum = (a, k) => a.reduce((n, r) => n + (+r[k] || 0), 0);
   audit_(s, 'report_en', ym);
   return { ym: ym, from: from, to: to, company: names.company || st.companyName || '', generatedAt: new Date().toISOString(),
-    reps: repRows, products: products,
+    reps: repRows, products: products, hasSales: Object.keys(sold).length > 0,
     competitors: Object.keys(comp).map(k => ({ product: comp[k].product, mentions: comp[k].mentions, types: Object.keys(comp[k].types).map(t => t + ' ' + comp[k].types[t]).join(', ') })).sort((a, b) => b.mentions - a.mentions),
     totals: { doctorVisits: sum(repRows, 'doctorVisits'), pharmacyVisits: sum(repRows, 'pharmacyVisits'), reps: repRows.length,
-      detailing: sum(products, 'detailing'), reminders: sum(products, 'reminders'), samples: sum(products, 'samples'), orders: sum(products, 'orders'), orderedUnits: sum(products, 'orderedUnits') } };
+      detailing: sum(products, 'detailing'), reminders: sum(products, 'reminders'), samples: sum(products, 'samples'), orders: sum(products, 'orders'), orderedUnits: sum(products, 'orderedUnits'), salesUnits: sum(products, 'salesUnits'), salesValue: Math.round(sum(products, 'salesValue') * 100) / 100 } };
 }
