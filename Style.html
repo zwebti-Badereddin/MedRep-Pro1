@@ -379,4 +379,6 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
  .cap{height:46px;min-width:46px;padding:0;border:0;border-radius:99px;background:transparent;color:#cfe3e3;display:flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}.cap span{display:none}.cap.on{background:var(--mint,#7fe0d4);color:var(--ink2,#0c2b2d);padding:0 16px}.cap.on span{display:inline}
 }
 @media print{.snav,.mtop,.capsule{display:none!important}}
+/* On a computer, dialogs open in the middle of the window with a margin all round (a bottom sheet glued to the window edge can sit behind the desktop taskbar); phones keep the bottom sheet. */
+@media (min-width:700px){.ov{align-items:center;padding:24px;box-sizing:border-box}.modal{border-radius:22px;max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);padding-bottom:16px}.modal:before{display:none}}
 </style>
