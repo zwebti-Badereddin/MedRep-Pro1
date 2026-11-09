@@ -113,7 +113,7 @@ function stopGeo(){try{if(GW!=null)navigator.geolocation.clearWatch(GW)}catch(e)
 function showGeo(){if(typeof npStatus==="function")npStatus();const e=$("#geo");if(!e)return;e.className="gpspill"+(GEO?" ok":"");e.textContent=GEO?"موقعك محدّد ±"+GEO.acc+" م":GEO_FAILED?"تعذّر تحديد الموقع":"جارٍ تحديد الموقع…"}
 function consent(){try{if(localStorage.getItem("mr_gps_ok"))return}catch(e){}
  $("#modal").innerHTML='<h3>تسجيل الموقع</h3><p style="line-height:1.8">يسجّل النظام موقعك عند إضافة كل زيارة للتحقق من وجودك في مكانها، ولا يطّلع عليه إلا المدير. سيطلب الهاتف إذن الموقع، فاختر «السماح». لا يمنع غياب الموقع حفظ الزيارة.</p><button class="btn pri full" id="okc">موافق</button>';
- $("#ov").classList.add("on");$("#okc").onclick=()=>{try{localStorage.setItem("mr_gps_ok","1")}catch(e){}$("#ov").classList.remove("on");startGeo();setTimeout(stopGeo,4000)}}
+ $("#ov").classList.add("on","center");$("#okc").onclick=()=>{try{localStorage.setItem("mr_gps_ok","1")}catch(e){}$("#ov").classList.remove("on","center");startGeo();setTimeout(stopGeo,4000)}} // centred on every screen: the button never hides behind the phone browser bar
 const $=s=>document.querySelector(s),esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DAYS=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 let rep=null,S=null;
