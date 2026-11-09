@@ -146,6 +146,7 @@ function form(k,idx){
     FCH=workplaceChoices(r,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);
     const selected=pickWorkplace(FCH,cur);
     if(selected){$("#f_workplace").value=selected.value;$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=selected.link?"سيُطلب ربط الطبيب بهذه المنشأة المسجلة عند حفظ الزيارة.":selected.w.reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
+    else if(!cur.place&&pre&&pre.facilityId&&[].some.call($("#f_workplace").options,o=>o.value===String(pre.facilityId))){$("#f_workplace").value=String(pre.facilityId);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent="حسب موعد الخطة."+(FCH.own.some(w=>String(w.id)===String(pre.facilityId))?"":" سيُطلب ربط الطبيب بهذه المنشأة.")}
     else if(!cur.place&&typeof schPickNow==="function"&&schPickNow(r.id)&&[].some.call($("#f_workplace").options,o=>o.value===String(schPickNow(r.id).f))){const sl=schPickNow(r.id);$("#f_workplace").value=String(sl.f);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent="حسب جدول الطبيب: "+sl.n+" "+SCH_P[sl.p]+" اليوم."+(FCH.own.some(w=>String(w.id)===String(sl.f))?"":" سيُطلب ربط الطبيب بهذه المنشأة.")}
     else if(FCH.own.length&&!cur.place){$("#f_workplace").value=String(FCH.own[0].id);$("#f_newplace_wrap").style.display="none";$("#f_place_status").textContent=FCH.own[0].reviewed?"":"تنبيه: موقع هذه المنشأة بانتظار اعتماد الإدارة."}
     else{$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent=cur.place?"مكان الزيارة السابق غير مرتبط بسجل منشأة؛ سيُرسل كاقتراح منشأة جديدة لتراجعه الإدارة.":"اختر منشأة مسجلة أو اقترح منشأة جديدة."}
@@ -424,19 +425,51 @@ let DPTAB=""; // the day shown in the plan card (today by default)
 function dpDays(){const a=dpLoad()||[];return Array.from(new Set(a.filter(x=>S&&x.date>=S.date).map(x=>x.date))).sort().slice(0,3)}
 function dpItems(day){day=day||(S&&S.date);const a=(dpLoad()||[]).filter(x=>S&&x.date===day);if(day!==(S&&S.date))return a.map(x=>Object.assign({},x,{done:false,future:true}));
  return a.map(x=>Object.assign({},x,{done:x.status==="done"||(S.docs||[]).some(v=>v.planId===x.id||String(v.doctorId)===String(x.doctorId)||(!v.doctorId&&norm(v.name)===norm(x.doctorName)))}))}
+/* The supervisor's plan on the rep's home: one section per day (today first, then the coming days), never mixed. Each doctor shows
+   the appointment (period · facility). Optional, as a precaution: «✓ مؤكد», or «تغيير الموعد» when the rep knows it moved. */
+function dpAppt(x){
+ const w=[x.periodName,x.facilityName].filter(Boolean).join(" · ");
+ return (w?'<small class="dpap">🕘 '+esc(w)+'</small>':'<small class="dpap none">لم يُحدد الموعد</small>')+
+  (x.repState==="ok"?'<small class="dprs ok">✓ أكّدتَ الموعد</small>':x.repState==="changed"?'<small class="dprs ch">✎ عدّلتَ الموعد'+(x.repNote?': '+esc(x.repNote):'')+'</small>':'');
+}
 function dayPlanCard(){
  const days=dpDays();if(!days.length)return'<div id="dpcard" hidden></div>';
- if(days.indexOf(DPTAB)<0)DPTAB=days.indexOf(S.date)>=0?S.date:days[0];
- const a=dpItems(DPTAB),fut=DPTAB!==S.date,dn=d=>{const x=new Date(d+"T12:00:00"),t=new Date(S.date+"T12:00:00"),k=Math.round((x-t)/864e5);return (k===0?"اليوم":k===1?"غدًا":["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"][x.getDay()])+" "+x.getDate()+"/"+(x.getMonth()+1)},kk=Math.round((new Date(DPTAB+"T12:00:00")-new Date(S.date+"T12:00:00"))/864e5);
- const done=a.filter(x=>x.done).length,seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS,nNew=a.filter(isNew).length;
- return '<div id="dpcard" class="dpcard"><div class="dph"><b>'+(kk===0?"خطة اليوم من المشرف":kk===1?"خطة الغد من المشرف":"خطة زيارات من المشرف")+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+'<div class="dpdt">📅 '+esc(longDate(DPTAB))+'</div>'+(days.length>1?'<div class="dptabs" role="tablist">'+days.map(d=>{const n=(dpLoad()||[]).filter(x=>x.date===d).length;return '<button type="button" role="tab" class="dptab'+(d===DPTAB?" on":"")+'" data-day="'+esc(d)+'" aria-selected="'+(d===DPTAB)+'">'+esc(dn(d))+' <b>'+n+'</b></button>'}).join("")+'</div>':'')+a.map(x=>'<div class="dpi'+(x.done?" ok":x.status==="failed"?" no":"")+'" data-dp="'+esc(x.id)+'">'+
-  '<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span><div class="dpt"><b>'+esc(x.doctorName)+(isNew(x)?' <span class="dpnew">جديد</span>':'')+'</b><small>'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+'</small>'+(x.note?'<small class="dpn">'+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+'</div>'+
-  (x.future?'<span class="dpfut">في يومها</span>':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</div>'
+ const seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS;
+ const sec=day=>{const a=dpItems(day),fut=day!==S.date,k=Math.round((new Date(day+"T12:00:00")-new Date(S.date+"T12:00:00"))/864e5),done=a.filter(x=>x.done).length,nNew=a.filter(isNew).length;
+  return '<section class="dpsec'+(fut?" fut":"")+'"><div class="dph"><b>'+(k===0?"خطة اليوم":k===1?"خطة الغد":"خطة")+' · '+esc(longDate(day))+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+
+   a.map(x=>'<div class="dpi'+(x.done?" ok":x.status==="failed"?" no":"")+'" data-dp="'+esc(x.id)+'">'+
+    '<span class="dav dfig" aria-hidden="true">'+DOC_FIG+'</span><div class="dpt"><b>'+esc(x.doctorName)+(isNew(x)?' <span class="dpnew">جديد</span>':'')+'</b><small>'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+'</small>'+dpAppt(x)+
+    (x.note?'<small class="dpn">'+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+
+    (!x.done&&x.status!=="failed"?'<span class="dpcf">'+(x.repState!=="ok"?'<button type="button" class="lnk" data-a="ok">✓ مؤكد</button>':'')+'<button type="button" class="lnk" data-a="chg">تغيير الموعد</button></span>':'')+'</div>'+
+    (fut?'<span class="dpfut">في يومها</span>':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</section>'};
+ return '<div id="dpcard" class="dpcard"><div class="dptop">🗓️ خطة الزيارات من المشرف</div>'+days.map(sec).join("")+'</div>'
+}
+function dpFind(id){const x=(dpLoad()||[]).find(i=>i.id===id);if(!x)return null;return x.date===S.date?dpItems(S.date).find(i=>i.id===id):Object.assign({},x,{future:true})}
+// «تغيير الموعد»: day (today … 6 days ahead), period, facility (the doctor's first), a note; optionally the doctor's work schedule too.
+function dpChange(x){
+ const doc=(CFG.docs||[]).find(d=>String(d.id)===String(x.doctorId))||{},own=(doc.workplaces||[]).filter(w=>String(w.active)!=="false"),ids=new Set(own.map(w=>String(w.id)));
+ const others=(CFG.facilities||[]).filter(w=>String(w.active)!=="false"&&!ids.has(String(w.id))),opt=w=>'<option value="'+esc(w.id)+'"'+(String(w.id)===String(x.facilityId)?" selected":"")+'>'+esc(w.workplace)+'</option>';
+ const days=Array.from({length:7},(_,i)=>{const d=new Date(S.date+"T12:00:00");d.setDate(d.getDate()+i);return isoD(d)});
+ let per=x.period||"am";
+ $("#modal").innerHTML='<h3>تغيير موعد '+esc(x.doctorName)+'</h3><p class="tgtx">إذا عرفت أن موعد الطبيب أو مكانه تغيّر. يصل التعديل إلى المشرف.</p>'+
+  '<label>اليوم</label><select id="dc_d">'+days.map(d=>'<option value="'+d+'"'+(d===x.date?" selected":"")+'>'+esc(longDate(d))+'</option>').join("")+'</select>'+
+  '<label>الفترة</label><div class="seper">'+Object.keys(SCH_P).map(p=>'<button type="button" class="sper'+(p===per?" on":"")+'" data-p="'+p+'">'+SCH_P[p]+'</button>').join("")+'</div>'+
+  '<label>المكان</label><select id="dc_f"><option value="">— كما هو —</option>'+(own.length?'<optgroup label="منشآت الطبيب">'+own.map(opt).join("")+'</optgroup>':'')+(others.length?'<optgroup label="منشآت أخرى">'+others.map(opt).join("")+'</optgroup>':'')+'</select>'+
+  '<label>ملاحظة (اختياري)</label><input id="dc_n" maxlength="200" placeholder="مثلًا: غيّر مناوبته إلى المساء">'+
+  '<label class="chk"><input type="checkbox" id="dc_s"> تغيير دائم: حدّث جدول أيام عمل الطبيب أيضًا</label><div class="err" id="dc_e"></div>'+
+  '<div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">حفظ الموعد</button></div>';
+ $("#ov").classList.add("on");$("#cx").onclick=()=>$("#ov").classList.remove("on");
+ document.querySelectorAll("#modal .sper").forEach(b=>b.onclick=()=>{per=b.dataset.p;document.querySelectorAll("#modal .sper").forEach(e=>e.classList.toggle("on",e===b))});
+ $("#sv").onclick=async()=>{const b=$("#sv");b.disabled=true;$("#dc_e").textContent="";
+  try{MYDP=await srv("dayPlanConfirm",{id:x.id,date:$("#dc_d").value,period:per,facilityId:$("#dc_f").value,note:$("#dc_n").value,updateSchedule:$("#dc_s").checked});
+   try{localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}if($("#dc_s").checked&&typeof schLoad==="function")schLoad(true);$("#ov").classList.remove("on");toast("حُفظ الموعد وأُبلغ المشرف");home()}
+  catch(e){b.disabled=false;$("#dc_e").textContent=e.message}};
 }
 function dpBind(){
- document.querySelectorAll("#dpcard .dptab").forEach(b=>b.onclick=()=>{DPTAB=b.dataset.day;const c=$("#dpcard");if(c){c.outerHTML=dayPlanCard();dpBind()}});
- document.querySelectorAll("#dpcard [data-a]").forEach(b=>b.onclick=()=>{const x=dpItems().find(i=>i.id===b.closest("[data-dp]").dataset.dp);if(!x)return;
-  if(b.dataset.a==="go"){DPRE={rec:(CFG.docs||[]).find(d=>String(d.id)===String(x.doctorId))||{id:x.doctorId,name:x.doctorName,specialty:x.specialty,workplaces:[]},product:x.product,purpose:x.purpose,note:x.note,planId:x.id};form("d")}
+ document.querySelectorAll("#dpcard [data-a]").forEach(b=>b.onclick=()=>{const x=dpFind(b.closest("[data-dp]").dataset.dp);if(!x)return;
+  if(b.dataset.a==="ok"){b.disabled=true;srv("dayPlanConfirm",{id:x.id,ok:true}).then(a=>{MYDP=a;try{localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}toast("أكّدتَ الموعد");const c=$("#dpcard");if(c){c.outerHTML=dayPlanCard();dpBind()}}).catch(e=>{b.disabled=false;toast(e.message)});return}
+  if(b.dataset.a==="chg")return dpChange(x);
+  if(b.dataset.a==="go"){DPRE={rec:(CFG.docs||[]).find(d=>String(d.id)===String(x.doctorId))||{id:x.doctorId,name:x.doctorName,specialty:x.specialty,workplaces:[]},product:x.product,purpose:x.purpose,note:x.note,planId:x.id,facilityId:x.facilityId};form("d")}
   else if(b.dataset.a==="undo"){srv("dayPlanFail",{id:x.id,undo:true}).then(a=>{MYDP=a;home()}).catch(e=>toast(e.message))}
   else{$("#modal").innerHTML='<h3>تعذّرت زيارة '+esc(x.doctorName)+'</h3><label for="dp_r">السبب</label><input id="dp_r" maxlength="200" placeholder="مثلًا: الطبيب مسافر، العيادة مغلقة"><div class="err" id="dp_e"></div><div class="mfoot"><button type="button" class="btn" id="cx">إلغاء</button><button type="button" class="btn pri" id="sv">حفظ</button></div>';
    $("#ov").classList.add("on");$("#dp_r").focus();$("#cx").onclick=()=>$("#ov").classList.remove("on");

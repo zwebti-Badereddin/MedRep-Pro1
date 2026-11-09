@@ -125,6 +125,33 @@ test('a returned report rings the bell', () => {
   assert.ok(nf.unread >= 1 && /أُعيد تقريرك/.test(nf.items[0].text), J(nf));
 });
 
+test('appointment: period and facility from the doctor schedule (or the supervisor); the rep confirms or corrects it (optional)', () => {
+  const { env, sup, rep } = setup({ Facilities: [{ id: 'FAC-1', name: 'مستشفى الخضراء', status: 'نشط' }, { id: 'FAC-2', name: 'عيادة النور', status: 'نشط' }] });
+  const wd = d => new Date(Date.parse(d + 'T12:00:00Z')).getUTCDay();
+  env.call(sup, 'docScheduleSave', { doctorId: 'DOC-1', slots: [{ facilityId: 'FAC-2', day: wd(tomorrow), period: 'pm' }] });
+  const a = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: tomorrow, doctorId: 'DOC-1', purpose: 'intro' });
+  assert.strictEqual(J([a.period, a.periodName, a.facilityId, a.facilityName, a.schedOff]), J(['pm', 'مساءً', 'FAC-2', 'عيادة النور', false]));
+  const b = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: tomorrow, doctorId: 'DOC-2', purpose: 'intro', period: 'am', facilityId: 'FAC-1' });
+  assert.strictEqual(J([b.period, b.facilityName]), J(['am', 'مستشفى الخضراء']), 'the supervisor chooses');
+  env.call(sup, 'dayPlanSend', { repId: 'REP-0001', from: today, to: tomorrow });
+  let mine = env.call(rep, 'dayPlanConfirm', { id: a.id, ok: true });
+  assert.strictEqual(mine.find(i => i.id === a.id).repState, 'ok');
+  // the rep knows the doctor moved: today, morning, at the hospital, and the schedule follows
+  mine = env.call(rep, 'dayPlanConfirm', { id: a.id, date: today, period: 'am', facilityId: 'FAC-1', note: 'غيّر مناوبته', updateSchedule: true });
+  const x = mine.find(i => i.id === a.id);
+  assert.strictEqual(J([x.date, x.period, x.facilityName, x.repState, x.repNote]), J([today, 'am', 'مستشفى الخضراء', 'changed', 'غيّر مناوبته']));
+  const sl = env.call(sup, 'docSchedules', {}).sched['DOC-1'].slots;
+  assert.strictEqual(J(sl.map(z => [z.f, z.d, z.p])), J([['FAC-1', wd(today), 'am']]), 'old slot ended, new slot added');
+  const nf = env.call(sup, 'myNotifs', {});
+  assert.match(nf.items[0].text, /عدّل موعد د. علي: .* صباحًا · مستشفى الخضراء — غيّر مناوبته/);
+  expectError(() => env.call(rep, 'dayPlanConfirm', { id: b.id, date: '2020-01-01' }), /يوم مضى/);
+  expectError(() => env.call(rep, 'dayPlanConfirm', { id: b.id }), /لم يتغير شيء/);
+  // a new appointment from the supervisor clears the rep's confirmation
+  env.call(rep, 'dayPlanConfirm', { id: b.id, ok: true });
+  const b2 = env.call(sup, 'dayPlanAdd', { repId: 'REP-0001', date: tomorrow, doctorId: 'DOC-2', purpose: 'intro', period: 'pm', facilityId: 'FAC-1' });
+  assert.strictEqual(b2.repState, '');
+});
+
 let failed = 0;
 tests.forEach(t => { try { t.fn(); console.log('PASS  ' + t.name); } catch (e) { failed++; console.log('FAIL  ' + t.name + '\n      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      ')); } });
 console.log('\n' + (tests.length - failed) + ' passed, ' + failed + ' failed');

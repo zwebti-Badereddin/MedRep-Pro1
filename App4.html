@@ -38,14 +38,14 @@ function nfLoad(){if(NF)return NF;try{NF=JSON.parse(localStorage.getItem(nfKey()
 function nfBell(){return '<button type="button" class="tgb nfb" id="nfb" aria-label="الإشعارات" title="الإشعارات">🔔<i class="nfn" hidden></i></button>'}
 function nfPaint(){const n=nfLoad().unread||0;document.querySelectorAll("#nfb .nfn").forEach(i=>{i.hidden=!n;i.textContent=n>9?"9+":n});document.querySelectorAll("#nfb").forEach(b=>b.setAttribute("aria-label",n?"الإشعارات: "+n+" جديدة":"الإشعارات"))}
 function nfPoll(force){
- if(!rep||rep.role!=="rep"||navigator.onLine===false)return;if(!force&&Date.now()-NF_AT<50000)return;NF_AT=Date.now();
+ if(!rep||navigator.onLine===false)return;if(!force&&Date.now()-NF_AT<50000)return;NF_AT=Date.now();
  const before=nfLoad();
  srv("myNotifs",{since:before.ver||0}).then(r=>{if(!r||r.same)return;
   const old={};(before.items||[]).forEach(x=>old[x.id]=1);const fresh=(r.items||[]).filter(x=>!x.read&&!old[x.id]);
   NF={ver:r.ver,unread:r.unread,items:r.items};try{localStorage.setItem(nfKey(),JSON.stringify(NF))}catch(e){}nfPaint();
   if(!before.ver)return; // first load on this phone: no alert for old notifications
-  if(fresh.some(x=>x.type==="plan")&&typeof dpRefresh==="function")dpRefresh(true);
-  const other=fresh.filter(x=>x.type!=="plan");if(other.length)toast(other[0].text);
+  const isRep=rep.role==="rep";if(isRep&&fresh.some(x=>x.type==="plan")&&typeof dpRefresh==="function")dpRefresh(true);
+  const other=fresh.filter(x=>!isRep||x.type!=="plan");if(other.length)toast(other[0].text);
   if(fresh.length){try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}}
  }).catch(()=>{})}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")nfPoll()});
@@ -54,11 +54,12 @@ function nfAgo(at){const m=Math.floor((Date.now()-Date.parse(at))/60000);return 
 async function nfOpen(){
  const nf=nfLoad(),m=$("#modal"),close=()=>$("#ov").classList.remove("on");
  m.innerHTML='<h3>🔔 الإشعارات</h3>'+(nf.items&&nf.items.length?'<div class="nflist">'+nf.items.map(x=>'<button type="button" class="nfi'+(x.read?"":" new")+'" data-id="'+esc(x.id)+'"><span class="nft">'+(x.type==="plan"?"🗓️":x.type==="report"?"↩️":"ℹ️")+'</span><span><b>'+esc(x.text)+'</b><small>'+esc(nfAgo(x.at))+'</small></span></button>').join("")+'</div>'
-  :'<div class="empty">لا توجد إشعارات بعد. هنا تصلك خطط الزيارات من المشرف، والتقارير المعادة للتصحيح.</div>')+
+  :'<div class="empty">'+(rep.role==="rep"?"لا توجد إشعارات بعد. هنا تصلك خطط الزيارات من المشرف، والتقارير المعادة للتصحيح.":"لا توجد إشعارات بعد. هنا يصلك تعديل المندوبين لمواعيد الخطط.")+'</div>')+
   (tgOn()?'<button type="button" class="sheetbtn" id="nf_tg">تنبيهات تيليجرام (تصل والتطبيق مغلق)</button>':'')+'<button type="button" class="sheetbtn" id="nf_x">إغلاق</button>';
  $("#ov").classList.add("on");$("#nf_x").onclick=close;if($("#nf_tg"))$("#nf_tg").onclick=tgOpen;
  m.querySelectorAll(".nfi").forEach(b=>b.onclick=()=>{const x=nf.items.find(i=>i.id===b.dataset.id);close();if(!x)return;
-  if(x.type==="plan"){if(x.ref&&x.ref.from)DPTAB=x.ref.from;dpRefresh(true);home()}else if(x.type==="report"&&typeof screenHistory==="function")screenHistory()});
+  if(x.type==="plan"&&rep.role!=="rep"){if(x.ref){if(x.ref.repId)DPV.rep=x.ref.repId;if(x.ref.from){DPV.date=x.ref.from;DPV.tab=0}}navGo("dp");return}
+  if(x.type==="plan"){dpRefresh(true);home()}else if(x.type==="report"&&typeof screenHistory==="function")screenHistory()});
  if(nf.unread){try{const r=await srv("notifsRead",{});NF={ver:r.ver,unread:r.unread,items:r.items};localStorage.setItem(nfKey(),JSON.stringify(NF))}catch(e){}nfPaint()}
 }
 

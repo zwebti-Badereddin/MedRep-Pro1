@@ -619,10 +619,13 @@ async function dayPlanView(){
  $("#dp_b").innerHTML=(days.length>1?'<div class="dptabs" role="tablist">'+days.map((d,i)=>{const n=repAll.filter(x=>x.date===d).length;return '<button type="button" role="tab" class="dptab'+(i===DPV.tab?" on":"")+'" data-t="'+i+'" aria-selected="'+(i===DPV.tab)+'">'+esc(dpDayName(d))+' <b>'+n+'</b></button>'}).join("")+'</div>':'')+
   '<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center"><b>خطة '+esc(repName)+' · '+esc(dpDayName(day))+'</b><span style="color:var(--mut);font-size:13px">'+mine.length+' طبيب</span></div>'+
   (mine.length?mine.map(x=>'<div class="dprow" data-id="'+esc(x.id)+'"><div><b>'+esc(x.doctorName)+'</b> '+st(x)+'<div style="color:var(--mut);font-size:13px">'+esc(x.specialty||"")+(x.product?' · '+esc(x.purposeName)+': '+esc(x.product):'')+(x.note?' · '+esc(x.note):'')+(x.reason?' · السبب: '+esc(x.reason):'')+(x.fb?' · الانطباع: '+esc({pos:"إيجابي",neu:"محايد",neg:"سلبي"}[x.fb.r])+(x.fb.n?' «'+esc(x.fb.n)+'»':''):'')+'</div>'+
+   '<div class="dpap">🕘 '+([x.periodName,x.facilityName].filter(Boolean).map(esc).join(" · ")||"لم يُحدد الموعد")+'</div>'+
+   (x.repState==="ok"?'<div class="dprs ok">✓ أكّده المندوب</div>':x.repState==="changed"?'<div class="dprs ch">⚠ عدّله المندوب'+(x.repNote?': '+esc(x.repNote):'')+'</div>':x.draft?'':'<div class="dprs">لم يؤكده المندوب بعد (اختياري)</div>')+
    (x.schedOff?'<div class="schtoday off">⚠ '+(x.schedAbsent?"سُجّل أنه غير متواجد هذا اليوم":"لا يعمل هذا اليوم حسب جدوله")+'</div>':x.schedWhere?'<div class="schtoday">يعمل: '+esc(x.schedWhere)+'</div>':'')+
    '<button type="button" class="mini" data-sch="'+esc(x.doctorId)+'" data-n="'+esc(x.doctorName)+'">أيام العمل</button></div>'+(x.status==="pending"||x.draft?'<button class="mini" data-del="1">حذف</button>':'')+'</div>').join(""):'<div class="empty">لا يوجد أطباء في هذا اليوم بعد. أضفهم بالأسفل.</div>')+
   '<div class="dpadd"><b>إضافة طبيب للخطة</b><input id="dp_q" placeholder="ابحث باسم الطبيب أو التخصص"><div id="dp_l" class="palist"></div>'+
   '<div class="two"><div><label>المنتج</label><select id="dp_p"><option value="">— بدون —</option>'+(CFG.products||[]).map(p=>'<option>'+esc(p)+'</option>').join("")+'</select></div><div><label>الهدف</label><select id="dp_g"><option value="intro">تعريف</option><option value="remind">تذكير</option><option value="feedback">أخذ انطباع</option></select></div></div>'+
+  '<div class="two"><div><label>الفترة</label><select id="dp_per"><option value="">حسب جدول الطبيب</option><option value="am">صباحًا</option><option value="pm">مساءً</option><option value="all">يوم كامل</option></select></div><div><label>المكان</label><select id="dp_fac"><option value="">حسب جدول الطبيب</option>'+(CFG.facilities||[]).filter(w=>String(w.active)!=="false").map(w=>'<option value="'+esc(w.id)+'">'+esc(w.workplace)+'</option>').join("")+'</select></div></div>'+
   '<label>ملاحظة للمندوب (اختياري)</label><input id="dp_n" maxlength="300" placeholder="مثلًا: اسأله عن تجربته مع الجرعة 75mg">'+
   (days.length>1?'<label>أضفه إلى</label><div class="sedays">'+days.map((d,i)=>'<button type="button" class="sday'+(i===DPV.tab?" on":"")+'" data-dd="'+esc(d)+'" aria-pressed="'+(i===DPV.tab)+'">'+esc(dpDayName(d))+'</button>').join("")+'</div>':'')+
   '<div class="err" id="dp_e"></div></div>'+
@@ -639,7 +642,7 @@ async function dayPlanView(){
   $("#dp_l").querySelectorAll("[data-id]").forEach(x=>x.onclick=async()=>{$("#dp_e").textContent="";
    const dates=days.length>1?[].map.call(document.querySelectorAll("#dp_b .sday.on"),b=>b.dataset.dd):[day];
    if(!dates.length)return $("#dp_e").textContent="اختر يومًا واحدًا على الأقل.";x.disabled=true;
-   try{const it=await srv("dayPlanAdd",{repId:DPV.rep,dates:dates,doctorId:x.dataset.id,product:$("#dp_p").value,purpose:$("#dp_g").value,note:$("#dp_n").value});
+   try{const it=await srv("dayPlanAdd",{repId:DPV.rep,dates:dates,doctorId:x.dataset.id,product:$("#dp_p").value,purpose:$("#dp_g").value,note:$("#dp_n").value,period:$("#dp_per").value,facilityId:$("#dp_fac").value});
     const off=(it||[]).filter(i=>i.schedOff).map(i=>dpDayName(i.date));
     toast((dates.length>1?"أُضيف إلى "+dates.length+" أيام":"أُضيف للخطة")+(off.length?". تنبيه: الطبيب لا يعمل يوم "+off.join("، ")+" حسب جدوله":"")+" — لا تنسَ «إرسال الخطة»");dayPlanView()}
    catch(e){x.disabled=false;$("#dp_e").textContent=e.message}})};

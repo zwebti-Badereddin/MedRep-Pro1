@@ -30,7 +30,8 @@ function dpWithStatus_(items) {
     const status = v ? 'done' : i.status === 'failed' ? 'failed' : 'pending';
     return { id: i.id, repId: i.repId, date: i.date, doctorId: i.doctorId, doctorName: i.doctorName, specialty: i.specialty, product: i.product,
       purpose: i.purpose, purposeName: DP_PURPOSE[i.purpose] || '', note: i.note, status: status, reason: status === 'failed' ? i.reason : '',
-      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', draft: dpDraft_(i), schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
+      fb: v && v.fb ? v.fb : null, time: v && v.ci ? v.ci.t : '', draft: dpDraft_(i),
+      period: i.period || '', periodName: SCH_PERIOD[i.period] || '', facilityId: i.facilityId || '', facilityName: i.facilityName || '', repState: i.repState || '', repNote: i.repNote || '', schedOff: !!(w && w.off), schedAbsent: !!(w && w.absent), schedWhere: w ? w.where : '' };
   });
 }
 
@@ -47,13 +48,27 @@ function dayPlanAdd_(s, p) {
   const purpose = DP_PURPOSE[p.purpose] ? p.purpose : 'intro';
   if (purpose === 'feedback' && !product) throw new Error('اختر المنتج المطلوب أخذ انطباع الطبيب عنه.');
   const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 300), now = new Date().toISOString();
+  // The appointment of each day: the period and facility chosen by the supervisor, else taken from the doctor's work schedule for that weekday.
+  const facs = dbAll_('Facilities'); let sch = null; try { sch = docSchedules_(null, {}); } catch (e) {}
+  let pickFac = null;
+  if (p.facilityId) { pickFac = facilityById_(p.facilityId, facs); if (!pickFac || pickFac.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); }
+  const apptFor = date => {
+    let per = SCH_PERIOD[p.period] ? p.period : '', fac = pickFac;
+    if (!per || !fac) {
+      const slots = sch && sch.sched[doc.id] ? sch.sched[doc.id].slots.filter(x => x.d === schWeekday_(date)) : [];
+      const sl = slots.find(x => (!per || x.p === per || x.p === 'all') && (!fac || String(x.f) === String(fac.id))) || (fac ? null : slots[0]);
+      if (sl) { if (!per) per = sl.p; if (!fac) fac = facilityById_(sl.f, facs); }
+    }
+    return { period: per, facilityId: fac ? String(fac.id) : '', facilityName: fac ? fac.name : '' };
+  };
   const lock = acquireLock_(20000);
   try {
     const rows = dpRows_(), out = dates.map(date => {
       const cur = rows.find(r => String(r.repId) === String(rep.id) && r.date === date && String(r.doctorId) === String(doc.id));
       // a new item is a draft until «إرسال الخطة»; editing an item keeps whether the rep already sees it
       const o = Object.assign({}, cur || { id: 'DP-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(), repId: rep.id, date: date, doctorId: doc.id, createdAt: now, createdBy: s.uid, status: '', reason: '', draft: true, sentAt: '', sentBy: '' },
-        { doctorName: doc.name, specialty: doc.specialty || '', product: product, purpose: purpose, note: note, active: true, updatedAt: now });
+        { doctorName: doc.name, specialty: doc.specialty || '', product: product, purpose: purpose, note: note, active: true, updatedAt: now }, apptFor(date));
+      if (cur && (cur.period !== o.period || String(cur.facilityId) !== String(o.facilityId))) Object.assign(o, { repState: '', repNote: '', repAt: '' }); // a new appointment: the rep's confirmation no longer applies
       if (cur) dbUpsert_('DayPlans', 'id', o); else dbAppend_('DayPlans', o);
       audit_(s, 'dayplan_add', rep.id + ' ' + date + ' ' + doc.id, purpose);
       return o;
@@ -119,6 +134,40 @@ function dayPlanNotify_(s, p) {
 function myDayPlan_(s) {
   const td = today_(), to = dpAddDays_(td, DP_AHEAD_DAYS), y = yesterday_();
   return dpWithStatus_(dpRows_().filter(r => String(r.repId) === String(s.uid) && r.date >= y && r.date <= to && !dpDraft_(r)));
+}
+// The rep (optional): «✓ مؤكد», or a corrected appointment (day, period, facility) with a note; the plan's author is notified.
+// p.updateSchedule also moves the slot in the doctor's work schedule (the old weekday/facility/period → the new one).
+function dayPlanConfirm_(s, p) {
+  const now = new Date().toISOString(), dd = d => SCH_DAYS[schWeekday_(d)] + ' ' + d.split('-').reverse().join('/');
+  let r, upd = null, lock = acquireLock_(20000);
+  try {
+    const rows = dpRows_(); r = rows.find(x => x.id === p.id && String(x.repId) === String(s.uid) && !dpDraft_(x)); if (!r) throw new Error('البند غير موجود.');
+    if (p.ok) dbUpsert_('DayPlans', 'id', { id: r.id, repState: 'ok', repNote: '', repAt: now });
+    else {
+      const date = isDate_(p.date) ? p.date : r.date;
+      if (date < today_()) throw new Error('لا يمكن نقل الموعد إلى يوم مضى.');
+      if (date !== r.date && rows.some(x => x.id !== r.id && String(x.repId) === String(r.repId) && x.date === date && String(x.doctorId) === String(r.doctorId))) throw new Error('هذا الطبيب موجود في خطة ذلك اليوم.');
+      const per = SCH_PERIOD[p.period] ? p.period : (r.period || '');
+      let fac = null; if (p.facilityId) { fac = facilityById_(p.facilityId, dbAll_('Facilities')); if (!fac || fac.status === 'معطل') throw new Error('المنشأة غير موجودة في السجل.'); }
+      const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      upd = { id: r.id, date: date, period: per, facilityId: fac ? String(fac.id) : (r.facilityId || ''), facilityName: fac ? fac.name : (r.facilityName || ''), repState: 'changed', repNote: note, repAt: now, updatedAt: now };
+      if (upd.date === r.date && upd.period === (r.period || '') && String(upd.facilityId) === String(r.facilityId || '') && !note) throw new Error('لم يتغير شيء في الموعد.');
+      dbUpsert_('DayPlans', 'id', upd);
+    }
+    audit_(s, p.ok ? 'dayplan_confirm' : 'dayplan_change', r.id, upd ? upd.date + ' ' + upd.period + ' ' + upd.facilityId : '');
+  } finally { lock.releaseLock(); }
+  if (upd) {
+    if (p.updateSchedule && upd.facilityId && upd.period) { // the doctor's work schedule follows the corrected appointment
+      const cur = (docSchedules_(s, {}).sched[r.doctorId] || { slots: [] }).slots, oldD = schWeekday_(r.date);
+      const keep = cur.filter(x => !(x.d === oldD && String(x.f) === String(r.facilityId) && x.p === r.period));
+      keep.push({ f: upd.facilityId, d: schWeekday_(upd.date), p: upd.period });
+      docScheduleSave_(s, { doctorId: r.doctorId, slots: keep.map(x => ({ facilityId: x.f, day: x.d, period: x.p })) });
+    }
+    const where = [SCH_PERIOD[upd.period] || '', upd.facilityName].filter(Boolean).join(' · ');
+    notifPush_(r.createdBy, 'plan', (s.name || 'المندوب') + ' عدّل موعد ' + r.doctorName + ': ' + dd(upd.date) + (where ? ' ' + where : '') + (upd.repNote ? ' — ' + upd.repNote : ''),
+      { repId: r.repId, from: upd.date, to: upd.date });
+  }
+  return myDayPlan_(s);
 }
 function dayPlanFail_(s, p) {
   const r = dpRows_().find(x => x.id === p.id && String(x.repId) === String(s.uid) && !dpDraft_(x)); if (!r) throw new Error('البند غير موجود.');

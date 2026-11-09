@@ -205,7 +205,7 @@ function adminHome(){
   navGroups().map(g=>'<div class="ngl">'+g.l+'</div>'+g.i.map(x=>'<button type="button" class="nit" data-nk="'+x[0]+'" data-t="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<span>'+x[1]+'</span><span class="nbadw"></span></button>').join("")).join("")+
   (sup?'':'<div id="nsys"></div>')+
   '<div class="nme"><span class="docfig">'+DOC_FIG+'</span><div><b>'+esc((rep&&rep.name)||"")+'</b><small>'+(sup?"مشرف":"مدير")+'</small></div>'+tgBell()+'<a href="#" class="lo" data-lo aria-label="خروج">'+LOGOUT_ICON+'</a></div></aside>'+
-  '<div class="amain"><header class="mtop">'+mk+'<div class="mtt"><small>'+esc(CFG.company.name)+'</small><b id="ptitle"></b></div>'+tgBell()+'<a href="#" class="lo" data-lo aria-label="خروج">'+LOGOUT_ICON+'</a></header>'+
+  '<div class="amain"><header class="mtop">'+mk+'<div class="mtt"><small>'+esc(CFG.company.name)+'</small><b id="ptitle"></b></div>'+nfBell()+'<a href="#" class="lo" data-lo aria-label="خروج">'+LOGOUT_ICON+'</a></header>'+
   '<div class="wrap"><h1 class="ptitle" id="ptitle2"></h1>'+licNotice()+'<div class="two" id="ndates"><div><label>من</label><input type="date" id="fa" value="'+isoD(new Date(n.getFullYear(),n.getMonth(),1))+'"></div><div><label>إلى</label><input type="date" id="fb" value="'+isoD(n)+'"></div></div><div id="av" style="margin-top:6px"></div></div></div>'+
   '<nav class="capsule" aria-label="التنقل">'+caps.map(c=>'<button type="button" class="cap" data-nk="'+c[0]+'" aria-label="'+c[1]+'">'+NI(NAV_ICONS[c[2]])+'<span>'+c[1]+'</span></button>').join("")+'</nav></div>';
  document.querySelectorAll("[data-lo]").forEach(a=>a.onclick=async e=>{e.preventDefault();try{await srv("logout")}catch(x){}TOKEN=null;login()});tgBind();
