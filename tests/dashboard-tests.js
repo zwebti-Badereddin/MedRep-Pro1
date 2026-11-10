@@ -90,19 +90,20 @@ const client = () => {
   const fn = name => { const m = app4.match(new RegExp('function ' + name + '\\([\\s\\S]*?\\r?\\n\\}')); assert.ok(m, name); return m[0]; };
   const escLine = app1.split('\n').find(l => l.includes(',esc=t=>'));
   const src = ['const ' + escLine.slice(escLine.indexOf('esc=t=>')).replace(/;\s*$/, ''), app4.match(/const DASH_CSS=[\s\S]*?';\r?\n/)[0],
-    app4.match(/const DASH_GPS_COLORS=[^\n]*/)[0], fn('dashChange'), fn('dashLine'), fn('dashDonut'), fn('dashCompliance'), fn('dashHtml')].join('\n');
+    app4.match(/const DASH_GPS_COLORS=[^\n]*/)[0], app4.match(/const DKI=[^\n]*\r?\nconst DK_ICON=[^\n]*\r?\n[^\n]*/)[0], fn('dashChange'), fn('dashLine'), fn('dashDonut'), fn('dashCompliance'), fn('dashHtml')].join('\n');
   const c = vm.createContext({}); vm.runInContext(src + '\n;this.dashHtml=dashHtml', c); return c.dashHtml;
 };
 test('client: renders the four cards, two lines, the donut and both tables without NaN/undefined', () => {
   const { d } = run(), html = client()(d);
-  ['زيارات الأطباء', 'زيارات الصيدليات', 'درجة التزام المندوبين', 'أكثر المنشآت زيارة', 'مصحة الشفاء', '▲ +150%', '▲ +5 نقطة', 'لا توجد بيانات سابقة للمقارنة']
+  ['زيارات الأطباء', 'زيارات الصيدليات', 'درجة التزام المندوبين', 'أكثر المنشآت زيارة', 'مصحة الشفاء', '▲ <bdi dir="ltr">+150%</bdi>', '▲ <bdi dir="ltr">+5</bdi> نقطة','لا توجد بيانات سابقة للمقارنة']
     .forEach(t => assert.ok(html.includes(t), 'missing: ' + t));
   assert.strictEqual((html.match(/<polyline /g) || []).length, 2);
   assert.ok(/class="dt">6</.test(html)); // donut centre = all visits of the period
   assert.strictEqual((html.match(/class="dr"/g) || []).length, 4);
   assert.ok(!/NaN|undefined/.test(html));
   assert.strictEqual((html.match(/class="dk /g) || []).length, 4);
-  assert.ok(html.includes('🩺') && !html.includes('👨'));
+  assert.strictEqual((html.match(/<span class="di"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M/g) || []).length, 4, 'a line icon on every card');
+  assert.ok(!/🩺|💊|✅|🏥|👨/.test(html), 'no emoji on the cards');
   const same = client()(Object.assign({}, d, { cards: Object.assign({}, d.cards, { compliance: { value: 0, change: 0 } }) }));
   assert.ok(same.includes('بدون تغيير عن الفترة السابقة') && !same.includes('0 نقطة'));
 });
