@@ -413,12 +413,12 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 .snav .nit.on::after{content:"«";font-size:20px;line-height:1;font-weight:800;margin-inline-start:2px}
 .snav .ngl{margin:12px 6px 0;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}
 /* «مسار اليوم» (rep home): dark header with counts, a time line of stations, the plan's coming stations */
-.rhd.dk{background:#0c2b2d;color:#fff;border:0;border-radius:0 0 18px 18px}
-.rhd.dk .who small,.rhd.dk .dt{color:#9fbcb9}.rhd.dk .out{background:transparent;border-color:rgba(255,255,255,.22);color:#d4f1ed;box-shadow:none}
-.rhd.dk .stchip{background:#fff;border-color:#fff;color:#0c2b2d}.rhd.dk .lg{background:#7fe0d4;color:#0c2b2d}
+.rhd.dk{background:linear-gradient(160deg,color-mix(in srgb,var(--brand) 82%,#fff),var(--brand));color:#fff;border:0;border-radius:0 0 18px 18px} /* the company colour */
+.rhd.dk .who small,.rhd.dk .dt{color:rgba(255,255,255,.82)}.rhd.dk .out{background:transparent;border-color:rgba(255,255,255,.22);color:#d4f1ed;box-shadow:none}
+.rhd.dk .stchip{background:#fff;border-color:#fff;color:var(--brand)}.rhd.dk .lg{background:#fff;color:var(--brand)}
 .rhd .r3{display:flex;flex-wrap:wrap;gap:6px;max-width:560px;width:100%;margin:0 auto}
-.rpill{background:rgba(255,255,255,.1);border-radius:99px;padding:3px 12px;font-size:13px;font-weight:700;color:#e6f6f3}.rpill b{font-size:15px;margin-inline-end:4px;color:#fff}
-.rpill.lf{background:rgba(127,224,212,.2);color:#c9f3ec}
+.rpill{background:rgba(255,255,255,.16);border-radius:99px;padding:3px 12px;font-size:13px;font-weight:700;color:#e6f6f3}.rpill b{font-size:15px;margin-inline-end:4px;color:#fff}
+.rpill.lf{background:#fff;color:var(--brand)}.rpill.lf b{color:var(--brand)}
 .tl{display:flex;flex-direction:column;margin-top:4px}
 .tls{display:flex;gap:10px}
 .tlt{width:48px;flex:none;display:flex;flex-direction:column;align-items:center}
@@ -441,7 +441,8 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 .tlst{font-size:12.5px;font-weight:800}.tlst.ok{color:#1d6b3d}.tlst.warn{color:#8a4b00}.tlst.none{color:#a3261d}
 .tlfix{align-self:flex-start;display:inline-flex;align-items:center;gap:6px}
 .tlsep{display:flex;align-items:center;gap:8px;margin:2px 0 12px;color:var(--brand);font-weight:800;font-size:13px}.tlsep::before,.tlsep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,var(--brand) 40%,transparent)}
-.tladd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:2px 0 12px;margin-inline-start:58px}.tladd .btn{width:100%}
+.tladd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:4px auto 12px;max-width:420px}
+.tladd .btn{width:100%;background:var(--brand);border:0;color:#fff;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--brand) 70%,transparent)}.tladd .btn svg{stroke:#fff}
 @media (prefers-color-scheme:dark){:root[data-theme="auto"] .tlst.ok{color:#6fd39a}:root[data-theme="auto"] .tlst.warn{color:#f5b860}:root[data-theme="auto"] .tlst.none{color:#f59a92}}
 :root[data-theme="dark"] .tlst.ok{color:#6fd39a}:root[data-theme="dark"] .tlst.warn{color:#f5b860}:root[data-theme="dark"] .tlst.none{color:#f59a92}
 /* Phone (admin / supervisor): the laptop's side menu slides in from the right (☰); the home screen keeps 3 shortcuts */
