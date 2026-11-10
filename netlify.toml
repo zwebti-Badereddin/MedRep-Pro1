@@ -1,0 +1,12 @@
+# Netlify (connected to this GitHub repository): build the installed web app (PWA) from the same client files that
+# Apps Script serves (tools/build-web.js), then publish the result. No dependencies to install.
+#
+# STAGING for now: master holds the newest code, which needs the newest server, i.e. the staging Apps Script
+# (web/config.staging.json). The production server is still an older release; at the next production release
+# change --config to web/config.json (the production Apps Script URL) in the same commit as the release.
+[build]
+  command = "node tools/build-web.js --config web/config.staging.json --out web/dist"
+  publish = "web/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
