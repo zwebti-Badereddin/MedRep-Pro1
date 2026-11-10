@@ -7,6 +7,7 @@
 const VENDOR_TOKEN_KEY = 'VENDOR_TG_TOKEN', VENDOR_CHAT_KEY = 'VENDOR_TG_CHAT', HEALTH_STATE_KEY = 'HEALTH_STATE', HEALTH_DIGEST_KEY = 'HEALTH_DIGEST_DAY';
 const HEALTH_LAST_KEY = 'HEALTH_LAST', TG_HOURLY_LAST_KEY = 'TG_HOURLY_LAST';
 const HEALTH_DIGEST_HOUR = 8, HEALTH_BACKUP_DAYS = 8, HEALTH_MAIL_MIN = 20, HEALTH_CELLS_LIMIT = 10000000, HEALTH_CELLS_WARN = 0.7;
+const HEALTH_BLOCK_BURST = 3; // the same message stopping saves this many times in 24 hours (by 2+ users; 5 by one user): probably a bug
 const HEALTH_AUDIT_TAIL = 3000, HEALTH_FAIL_ACTIONS = ['tg_failed', 'email_failed', 'reminder_failed'], HEALTH_FAIL_BURST = 5;
 const CLIENT_ERR_KEEP = 5000, CLIENT_ERR_PER_USER_HOUR = 20, CLIENT_ERR_ANON_HOUR = 60;
 
@@ -60,6 +61,9 @@ function healthChecks_() {
     const hot = Object.keys(cnt).filter(k => cnt[k] >= HEALTH_FAIL_BURST);
     return hot.length ? 'أخطاء متكررة خلال 24 ساعة: ' + hot.map(k => names[k] + ' ' + cnt[k]).join('، ') : null;
   });
+  // A message that stops users saving, repeated: the app works as written, but the writing may be wrong (a logic bug).
+  blockSummary_(24).filter(b => b.count >= (b.users > 1 ? HEALTH_BLOCK_BURST : 5)).slice(0, 3).forEach(b => add('block_' + blockKey_(b.msg), () =>
+    'رسالة تمنع الحفظ تكررت ' + b.count + ' مرة عند ' + b.users + (b.users === 1 ? ' مستخدم' : ' مستخدمين') + ' خلال 24 ساعة: «' + b.msg.slice(0, 110) + '» — قد يكون خللًا'));
   add('phones', () => {
     const c = clientErrSummary_(24); if (!c.top) return null;
     return c.top.users >= 2 ? 'خطأ يتكرر عند ' + c.top.users + ' مستخدمين: «' + c.top.msg.slice(0, 80) + '» (' + c.top.count + ' مرة)' : null;
@@ -99,7 +103,9 @@ function healthHourly() {
   if (+Utilities.formatDate(now, tz, 'H') >= HEALTH_DIGEST_HOUR && props.getProperty(HEALTH_DIGEST_KEY) !== day) {
     const c = clientErrSummary_(24), y = yesterday_(), sent = reportsLight_().filter(r => r.date === y && ['مرسل', 'معتمد'].indexOf(r.status) >= 0).length;
     const text = '☀️ التقرير الصباحي\n' + healthText_(checks) + '\nتقارير الأمس المرسلة: ' + sent + '\nأخطاء الهواتف (24 ساعة): ' + c.total + (c.top ? ' — الأكثر: «' + c.top.msg.slice(0, 60) + '» ×' + c.top.count : '');
-    if (vendorSend_(text)) props.setProperty(HEALTH_DIGEST_KEY, day);
+    const bl = blockSummary_(24), blN = bl.reduce((s, b) => s + b.count, 0);
+    const textB = text + '\nرسائل منعت الحفظ (24 ساعة): ' + blN + (bl[0] ? ' — الأكثر: «' + bl[0].msg.slice(0, 70) + '» ×' + bl[0].count : '');
+    if (vendorSend_(textB)) props.setProperty(HEALTH_DIGEST_KEY, day);
   }
   trimClientErrors_();
   return checks;
@@ -121,12 +127,25 @@ function clientErr_(s, p) {
   try { cache.put(key, String(n + rows.length), 3700); } catch (e) {}
   return rows.length;
 }
+// Blocked saves (kind 'block'): the message as the phone saw it, with the dialog and where the visit came from.
+function blockSummary_(hours) {
+  const sh = sheet_('ClientErrors'); if (!sh || sh.getLastRow() < 2) return [];
+  const last = sh.getLastRow(), n = Math.min(2000, last - 1), since = Date.now() - hours * 3600e3, by = {};
+  sh.getRange(last - n + 1, 1, n, T.ClientErrors.length).getValues().forEach(r => {
+    if (String(r[3]) !== 'block') return;
+    const t = r[0] instanceof Date ? r[0].getTime() : Date.parse(r[0]); if (!(t >= since)) return;
+    const k = String(r[5]), b = by[k] || (by[k] = { msg: k, count: 0, users: {} }); b.count++; b.users[r[1] || 'anon'] = 1;
+  });
+  return Object.keys(by).map(k => ({ msg: by[k].msg, count: by[k].count, users: Object.keys(by[k].users).length })).sort((a, b) => b.count - a.count || b.users - a.users);
+}
+function blockKey_(msg) { let h = 0; String(msg).split('').forEach(c => { h = (h * 31 + c.charCodeAt(0)) % 2147483647; }); return h.toString(36); }
 function clientErrSummary_(hours) {
   const sh = sheet_('ClientErrors'); if (!sh || sh.getLastRow() < 2) return { total: 0, top: null };
   const last = sh.getLastRow(), n = Math.min(2000, last - 1), since = Date.now() - hours * 3600e3, by = {};
   let total = 0;
   sh.getRange(last - n + 1, 1, n, T.ClientErrors.length).getValues().forEach(r => {
     const t = r[0] instanceof Date ? r[0].getTime() : Date.parse(r[0]); if (!(t >= since)) return;
+    if (String(r[3]) === 'block') return; // blocked saves are counted apart (blockSummary_)
     total++; const k = String(r[5]); const b = by[k] || (by[k] = { msg: k, count: 0, users: {} }); b.count++; b.users[r[1] || 'anon'] = 1;
   });
   const top = Object.keys(by).map(k => ({ msg: by[k].msg, count: by[k].count, users: Object.keys(by[k].users).length }))

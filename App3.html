@@ -48,7 +48,7 @@ function sampleText(v){
 }
 function form(k,idx){
  const cur=idx!=null?(k==="d"?S.docs[idx]:S.phs[idx]):{};
- const pre=(k==="d"&&idx==null)?DPRE:null;DPRE=null; // a visit opened from today's plan: doctor, product, purpose, plan item
+ const pre=(k==="d"&&idx==null)?DPRE:null;DPRE=null;window.FORM_SRC=pre?"من الخطة":idx!=null?"تعديل زيارة":""; // for the blocked-save report // a visit opened from today's plan: doctor, product, purpose, plan item
  const f=n=>esc(cur[n]||"");
  const html=k==="d"?`<div class="vf-head"><h3>${idx!=null?"تعديل":"إضافة"} زيارة طبيب</h3><span id="geo" class="gpspill"></span></div>
  <div class="step"><span>1</span>الطبيب</div>

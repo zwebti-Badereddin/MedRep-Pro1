@@ -98,6 +98,26 @@ test('phone errors: accepted without a valid session, fields trimmed, rate-limit
   env.call(rep2, 'clientErr', { errors: [{ kind: 'js', msg: 'same bug' }] });
   assert.match(env.ctx.healthChecks_().find(c => c.key === 'phones').msg, /عند 2 مستخدمين: «same bug» \(21 مرة\)/);
 });
+test('blocked saves: the same message 3 times by 2 users (or 5 by one) in a day alerts once, kept apart from the phone errors, counted in the digest', () => {
+  const s = setup({ hour: 9 }), { env } = s;
+  const rep1 = env.session('REP-0001', 'rep'), rep2 = env.session('REP-0002', 'rep');
+  const blk = { kind: 'block', screen: 'اليوم', msg: 'زيارة طبيب · من الخطة | أدخل اسم الطبيب' };
+  env.call(rep1, 'clientErr', { errors: [blk, blk] });
+  env.call(rep1, 'clientErr', { errors: [blk, blk, { kind: 'block', msg: 'زيارة طبيب | اختر المنتج' }] });
+  assert.ok(!bad(env).some(k => k.indexOf('block_') === 0), 'one user, 4 times: not yet (a rep fixing their own mistake)');
+  env.call(rep2, 'clientErr', { errors: [blk, { kind: 'block', msg: 'زيارة طبيب | اختر المنتج' }] });
+  const b = env.ctx.healthChecks_().filter(c => c.key.indexOf('block_') === 0 && !c.ok);
+  assert.strictEqual(b.length, 1);
+  assert.match(b[0].msg, /تكررت 5 مرة عند 2 مستخدمين.*من الخطة \| أدخل اسم الطبيب/);
+  assert.strictEqual(env.ctx.healthChecks_().find(c => c.key === 'phones').ok, true, 'blocks are not phone errors');
+  assert.strictEqual(env.ctx.clientErrSummary_(24).total, 0);
+  env.ctx.healthHourly();
+  const digest = s.sent.map(m => m.text).find(t => /رسائل منعت الحفظ/.test(t));
+  assert.ok(digest && /رسائل منعت الحفظ \(24 ساعة\): 7 — الأكثر: «زيارة طبيب · من الخطة \| أدخل اسم الطبيب» ×5/.test(digest), digest);
+  assert.ok(s.sent.some(m => /رسالة تمنع الحفظ تكررت/.test(m.text)), 'alerted');
+  const n = s.sent.length; env.ctx.healthHourly();
+  assert.ok(!s.sent.slice(n).some(m => /رسالة تمنع الحفظ تكررت/.test(m.text)), 'not twice');
+});
 test('phone errors are trimmed to the last 5,000 rows', () => {
   const { env } = setup();
   env.ctx.ensureSheet_('ClientErrors');
