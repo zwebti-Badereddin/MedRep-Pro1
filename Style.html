@@ -444,4 +444,18 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
 .tladd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:2px 0 12px;margin-inline-start:58px}.tladd .btn{width:100%}
 @media (prefers-color-scheme:dark){:root[data-theme="auto"] .tlst.ok{color:#6fd39a}:root[data-theme="auto"] .tlst.warn{color:#f5b860}:root[data-theme="auto"] .tlst.none{color:#f59a92}}
 :root[data-theme="dark"] .tlst.ok{color:#6fd39a}:root[data-theme="dark"] .tlst.warn{color:#f5b860}:root[data-theme="dark"] .tlst.none{color:#f59a92}
+/* Phone (admin / supervisor): the laptop's side menu slides in from the right (☰); the home screen keeps 3 shortcuts */
+.nclose,.nmenu,.nscrim{display:none}
+.nquick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.nquick .ncard{min-height:76px}
+.nqh{margin-top:10px}
+@media (max-width:899px){
+ .adm2 .snav{display:flex;position:fixed;top:0;bottom:0;right:0;width:min(300px,86vw);height:auto;z-index:40;transform:translateX(105%);transition:transform .22s ease;box-shadow:-10px 0 30px rgba(0,0,0,.3)}
+ .adm2.navopen .snav{transform:none}
+ .adm2 .snav .nwait,.adm2 .snav #nsys{display:none} /* already on the home screen */
+ .nscrim{display:block;position:fixed;inset:0;z-index:39;background:rgba(12,20,21,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+ .adm2.navopen .nscrim{opacity:1;pointer-events:auto}
+ .nclose{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;margin-inline-start:auto;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#d4f1ed;font-size:18px;cursor:pointer}
+ .nmenu{display:inline-flex;align-items:center;justify-content:center;flex:none;width:44px;height:44px;border-radius:12px;border:0;background:rgba(255,255,255,.1);color:#fff;cursor:pointer}
+}
+@media (prefers-reduced-motion:reduce){.adm2 .snav,.nscrim{transition:none}}
 </style>
