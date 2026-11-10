@@ -193,11 +193,11 @@ function navPaint(){
 function navRefresh(){srv("navCounts").then(c=>{NAVC=c||{};navPaint();if(NAVK==="home")navHub()}).catch(()=>{})}
 function navHub(){const av=$("#av");if(!av)return;
  av.innerHTML='<div class="hubw"><b>بانتظارك</b><div id="hubwait">'+navWaiting()+'</div></div>'+navHealth()+navQuickHtml();
- av.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go))}
+ av.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>navGo(b.dataset.go));av.querySelectorAll("[data-menu]").forEach(b=>b.onclick=()=>navOpen(true))}
 /* Phone home: the three most used sections; every other one is in the side menu (☰). */
 function navQuickHtml(){const it=[].concat(...navGroups().map(g=>g.i)).filter(x=>x[0]!=="s").slice(0,3);
- return '<div class="sec"><h3>الأكثر استعمالًا</h3></div><div class="nquick">'+it.map(x=>'<button type="button" class="ncard" data-go="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<b>'+x[1]+'</b>'+navBadge(x)+'</button>').join("")+'</div>'+
-  '<div class="empty nqh">كل الأقسام الأخرى من زر ☰ أعلى الصفحة، أو «القائمة» في الشريط السفلي.</div>'}
+ return '<div class="sec"><h3>الأكثر استعمالًا</h3></div><div class="nqp">'+it.map(x=>'<button type="button" class="nqi" data-go="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<span>'+x[1]+'</span>'+navBadge(x)+'</button>').join("")+
+  '<button type="button" class="nqall" data-menu>كل الأقسام ☰</button></div>'}
 function navOpen(o){const a=$(".adm2");if(a)a.classList.toggle("navopen",!!o)}
 function navSectionsHtml(){return navGroups().map(g=>'<div class="sec"><h3>'+g.l+'</h3></div><div class="ngrid">'+g.i.map(x=>'<button type="button" class="ncard" data-go="'+x[0]+'">'+NI(NAV_ICONS[x[2]])+'<b>'+x[1]+'</b>'+navBadge(x)+'</button>').join("")+'</div>').join("")}
 function navGo(k){

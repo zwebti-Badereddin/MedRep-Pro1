@@ -459,4 +459,11 @@ label{font-weight:700;font-size:13.5px;margin:14px 0 5px}
  .nmenu{display:inline-flex;align-items:center;justify-content:center;flex:none;width:44px;height:44px;border-radius:12px;border:0;background:rgba(255,255,255,.1);color:#fff;cursor:pointer}
 }
 @media (prefers-reduced-motion:reduce){.adm2 .snav,.nscrim{transition:none}}
+/* Phone admin home: the shortcuts as the laptop menu's pills; the bottom bar's open button as the laptop's open item */
+.nqp{background:var(--ink2,#0c2b2d);border-radius:20px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.nqi{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 16px;border-radius:999px;border:1px solid rgba(127,224,212,.16);background:rgba(31,181,165,.13);color:#d4f1ed;font:inherit;font-size:15px;font-weight:700;cursor:pointer;text-align:start}
+.nqi>span:not(.nbad){flex:1}.nqi svg{flex:none}.nqi .nbad{flex:none;width:auto;min-width:24px;background:rgba(255,255,255,.16);color:#fff}
+.nqi:active{background:rgba(31,181,165,.26)}.nqi:focus-visible,.nqall:focus-visible{outline:2px solid #7fe0d4;outline-offset:3px}
+.nqall{min-height:40px;border:0;border-radius:999px;background:transparent;color:#7fe0d4;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+@media (max-width:899px){.cap.on{background:linear-gradient(90deg,#a5efe6,#7fe0d4);box-shadow:0 0 0 3px #fff}}
 </style>
