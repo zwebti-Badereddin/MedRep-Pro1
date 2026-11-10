@@ -159,13 +159,13 @@ function form(k,idx){
     $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة. يُرسل موقعك الحالي كموقع مقترح ويبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"");drawFChips()};
     $("#f_doc_chg").onclick=()=>{showDoc(null);$("#f_name").focus()};
    }
-   setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec)fillDoctor(PK.rec)}
+   setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec){if(!$("#f_name").value)$("#f_name").value=PK.rec.name;fillDoctor(PK.rec)}}
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on");if(CI){CI=null;home()}};
  let confirmNew=false; // set only by the explicit "create a new facility anyway" button
  let confirmNewRec=false; // set only by «لا، طبيب آخر» after «هل تقصد؟»
  $("#sv").onclick=async()=>{
   const g=id=>{const e=$("#"+id);return e?e.value.trim():""},r=n=>document.querySelector(`input[name=${n}]:checked`)?.value||"";
-  const typed=g("f_name");if(!typed){$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
+  const typed=g("f_name")||(PK.rec&&PK.rec.name)||"";if(!typed){ /* a doctor chosen from the plan shows as a card: the hidden search field may be empty */$("#ferr").textContent=k==="d"?"أدخل اسم الطبيب.":"أدخل اسم الصيدلية.";return}
   if(k==="d"&&RXF.busy){$("#ferr").textContent="انتظر حتى يكتمل رفع صورة الوصفة.";return}
    const recs=k==="d"?CFG.docs:CFG.phs;let rec=PK.rec||recs.find(x=>norm(x.name)===norm(typed))||(idx!=null&&typed===cur.name?{name:typed}:null);
    if(!rec){if(!PK.isNew){$("#ferr").textContent=k==="d"?"اختر الطبيب من القائمة أو أضفه كطبيب جديد.":"اختر الصيدلية من القائمة أو أضفها كجديدة.";return}
