@@ -145,7 +145,7 @@ function form(k,idx){
       ap.querySelectorAll("[data-ap]").forEach(b=>b.onclick=()=>{ADDPLACE=b.dataset.ap==="1";drawFChips()})}}
     $("#f_fc_other").onclick=()=>{if(ownSel){if(![].some.call(sel.options,o=>o.value===""))sel.insertBefore(new Option("— اختر منشأة —",""),sel.firstChild);sel.value="";sel.onchange()}$("#f_wp_wrap").style.display="block";sel.focus()};
    };
-   const fillDoctor=r=>{showDoc(r);if(r.isNew){FCH=workplaceChoices(null,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";drawFChips();return}
+   const fillDoctor=r=>{ciNamed();showDoc(r);if(r.isNew){FCH=workplaceChoices(null,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);$("#f_workplace").value="__new__";$("#f_newplace_wrap").style.display="block";$("#f_newplace").value=cur.place||"";if($("#f_newlat"))$("#f_newlat").value=cur.placeLat||"";if($("#f_newlng"))$("#f_newlng").value=cur.placeLng||"";$("#f_place_status").textContent="اختر منشأة مسجلة أو اقترح منشأة جديدة.";drawFChips();return}
     const sp=$("#f_spec");if(r.specialty){if(![].some.call(sp.options,o=>o.value===r.specialty))sp.add(new Option(r.specialty,r.specialty));sp.value=r.specialty}
     FCH=workplaceChoices(r,CFG.facilities);$("#f_workplace").innerHTML=workplaceOptions(FCH);
     const selected=pickWorkplace(FCH,cur);
@@ -159,7 +159,8 @@ function form(k,idx){
     $("#f_workplace").onchange=()=>{const isNew=$("#f_workplace").value==="__new__";$("#f_newplace_wrap").style.display=isNew?"block":"none";const o=$("#f_workplace").selectedOptions[0];$("#f_place_status").textContent=isNew?"أدخل اسم المنشأة. يُرسل موقعك الحالي كموقع مقترح ويبقى بانتظار اعتماد الإدارة.":isLinkOption($("#f_workplace"))?"":(o&&o.textContent.includes("بانتظار اعتماد الإدارة")?"تنبيه: موقع المنشأة بانتظار اعتماد الإدارة.":"");drawFChips()};
     $("#f_doc_chg").onclick=()=>{showDoc(null);$("#f_name").focus()};
    }
-   setupPicker(recs,k==="d"?fillDoctor:(r=>{if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec){if(!$("#f_name").value)$("#f_name").value=PK.rec.name;fillDoctor(PK.rec)}}
+   setupPicker(recs,k==="d"?fillDoctor:(r=>{ciNamed();if(r.location)$("#f_loc").value=r.location;if(r.nearFacility)$("#f_near").value=r.nearFacility}),k==="d"?"طبيب جديد":"صيدلية جديدة");if(k==="d"&&PK.rec){if(!$("#f_name").value)$("#f_name").value=PK.rec.name;fillDoctor(PK.rec)}}
+ if(CI)$("#f_name").addEventListener("input",()=>{if($("#f_name").value.trim().length>=2)ciNamed()}); // a typed new name counts too
  $("#cx").onclick=()=>{stopGeo();$("#ov").classList.remove("on");if(CI){CI=null;home()}};
  let confirmNew=false; // set only by the explicit "create a new facility anyway" button
  let confirmNewRec=false; // set only by «لا، طبيب آخر» after «هل تقصد؟»
@@ -311,14 +312,18 @@ function stockHint(p,q,q0){
 
 /* Visit check-in / check-out. CI = the open form's check-in {k, t, date, gps}; it is kept on the phone (per rep) so it survives
    closing the form or the app, and the home screen shows «زيارة جارية». Saving the visit is the check-out. After 3 hours an
-   unsaved check-in is dropped. Only today's report gets check-ins (a visit added later to yesterday's report has none). */
-const CI_MAX=3*3600e3;let CI=null;
+   unsaved check-in is dropped. Only today's report gets check-ins (a visit added later to yesterday's report has none).
+   Until a doctor / pharmacy is chosen (named) the check-in is silent and lasts 10 minutes: a form opened and closed empty must
+   never lend its time to a real visit later (it made a 15-minute visit look 2 hours long). */
+const CI_MAX=3*3600e3,CI_UNNAMED=10*60e3;let CI=null;
 const ciKey=()=>"mr_ci_"+((rep&&rep.id)||"");
-function ciGet(){try{const c=JSON.parse(localStorage.getItem(ciKey())||"null");return c&&Date.now()-c.t<CI_MAX&&Date.now()>=c.t&&S&&c.date===S.date?c:null}catch(e){return null}}
+function ciGet(){try{const c=JSON.parse(localStorage.getItem(ciKey())||"null");return c&&Date.now()-c.t<(c.named?CI_MAX:CI_UNNAMED)&&Date.now()>=c.t&&S&&c.date===S.date?c:null}catch(e){return null}}
+// A name was chosen in the open new-visit form: from now on it is a visit in progress.
+function ciNamed(){if(!CI||CI.named)return;CI.named=true;const c=ciGet();if(c&&c.t===CI.t){c.named=true;ciSet(c)}}
 function ciSet(c){try{if(c)localStorage.setItem(ciKey(),JSON.stringify(c));else localStorage.removeItem(ciKey())}catch(e){}}
 function ciStart(k){CI=null;if(!S||S.date!==TD)return;let c=ciGet();if(!c||c.k!==k){c={k:k,t:Date.now(),date:S.date};ciSet(c)}CI=c;ciFix()}
 function ciFix(){if(CI&&!CI.gps&&GEO&&Date.now()-GEO.ts<120000){CI.gps={lat:GEO.lat,lng:GEO.lng,acc:GEO.acc};const c=ciGet();if(c&&c.t===CI.t){c.gps=CI.gps;ciSet(c)}}}
-function ciBanner(){if(!S||S.date!==TD||locked())return"";const c=ciGet();if(!c)return"";const m=Math.max(0,Math.round((Date.now()-c.t)/60000));
+function ciBanner(){if(!S||S.date!==TD||locked())return"";const c=ciGet();if(!c||!c.named)return"";const m=Math.max(0,Math.round((Date.now()-c.t)/60000));
  return '<div class="cibar"><div>⏱ <b>زيارة جارية</b> ('+(c.k==="d"?"طبيب":"صيدلية")+') منذ '+m+' دقيقة<small>احفظ الزيارة عند المغادرة لتسجيل الخروج.</small></div><div class="ciact"><button type="button" class="mini" id="ci_go">متابعة</button><button type="button" class="mini" id="ci_x">إلغاء</button></div></div>'}
 function ciBind(){const g=$("#ci_go"),x=$("#ci_x");if(g)g.onclick=()=>{const c=ciGet();if(c)form(c.k)};
  if(x)x.onclick=()=>{if(!x.dataset.c){x.dataset.c=1;x.textContent="تأكيد الإلغاء؟";return}ciSet(null);CI=null;home()}}
