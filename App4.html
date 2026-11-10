@@ -22,8 +22,8 @@ const IC={
 };
 function repTop(t,o){
  o=o||{};const logo=CFG.company.logo?'<span class="lg"><img src="'+esc(CFG.company.logo)+'" alt=""></span>':'<span class="lg">'+esc(CFG.company.short)+'</span>';
- return '<header class="rhd"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+nfBell()+'<button type="button" class="out" id="lo">خروج</button></div>'+
-  '<div class="r2"><div style="flex:1;min-width:0"><h1>'+t+'</h1>'+(o.sub?'<div class="dt">'+esc(o.sub)+'</div>':'')+'</div>'+(o.chip?'<span class="stchip">'+esc(o.chip)+'</span>':'')+'</div></header>';
+ return '<header class="rhd'+(o.dark?' dk':'')+'"><div class="r1">'+logo+'<div class="who"><small>'+esc(CFG.company.name)+'</small><b>'+esc(rep.name)+'</b></div>'+(o.save?'<button type="button" id="savest" class="savest"></button>':'')+nfBell()+'<button type="button" class="out" id="lo">خروج</button></div>'+
+  '<div class="r2"><div style="flex:1;min-width:0"><h1>'+t+'</h1>'+(o.sub?'<div class="dt">'+esc(o.sub)+'</div>':'')+'</div>'+(o.chip?'<span class="stchip">'+esc(o.chip)+'</span>':'')+'</div>'+(o.pills?'<div class="r3">'+o.pills+'</div>':'')+'</header>';
 }
 /* Telegram alerts: the bell shows only when the company has a bot (settings.tgBot). Linking: a one-time t.me link,
    Start in Telegram, then «تحقق». The server reads Telegram's messages; nothing is sent from the phone to Telegram. */

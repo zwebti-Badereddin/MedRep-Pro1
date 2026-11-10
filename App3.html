@@ -419,7 +419,7 @@ function dpRefresh(force){if(!rep||rep.role!=="rep"||navigator.onLine===false)re
   try{localStorage.setItem(dpSeenKey(),JSON.stringify(seen))}catch(e){}
   if(fresh){toast("وصلت خطة زيارات جديدة من المشرف ("+fresh+" طبيب)");try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}}
   // only the home screen shows the card: replace it in place, never pull the rep away from another screen or a form
-  const c=$("#dpcard");if(c&&S){c.outerHTML=dayPlanCard();dpBind()}}).catch(()=>{})}
+  dpRepaint()}).catch(()=>{})}
 // New plans while the app is open: when the rep comes back to it (another app, screen on) and every 5 minutes.
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&Date.now()-MYDP_AT>15000)dpRefresh(true)});
 setInterval(()=>{if(document.visibilityState==="visible")dpRefresh(true)},300000);
@@ -437,7 +437,7 @@ function dpAppt(x){
 }
 // One section per day, written as the weekday and the date only (never «اليوم» / «غدًا»); today's band is the dark one.
 function dayPlanCard(){
- const days=dpDays();if(!days.length)return'<div id="dpcard" hidden></div>';
+ const days=dpDays().filter(d=>d!==S.date);if(!days.length)return'<div id="dpcard" hidden></div>'; /* the report's own day is in the timeline (tlHtml) */
  const seen=dpSeen()||{},isNew=x=>!x.done&&seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS,by=((dpLoad()||[]).find(x=>x.byName)||{}).byName;
  const sec=day=>{const a=dpItems(day),fut=day!==S.date,done=a.filter(x=>x.done).length,nNew=a.filter(isNew).length;
   return '<section class="dpsec'+(fut?" fut":" now")+'"><div class="dph"><b>'+DPI.cal+esc(longDate(day))+(nNew?' <span class="dpnew">جديد</span>':'')+'</b><span>'+(fut?a.length+' طبيب':done+' من '+a.length)+'</span></div>'+
@@ -446,8 +446,55 @@ function dayPlanCard(){
     (x.note?'<small class="dpn">'+DPI.note+esc(x.note)+'</small>':'')+(x.status==="failed"&&!x.done?'<small class="dpn">تعذّرت: '+esc(x.reason)+'</small>':'')+
     (!x.done&&x.status!=="failed"?'<span class="dpcf">'+(x.repState!=="ok"?'<button type="button" class="lnk" data-a="ok">✓ مؤكد</button>':'')+'<button type="button" class="lnk" data-a="chg">تغيير الموعد</button>'+(fut?'<span class="dpfut">الزيارة في يومها</span>':'')+'</span>':'')+'</div>'+
     (fut?'':x.done?'<span class="dpok">تمت ✓</span>':locked()?'':'<div class="dpa"><button type="button" class="mini pri" data-a="go">زيارة</button>'+(x.status==="failed"?'<button type="button" class="mini" data-a="undo">تراجع</button>':'<button type="button" class="mini" data-a="fail">تعذّرت</button>')+'</div>')+'</div>').join("")+'</section>'};
- return '<div id="dpcard" class="dpcard"><div class="dptop">'+DPI.cal+' خطة الزيارات من '+esc(by?by:"المشرف")+'</div>'+days.map(sec).join("")+'</div>'
+ return '<div id="dpcard" class="dpcard"><div class="dptop">'+DPI.cal+' الأيام القادمة · خطة '+esc(by?by:"المشرف")+'</div>'+days.map(sec).join("")+'</div>'
 }
+/* «مسار اليوم»: the day's visits, doctors and pharmacies together in time order, then what is left of the supervisor's plan for
+   that day as coming stations. A visit's time is its check-in (else check-out, else the location's time); visits without any
+   time follow in the order they were added. The rep sees whether a location was recorded, never the verdict or the distance,
+   except the warning when far from the facility (as before). */
+function tlTime(v){const t=Date.parse(v&&v.ci&&v.ci.t)||Date.parse(v&&v.co&&v.co.t)||+(v&&v.gps&&v.gps.ts)||0;return t>0?t:0}
+function tlHm(t){const d=new Date(t);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+const TLI={ok:'<svg viewBox="0 0 32 32" role="img" aria-label="الموقع مسجّل"><circle cx="16" cy="16" r="14" class="c"></circle><path d="M10 16.5l4 4 8-9" class="m"></path></svg>',
+ warn:'<svg viewBox="0 0 32 32" role="img" aria-label="بعيد عن المنشأة"><circle cx="16" cy="16" r="14" class="c"></circle><path d="M16 9v9" class="m"></path><circle cx="16" cy="22.5" r="1.7" class="f"></circle></svg>',
+ none:'<svg viewBox="0 0 32 32" role="img" aria-label="بدون موقع"><circle cx="16" cy="16" r="14" class="c"></circle><path d="M11.5 11.5l9 9M20.5 11.5l-9 9" class="m"></path></svg>',
+ plan:'<svg viewBox="0 0 32 32" role="img" aria-label="زيارة مخططة"><circle cx="16" cy="16" r="14" class="c"></circle><circle cx="16" cy="16" r="4" class="f"></circle></svg>'};
+/* order: by time; a visit without one keeps its place right after the visit entered before it (same list) */
+function tlVisits(){const pick=(arr,k)=>{let last=0;return arr.map((v,i)=>{const t=tlTime(v),key=t||last+1;last=key;return {k,v,i,t,key}})};
+ return pick(S.docs,"d").concat(pick(S.phs,"p")).map((x,n)=>Object.assign(x,{n})).sort((x,y)=>x.key-y.key||x.n-y.n)}
+function tlLeft(){return S?dpItems(S.date).filter(x=>!x.done):[]}
+function tlPills(){const p=(n,l,c)=>'<span class="rpill'+(c?" "+c:"")+'"><b>'+n+'</b>'+l+'</span>',left=tlLeft().filter(x=>x.status!=="failed").length;
+ return p(S.docs.length+S.phs.length,"زيارات")+p(S.docs.length,"أطباء")+p(S.phs.length,"صيدليات")+(left?p(left,"متبقية من الخطة","lf"):"")}
+function tlStation(x,lk){
+ const v=x.v,k=x.k,g=v.gps||{},st=g.warn?"warn":typeof g.lat==="number"&&typeof g.lng==="number"?"ok":"none";
+ const where=(k==="d"?["طبيب",v.place]:["صيدلية",v.loc]).filter(Boolean).join(" · ");
+ const line=st==="warn"?"على بعد "+g.warn+" م من المنشأة — تأكد من اختيارها":st==="ok"?"✓ الموقع مسجّل":"بدون موقع — يُلتقط عند الحفظ";
+ return '<div class="tls"><div class="tlt"><span>'+(x.t?tlHm(x.t):esc(v.time||""))+'</span><i class="tli '+st+'">'+TLI[st]+'</i><b class="tlr"></b></div>'+
+  '<article class="tlc"><div class="vh"><div class="vt"><small>'+esc(where)+'</small><b>'+esc(v.name)+(k==="d"&&v.specialty?' <span class="dpsp">— '+esc(v.specialty)+'</span>':'')+'</b></div>'+
+  (lk?'':'<button type="button" class="more" data-more="'+k+x.i+'" aria-label="خيارات الزيارة">'+IC.more+'</button>')+'</div>'+visitChips(v,k,true)+
+  '<small class="tlst '+st+'">'+esc(line)+'</small>'+
+  (st!=="ok"&&!lk?'<button type="button" class="mini tlfix" data-fix="'+k+x.i+'">'+IC.pin+(st==="warn"?' راجع الزيارة':' تحديد الموقع')+'</button>':'')+'</article></div>'}
+function tlPlan(x,lk,isNew){const fail=x.status==="failed";
+ return '<div class="tls plan'+(fail?" no":"")+'" data-dp="'+esc(x.id)+'"><div class="tlt"><span>'+esc(x.periodName||"")+'</span><i class="tli '+(fail?"none":"plan")+'">'+(fail?TLI.none:TLI.plan)+'</i><b class="tlr"></b></div>'+
+  '<article class="tlc"><small class="tlpk">'+(fail?"تعذّرت":"مخطط")+(isNew?' <span class="dpnew">جديد</span>':'')+'</small><b>'+esc(x.doctorName)+(x.specialty?' <span class="dpsp">— '+esc(x.specialty)+'</span>':'')+'</b>'+dpAppt(x)+
+  (x.note?'<small class="dpn">'+DPI.note+esc(x.note)+'</small>':'')+(fail?'<small class="dpn">السبب: '+esc(x.reason)+'</small>':'')+
+  (lk?'':fail?'<div class="dpa"><button type="button" class="mini" data-a="undo">تراجع</button></div>':
+   '<div class="dpa"><button type="button" class="mini pri" data-a="go">ابدأ الزيارة</button><button type="button" class="mini" data-a="fail">تعذّرت</button></div>'+
+   '<span class="dpcf">'+(x.repState!=="ok"?'<button type="button" class="lnk" data-a="ok">✓ مؤكد</button>':'')+'<button type="button" class="lnk" data-a="chg">تغيير الموعد</button></span>')+'</article></div>'}
+function tlHtml(lk){
+ const vs=tlVisits(),left=tlLeft(),seen=dpSeen()||{},isNew=x=>seen[x.id]>0&&Date.now()-seen[x.id]<DP_NEW_MS,by=((dpLoad()||[]).find(x=>x.byName)||{}).byName;
+ let h='<div id="tl" class="tl">';
+ if(!vs.length&&!left.length)h+='<div class="empty">لم تُسجَّل زيارات '+(S.date===TD?"اليوم":"هذا اليوم")+' بعد.</div>';
+ h+=vs.map(x=>tlStation(x,lk)).join("");
+ if(left.length)h+='<div class="tlsep"><span>'+(vs.length?"الآن · ":"")+'بقي من خطة '+esc(by||"المشرف")+'</span></div>'+left.map(x=>tlPlan(x,lk,isNew(x))).join("");
+ if(!lk)h+='<div class="tladd"><button type="button" class="btn dash" data-add="d">'+IC.plus+' طبيب</button><button type="button" class="btn dash" data-add="p">'+IC.plus+' صيدلية</button></div>';
+ return h+'</div>'}
+function tlBind(){
+ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>form(b.dataset.add));
+ document.querySelectorAll("[data-more]").forEach(b=>b.onclick=()=>openVisitMenu(b.dataset.more[0],+b.dataset.more.slice(1)));
+ document.querySelectorAll("[data-fix]").forEach(b=>b.onclick=()=>form(b.dataset.fix[0],+b.dataset.fix.slice(1)));
+ dpBind()}
+/* A plan change while the home screen is open: draw it again in place (same scroll), never from another screen or a form. */
+function dpRepaint(){if(!S||!$("#tl"))return;const y=window.scrollY;home();window.scrollTo(0,y)}
 function dpFind(id){const x=(dpLoad()||[]).find(i=>i.id===id);if(!x)return null;return x.date===S.date?dpItems(S.date).find(i=>i.id===id):Object.assign({},x,{future:true})}
 // «تغيير الموعد»: day (today … 6 days ahead), period, facility (the doctor's first), a note; optionally the doctor's work schedule too.
 function dpChange(x){
@@ -470,8 +517,8 @@ function dpChange(x){
   catch(e){b.disabled=false;$("#dc_e").textContent=e.message}};
 }
 function dpBind(){
- document.querySelectorAll("#dpcard [data-a]").forEach(b=>b.onclick=()=>{const x=dpFind(b.closest("[data-dp]").dataset.dp);if(!x)return;
-  if(b.dataset.a==="ok"){b.disabled=true;srv("dayPlanConfirm",{id:x.id,ok:true}).then(a=>{MYDP=a;try{localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}toast("أكّدتَ الموعد");const c=$("#dpcard");if(c){c.outerHTML=dayPlanCard();dpBind()}}).catch(e=>{b.disabled=false;toast(e.message)});return}
+ document.querySelectorAll("#dpcard [data-a],#tl [data-a]").forEach(b=>b.onclick=()=>{const x=dpFind(b.closest("[data-dp]").dataset.dp);if(!x)return;
+  if(b.dataset.a==="ok"){b.disabled=true;srv("dayPlanConfirm",{id:x.id,ok:true}).then(a=>{MYDP=a;try{localStorage.setItem(dpKey(),JSON.stringify(MYDP))}catch(e){}toast("أكّدتَ الموعد");dpRepaint()}).catch(e=>{b.disabled=false;toast(e.message)});return}
   if(b.dataset.a==="chg")return dpChange(x);
   if(b.dataset.a==="go"){DPRE={rec:(CFG.docs||[]).find(d=>String(d.id)===String(x.doctorId))||{id:x.doctorId,name:x.doctorName,specialty:x.specialty,workplaces:[]},product:x.product,purpose:x.purpose,note:x.note,planId:x.id,facilityId:x.facilityId};form("d")}
   else if(b.dataset.a==="undo"){srv("dayPlanFail",{id:x.id,undo:true}).then(a=>{MYDP=a;home()}).catch(e=>toast(e.message))}

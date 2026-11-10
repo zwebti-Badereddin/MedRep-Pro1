@@ -321,7 +321,7 @@ function setSave(st){
  SAVE_ST=st;const e=$("#savest");if(!e)return;
  e.className="savest "+st;e.innerHTML=(st==="ok"?IC.check:"")+"<span>"+SAVE_LABEL[st]+"</span>";
 }
-function visitChips(v,k){
+function visitChips(v,k,noGps){
  const c=[],chip=(t,cls,ic)=>'<span class="chip'+(cls?" "+cls:"")+'">'+(ic||"")+esc(t)+'</span>';
  if(v.time)c.push(chip(v.time));
  if(v.dur!=null&&v.ci)c.push(chip("⏱ "+v.dur+" د")); // check-in → check-out (both visit kinds)
@@ -340,7 +340,7 @@ function visitChips(v,k){
  }
  if((v.comp||[]).length)c.push(chip("منافس: "+v.comp.map(x=>x.p).join("، ")));
  const g=v.gps||{};
- c.push(g.warn?chip(" على بعد "+g.warn+" م من المنشأة — تأكد من اختيارها","warn",IC.pin):typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
+ if(!noGps)c.push(g.warn?chip(" على بعد "+g.warn+" م من المنشأة — تأكد من اختيارها","warn",IC.pin):typeof g.lat==="number"&&typeof g.lng==="number"?chip(" الموقع مسجّل","ok",IC.pin):chip(" بدون موقع — يُلتقط عند الحفظ","off",IC.nopin));
  return '<div class="chips">'+c.join("")+'</div>';
 }
 function visitCard(k,v,i,lk){
@@ -366,21 +366,12 @@ function openNote(){
 }
 function home(){
  repScreenSeq++;
- const lk=locked(),title=S.date===TD?"تقرير اليوم":"تقرير يوم "+S.date.split("-").reverse().join("/");
- const stat=(ic,n,l,cls)=>'<div class="rstat'+(cls?" "+cls:"")+'"><i>'+ic+'</i><b>'+n+'</b><span>'+l+'</span></div>';
- $("#app").innerHTML=repTop(title,{sub:longDate(S.date),chip:S.status,save:!lk})+
- '<div class="rstats">'+stat(IC.doc,S.docs.length,"أطباء")+stat(IC.ph,S.phs.length,"صيدليات")+stat(IC.ok,S.docs.length+S.phs.length,"إجمالي الزيارات","tot")+'</div>'+
- '<div class="wrap rwrap">'+banner()+ciBanner()+dayPlanCard()+
- '<div class="sec"><h3>زيارات الأطباء</h3><span>'+S.docs.length+'</span></div>'+
- (S.docs.length?S.docs.map((v,i)=>visitCard("d",v,i,lk)).join(""):'<div class="empty">لا توجد زيارات أطباء بعد.</div>')+
- (lk?'':'<button type="button" class="btn dash" data-add="d">'+IC.plus+' زيارة طبيب</button>')+
- '<div class="sec"><h3>زيارات الصيدليات</h3><span>'+S.phs.length+'</span></div>'+
- (S.phs.length?S.phs.map((v,i)=>visitCard("p",v,i,lk)).join(""):'<div class="empty">لا توجد زيارات صيدليات بعد.</div>')+
- (lk?'':'<button type="button" class="btn dash" data-add="p">'+IC.plus+' زيارة صيدلية</button>')+'</div>'+
+ const lk=locked(),title=S.date===TD?"مسار اليوم":"تقرير يوم "+S.date.split("-").reverse().join("/");
+ $("#app").innerHTML=repTop(title,{sub:longDate(S.date),chip:S.status,save:!lk,dark:true,pills:tlPills()})+
+ '<div class="wrap rwrap">'+banner()+ciBanner()+tlHtml(lk)+dayPlanCard()+'</div>'+
  '<div class="rdock"><div class="acts2"><button type="button" class="btn" id="notebtn">'+(S.notes?"ملاحظة اليوم ✓":"ملاحظة اليوم")+'</button><button type="button" class="btn pri" id="review">'+(lk?"عرض التقرير":"مراجعة وإرسال التقرير")+'</button></div>'+repNav("t")+'</div>';
  if(!lk)setSave(SAVE_ST);
- document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>form(b.dataset.add));
- document.querySelectorAll("[data-more]").forEach(b=>b.onclick=()=>openVisitMenu(b.dataset.more[0],+b.dataset.more.slice(1)));
+ tlBind();
  $("#notebtn").onclick=openNote;
  if($("#savest"))$("#savest").onclick=async()=>{if(SAVE_ST==="saving")return;try{await saveNow();toast("تم الحفظ")}catch(e){toast(e.message)}};
  $("#review").onclick=preview;bindNav();ciBind();dpBind();dpRefresh();if($("#rh"))$("#rh").onclick=screenHistory;
