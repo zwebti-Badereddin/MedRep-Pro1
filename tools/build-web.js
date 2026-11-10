@@ -18,7 +18,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 // 1. The page, exactly as doGet assembles it.
 let html = fs.readFileSync(path.join(root, 'Index.html'), 'utf8');
 html = html.replace(/<\?!= include\('(\w+)'\); \?>/g, (m, n) => fs.readFileSync(path.join(root, n + '.html'), 'utf8'));
-html = html.replace('<?= theme ?>', '').replace('<?= support ?>', '');
+html = html.replace('<?= theme ?>', 'light').replace('<?= support ?>', ''); // light until the company's choice is known
 const tag = html.match(/<\?(?:!?=|\s)[^]*?\?>/); // template tags only (App1 itself mentions "<?" in a string)
 if (tag) fail('Index.html has a template tag the web build does not know: ' + tag[0].slice(0, 80));
 
@@ -30,7 +30,7 @@ const head = `<link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <script>window.MEDREP_API=${JSON.stringify(cfg.api)};
 (function(){try{var c=JSON.parse(localStorage.getItem("mr_cfg")||"{}"),m=document.querySelector('meta[name="medrep-support"]');
-if(c.theme==="light"||c.theme==="dark")document.documentElement.setAttribute("data-theme",c.theme);if(m&&c.support)m.setAttribute("content",c.support)}catch(e){}})();
+if(c.theme==="light"||c.theme==="dark"||c.theme==="auto")document.documentElement.setAttribute("data-theme",c.theme);if(m&&c.support)m.setAttribute("content",c.support)}catch(e){}})();
 window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__bip=e});</script>
 `;
 html = html.replace('</head>', head + '</head>');

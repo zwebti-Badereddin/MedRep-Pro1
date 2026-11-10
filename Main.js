@@ -9,7 +9,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.ping) return ContentService.createTextOutput('OK ' + new Date().toISOString());
   const page = HtmlService.createTemplateFromFile('Index');
   try { page.support = supportContact_(); } catch (err) { page.support = ''; } // shown on the login screen; never blocks the page
-  try { const t = String(settings_().theme || ''); page.theme = t === 'light' || t === 'dark' ? t : ''; } catch (err) { page.theme = ''; } // '' = follow the device
+  try { page.theme = themeOf_(settings_().theme); } catch (err) { page.theme = 'light'; } // light unless the company chose otherwise
   const out = page.evaluate()
     .setTitle('MedRep Pro').addMetaTag('viewport', 'width=device-width, initial-scale=1');
   // Tab / home-screen shortcut icon: the company logo when it is an https image URL. Never blocks the page.
@@ -27,10 +27,12 @@ function doPost(e) {
   if (req.cfg === true) return jsonOut_({ ok: true, data: publicConfig_() });
   return jsonOut_(api(typeof req.token === 'string' ? req.token : null, req.action, req.p && typeof req.p === 'object' ? req.p : {}));
 }
+// The colour theme: 'light' (the default, the same on every device), 'dark', or 'auto' (follow the device's setting).
+function themeOf_(t) { t = String(t || ''); return t === 'dark' || t === 'auto' ? t : 'light'; }
 function publicConfig_() {
-  const out = { theme: '', support: '' };
+  const out = { theme: 'light', support: '' };
   try { out.support = supportContact_(); } catch (err) {}
-  try { const t = String(settings_().theme || ''); out.theme = t === 'light' || t === 'dark' ? t : ''; } catch (err) {}
+  try { out.theme = themeOf_(settings_().theme); } catch (err) {}
   return out;
 }
 function jsonOut_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
